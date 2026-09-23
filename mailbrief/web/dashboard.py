@@ -7,7 +7,7 @@ from mailbrief.mail.classify import CATS
 from mailbrief.money.ledger import find_subscriptions, ils
 from mailbrief.storage import load_json
 from mailbrief.util import e, money, month_back
-from mailbrief.web.layout import page
+from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
 
@@ -15,7 +15,7 @@ def stats_page():
     cutoff = (dt.date.today() - dt.timedelta(days=30)).isoformat()
     rows = [h for h in load_json(config.HISTORY_FILE, {}).values() if h['date'] >= cutoff]
     if not rows:
-        return page('המייל שלי במספרים', f'''<h1>📈 המייל שלי במספרים</h1><p>עוד אין מספיק היסטוריה.</p>
+        return page('המייל שלי במספרים', f'''{heading('📈', 'המייל שלי במספרים')}<p>עוד אין מספיק היסטוריה.</p>
 <form method="post" action="/build_history"><input type="hidden" name="t" value="{TOKEN}"><button>📥 בניית היסטוריה של 30 יום (כדקה)</button></form>''')
 
     def bars(counter, labels=None, top=None):
@@ -53,7 +53,7 @@ def stats_page():
     kpis = ''.join(f'<div class="kpi"><b>{v}</b><span>{k}</span></div>' for k, v in [
         ('מיילים ב-30 יום', total), ('ביום בממוצע', f'{total / 30:.1f}'),
         ('מאנשים', cats.get('people', 0)), ('ניוזלטרים', cats.get('newsletters', 0))])
-    return page('המייל שלי במספרים', f'''<h1>📈 המייל שלי במספרים</h1><p class="muted">30 הימים האחרונים · {len(accounts)} תיבות</p>
+    return page('המייל שלי במספרים', f'''{heading('📈', 'המייל שלי במספרים')}<p class="muted">30 הימים האחרונים · {len(accounts)} תיבות</p>
 <div class="kpis">{kpis}</div>
 <div class="item">{"<br>".join(f for f in facts if f)}</div>
 <h3>לפי סוג</h3><div class="scroll"><table><tbody>{bars(cat_counts, top=10)}</tbody></table></div>
@@ -106,7 +106,7 @@ def dashboard_page():
     double_rows = ''.join(
         f'<div class="item urgent">⚠️ <b dir="auto">{e(r["vendor"])}</b> — {e(r["currency"])}{r["amount"]} ב-{e(r["date"])} וגם ב-{e(r["duplicate"])}. '
         f'כדאי לבדוק שלא חויבת פעמיים.</div>' for r in doubles if r['date'] > r['duplicate'])
-    return page('לוח בקרה', f'''<h1>📊 לוח בקרה</h1><p class="muted">{month} · מבוסס על הקבלות וההיסטוריה ש-MailBrief שמר מקומית ·
+    return page('לוח בקרה', f'''{heading('📊', 'לוח בקרה')}<p class="muted">{month} · מבוסס על הקבלות וההיסטוריה ש-MailBrief שמר מקומית ·
 סכומים במטבע זר מומרים לפי השער היציג של בנק ישראל ביום החשבונית</p>
 {double_rows}<div class="kpis">{kpis}</div>
 <h3>💸 הוצאות בשקלים — 6 חודשים</h3><div class="scroll"><table><tbody>{bars}</tbody></table></div>

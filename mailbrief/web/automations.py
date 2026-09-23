@@ -5,7 +5,7 @@ from mailbrief import config
 from mailbrief.features.automations import ACTIONS, COND_FIELDS, COND_OPS, describe, RECIPES, TRIGGERS, VARIABLES, WEEKDAYS, workflows
 from mailbrief.storage import load_json
 from mailbrief.util import e
-from mailbrief.web.layout import page
+from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
 
@@ -51,7 +51,7 @@ def automations_page(msg='', test=None):
                      f'{len(found)} מיילים מ-7 הימים האחרונים היו מפעילים אותה (בפועל היא פועלת רק על מיילים חדשים).'
                      + ''.join(f'<div class="err">{e(x)}</div>' for x in errors)
                      + (f'<ul>{rows}</ul>' if rows else '') + '</div>')
-    return page('אוטומציות', f'''<h1>⚡ אוטומציות</h1>
+    return page('אוטומציות', f'''{heading('⚡', 'אוטומציות')}
 <p class="muted">טריגר ← תנאים ← פעולות. נבדק כל שעה בין 7:00 ל-23:00 (לא בשבת ובחג). כל מייל מפעיל כל אוטומציה פעם אחת לכל היותר.</p>
 {note}{test_html}
 <h3>האוטומציות שלי</h3>{"".join(cards) or '<p class="muted">עוד אין. אפשר להתחיל ממתכון 👇</p>'}

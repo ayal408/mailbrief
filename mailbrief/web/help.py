@@ -3,7 +3,8 @@ import datetime as dt
 
 from mailbrief.features.maintenance import health_checks, list_backups
 from mailbrief.util import e
-from mailbrief.web.layout import page
+from mailbrief import __version__
+from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
 
@@ -36,7 +37,7 @@ def help_page(msg=''):
         f'<td><form method="post" action="/restore" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="name" value="{e(b)}">'
         f'<button class="ghost" style="margin:0;font:inherit;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer">שחזור</button></form></td></tr>'
         for b in list_backups()) or '<tr><td class="muted">עוד אין גיבויים</td></tr>'
-    return page('מדריך', f'''<h1>❓ מדריך ותחזוקה</h1>{note}
+    return page('מדריך', f'''{heading('❓', 'מדריך ותחזוקה')}{note}<p class="muted">גרסה {__version__}</p>
 <form method="post" style="display:flex;gap:8px;flex-wrap:wrap"><input type="hidden" name="t" value="{TOKEN}">
 <button formaction="/health">🩺 בדיקת תקינות</button><button formaction="/backup_now">💾 גיבוי עכשיו</button></form>
 <h3>מה יש כאן</h3>{guide}
@@ -46,5 +47,5 @@ def help_page(msg=''):
 
 def health_page():
     rows = ''.join(f'<tr><td>{"✅" if ok else "⚠️"}</td><td>{e(area)}</td><td dir="auto">{e(detail)}</td></tr>' for area, ok, detail in health_checks())
-    return page('בדיקת תקינות', f'''<p><a href="/help">→ מדריך</a></p><h1>🩺 בדיקת תקינות</h1>
+    return page('בדיקת תקינות', f'''<p><a href="/help">→ מדריך</a></p>{heading('🩺', 'בדיקת תקינות')}
 <p class="muted">{dt.datetime.now():%d/%m/%Y %H:%M}</p><div class="scroll"><table><tbody>{rows}</tbody></table></div>''')

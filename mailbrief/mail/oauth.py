@@ -17,7 +17,7 @@ PROVIDERS = {
         'token': 'https://oauth2.googleapis.com/token',
         'scope': 'openid email https://mail.google.com/',
         'redirect': f'http://127.0.0.1:{config.PORT}/oauth/callback',
-        'extra': {'access_type': 'offline', 'prompt': 'consent select_account'},
+        'extra': {'access_type': 'offline', 'prompt': 'consent select_account', 'include_granted_scopes': 'true'},
     },
     'microsoft': {
         'name': 'Microsoft', 'host': 'outlook.office365.com',
@@ -30,7 +30,7 @@ PROVIDERS = {
 }
 
 
-PENDING = {}    # state -> (provider, PKCE verifier), lives only while the settings page is open
+PENDING = {}    # state -> (provider, PKCE verifier, extra scope), lives only while the settings page is open
 
 
 def client_for(provider):
@@ -71,15 +71,17 @@ def jwt_claims(token):
         return {}
 
 
-def start_oauth(provider):
+def start_oauth(provider, extra_scope='', login_hint=''):
+    """extra_scope: more permissions on top of mail (Google Calendar / Tasks); login_hint: preselect that account."""
     client_id, _ = client_for(provider)
     if not client_id:
         raise RuntimeError(f'קודם צריך להשלים את ההגדרה החד-פעמית של {PROVIDERS[provider]["name"]} (למטה)')
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
     state = secrets.token_urlsafe(24)
-    PENDING[state] = (provider, verifier)
+    PENDING[state] = (provider, verifier, extra_scope)
     p = PROVIDERS[provider]
     return p['auth'] + '?' + urlencode({
-        'client_id': client_id, 'redirect_uri': p['redirect'], 'response_type': 'code', 'scope': p['scope'],
-        'state': state, 'code_challenge': challenge, 'code_challenge_method': 'S256', **p['extra']})
+        'client_id': client_id, 'redirect_uri': p['redirect'], 'response_type': 'code',
+        'scope': f"{p['scope']} {extra_scope}".strip(), 'state': state, 'code_challenge': challenge,
+        'code_challenge_method': 'S256', **p['extra'], **({'login_hint': login_hint} if login_hint else {})})

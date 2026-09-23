@@ -5,7 +5,7 @@ import threading
 import webbrowser
 from ctypes import wintypes
 
-from mailbrief import config
+from mailbrief.address import link
 from mailbrief.features.alerts import check_alerts
 from mailbrief.features.calendar import is_holy_time, pause_for, paused_until
 from mailbrief.features.reminders import fire_reminders
@@ -49,7 +49,7 @@ def run_tray():
     kernel32.GetModuleHandleW.restype = w.HMODULE
 
     WM_TRAY, WM_COMMAND, WM_DESTROY, WM_LBUTTONDBLCLK, WM_RBUTTONUP = 0x0400 + 20, 0x0111, 0x0002, 0x0203, 0x0205
-    base = f'http://127.0.0.1:{config.PORT}/'
+    base = link()
     menu_items = [(1, 'פתיחת MailBrief'), (2, 'היום שלי'), (3, 'אוטומציות'), (0, None), (4, 'בדיקה עכשיו'),
                   (5, 'השהיה לשעתיים'), (6, 'השהיה עד מחר בבוקר'), (7, 'ביטול השהיה'), (0, None), (9, 'יציאה')]
 

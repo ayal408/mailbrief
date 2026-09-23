@@ -3,7 +3,10 @@ import datetime as dt
 import os
 
 from mailbrief import config
+from mailbrief.address import link
+from mailbrief.features import google_apps
 from mailbrief.features.unsubscribe import unsub_id
+from mailbrief.storage import load_json
 from mailbrief.mail.classify import CATS
 from mailbrief.util import e
 from mailbrief.web.layout import FONT, STYLE
@@ -70,7 +73,7 @@ def render_account(res):
             s['unsub'] = s['unsub'] or bool(i.get('unsub'))
         rows = ''.join(
             f'<tr><td dir="auto">{e(s["name"])}</td><td>{s["count"]}</td><td>'
-            + (f'<a href="http://127.0.0.1:{config.PORT}/unsub?id={unsub_id(res["email"], addr)}" target="_blank">ביטול מנוי</a>'
+            + (f'<a href="{link("unsub")}?id={unsub_id(res["email"], addr)}" target="_blank">ביטול מנוי</a>'
                if s['unsub'] else '<span class="muted">—</span>') + '</td></tr>'
             for addr, s in sorted(senders.items(), key=lambda kv: -kv[1]['count']))
         out.append('<h3>📰 ניוזלטרים</h3><p class="muted" style="font-size:13px">„ביטול מנוי” עובד כש-MailBrief פתוח.</p>'
@@ -78,6 +81,37 @@ def render_account(res):
                    f'<tbody>{rows}</tbody></table></div>')
     if not any(by.values()) and not labels:
         out.append('<p>שבוע שקט ✨</p>')
+    return ''.join(out)
+
+
+def week_ahead():
+    """This week's calendar, tasks due within 7 days and mail waiting on others — for the top of the brief."""
+    out = []
+    g = google_apps.gapps_account()
+    if g:
+        days = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
+        try:
+            events = google_apps.events_on(g, days=7)
+            rows = ''.join(f'<tr><td>{days[dt.date.fromisoformat(ev["day"]).weekday()]} {ev["day"][8:10]}/{ev["day"][5:7]}</td>'
+                           f'<td>{e(ev["time"])}</td><td dir="auto">{e(ev["title"])}</td></tr>' for ev in events if ev['day'])
+            out.append('<h3>📅 השבוע ביומן</h3>' + (f'<div class="scroll"><table><tbody>{rows}</tbody></table></div>' if rows
+                                                    else '<p class="muted">אין אירועים השבוע</p>'))
+        except Exception as exc:
+            out.append(f'<h3>📅 השבוע ביומן</h3><div class="err">⚠️ {e(exc)}</div>')
+        try:
+            limit = (dt.date.today() + dt.timedelta(days=7)).isoformat()
+            tasks = [t for t in google_apps.open_tasks(g) if t['due'] and t['due'] <= limit]
+            if tasks:
+                out.append('<h3>✅ משימות לשבוע</h3><ul>' + ''.join(
+                    f'<li dir="auto">{e(t["title"])} <span class="muted">· עד {t["due"][8:10]}/{t["due"][5:7]}</span></li>' for t in tasks) + '</ul>')
+        except Exception:
+            pass
+    awaiting = load_json(config.SNAPSHOT_FILE, {}).get('awaiting', [])
+    if awaiting:
+        out.append('<h3>📤 מחכה לתשובה מהם</h3>' + ''.join(
+            '<div class="item"><div class="t" dir="auto">'
+            + (f'<a href="{e(w["link"])}" target="_blank">{e(w["subject"])}</a>' if w.get('link') else e(w['subject']))
+            + f'</div><div class="m">אל {e(w["to"])} · נשלח לפני {w["days"]} ימים · {e(w["account"])}</div></div>' for w in awaiting[:10]))
     return ''.join(out)
 
 
@@ -101,7 +135,7 @@ def write_report(results, subs=()):
             f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>תדריך מייל</title>{FONT}'
             f'<style>{STYLE}</style></head><body><main><h1>📬 תדריך מייל</h1>'
             f'<p class="muted">{now:%d/%m/%Y %H:%M} · {config.DAYS} ימים אחרונים · נוצר מקומית על ידי MailBrief</p>'
-            f'<div class="kpis">{kpis}</div>{"".join(render_account(r) for r in results)}</main></body></html>')
+            f'<div class="kpis">{kpis}</div>{week_ahead()}{"".join(render_account(r) for r in results)}</main></body></html>')
     os.makedirs(config.REPORTS, exist_ok=True)
     path = os.path.join(config.REPORTS, f'brief-{now:%Y-%m-%d-%H%M}.html')
     with open(path, 'w', encoding='utf-8') as f:

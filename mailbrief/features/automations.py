@@ -10,10 +10,11 @@ from urllib.parse import quote
 from urllib.parse import urlparse
 
 from mailbrief import config
+from mailbrief.address import link
+from mailbrief.features import google_apps
 from mailbrief.features import notify
 from mailbrief.mail import imap
 from mailbrief.mail import smtp
-from mailbrief.features.notify import telegram_send
 from mailbrief.features.reminders import add_reminder
 from mailbrief.mail.accounts import friendly_error
 from mailbrief.mail.classify import CATS, classify, demote_automated, is_bulk, RX
@@ -59,18 +60,19 @@ ACTIONS = {                                     # type: (label, parameter hint, 
     'log_excel': ('📊 רישום שורה באקסל', 'שם הקובץ (ריק = שם האוטומציה)', False),
     'webhook': ('🔗 Webhook (למשל n8n)', 'כתובת URL', False),
     'email_me': ('✉️ מייל אליי', 'נוסח המייל', False),
-    'telegram': ('📱 הודעה בטלגרם', 'טקסט, למשל: {subject} מ-{from_name}', False),
     'remind': ('⏰ תזכורת בעוד X ימים', 'מספר ימים (ברירת מחדל 3)', False),
+    'gtask': ('✅ משימה ב-Google Tasks', 'כותרת, למשל: לענות ל-{from_name} (ריק = נושא המייל). תאריך יעד = {due} אם נמצא', False),
+    'gevent': ('📅 אירוע ב-Google Calendar', 'כותרת (ריק = נושא המייל). ביום התשלום אם נמצא, אחרת מחר', False),
 }
 
 
-SCHEDULE_ACTIONS = {'notify', 'email_me', 'webhook', 'log_excel', 'telegram'}
+SCHEDULE_ACTIONS = {'notify', 'email_me', 'webhook', 'log_excel', 'gtask', 'gevent'}
 
 
 WEEKDAYS = [('ראשון', 6), ('שני', 0), ('שלישי', 1), ('רביעי', 2), ('חמישי', 3), ('שישי', 4)]   # no Shabbat
 
 
-VARIABLES = '{from} {from_name} {subject} {date} {account} {amount} {snippet} {link} {waiting_days} {category}'
+VARIABLES = '{from} {from_name} {subject} {date} {account} {amount} {due} {snippet} {link} {waiting_days} {category}'
 
 
 def workflows(enabled_only=False):
@@ -90,7 +92,7 @@ def fill(template, ctx):
 def wf_context(acc, it):
     return {'from': it['sender'], 'from_name': it['sender_name'], 'subject': it['subject'], 'date': it['date'],
             'account': acc['email'], 'amount': it.get('amount', ''), 'snippet': it['snippet'], 'link': it.get('link', ''),
-            'waiting_days': it.get('waiting_days', 0),
+            'waiting_days': it.get('waiting_days', 0), 'due': it.get('due', ''),
             'category': ', '.join([CATS[c][1] for c in it['cats'] if c in CATS] + it.get('rules', []))}
 
 
@@ -168,7 +170,7 @@ def run_action(a, wf, acc, ctx, m=None, it=None, msg=None, state=None):
     label = ACTIONS.get(kind, (kind,))[0]
     try:
         if kind == 'notify':
-            notify.toast(f'⚡ {wf["name"]}', [fill(param or '{subject} — {from_name}', ctx)], ctx.get('link') or f'http://127.0.0.1:{config.PORT}/automations')
+            notify.toast(f'⚡ {wf["name"]}', [fill(param or '{subject} — {from_name}', ctx)], ctx.get('link') or link('automations'))
         elif kind == 'email_me':
             note = EmailMessage()
             note['From'] = note['To'] = acc['email']
@@ -182,8 +184,8 @@ def run_action(a, wf, acc, ctx, m=None, it=None, msg=None, state=None):
             post_webhook(param, {'automation': wf['name'], 'trigger': wf['trigger'], **ctx})
         elif kind == 'log_excel':
             append_excel_row(param or wf['name'], ctx)
-        elif kind == 'telegram':
-            telegram_send(f'⚡ {wf["name"]}\n' + fill(param or '{subject} — {from_name}', ctx), ctx.get('link', ''))
+        elif kind in ('gtask', 'gevent'):
+            return google_action(kind, label, param, wf, ctx)
         elif it is None:
             return f'— {label}: לא רלוונטי לתזמון'
         elif kind in ('label', 'star', 'mark_read', 'archive'):
@@ -243,6 +245,25 @@ def run_action(a, wf, acc, ctx, m=None, it=None, msg=None, state=None):
         return f'⚠️ {label}: {friendly_error(exc, acc) if isinstance(exc, (imaplib.IMAP4.error, RuntimeError)) else exc}'
 
 
+def google_action(kind, label, param, wf, ctx):
+    g = google_apps.gapps_account()
+    if not g:
+        raise RuntimeError('היומן והמשימות לא מחוברים — „📅 חיבור יומן ומשימות” בדף ההגדרות')
+    title = fill(param, ctx) if param else (ctx.get('subject') or wf['name'])
+    notes = '\n'.join(x for x in (
+        f"{ctx.get('from_name', '')} <{ctx['from']}>" if ctx.get('from') else '',
+        f"סכום: {ctx['amount']}" if ctx.get('amount') else '', ctx.get('link', ''), f'⚡ {wf["name"]}') if x)
+    due = ctx.get('due', '')
+    if kind == 'gtask':
+        google_apps.add_task(g, title, notes, due)
+        return f'✓ {label}' + (f' (עד {due[8:10]}/{due[5:7]})' if due else '')
+    day = dt.date.fromisoformat(due) if due else dt.date.today() + dt.timedelta(days=1)
+    if not due and day.weekday() == 5:
+        day += dt.timedelta(days=1)             # "tomorrow" from Friday is Sunday, not Shabbat
+    google_apps.add_event(g, title, day, notes)
+    return f'✓ {label} ({day:%d/%m})'
+
+
 def log_run(wf, subject, results):
     log = load_json(config.WF_LOG, [])
     log.append({'at': dt.datetime.now().strftime('%d/%m %H:%M'), 'workflow': wf['name'], 'subject': subject, 'results': results})
@@ -286,7 +307,7 @@ def schedule_context():
         'waiting_list': '\n'.join(f"• {w['from']} — {w['subject']} ({w['days']} ימים)" for w in waiting) or 'אין',
         'urgent_list': '\n'.join(f"• {u['why']}: {u['subject']}" for u in urgent) or 'אין',
         'month_total': money(sum(ils(r) for r in ledger.values() if r['date'].startswith(month) and ils(r) is not None)),
-        'link': f'http://127.0.0.1:{config.PORT}/today',
+        'link': link('today'),
     }
 
 
@@ -342,6 +363,11 @@ RECIPES = [
                                                'דחוף ({urgent_count}):\n{urgent_list}\n\nהוצאות החודש: {month_total}\n{link}'}]},
     {'name': 'כל קבלה — שורה באקסל', 'trigger': 'receipt', 'conditions': [],
      'actions': [{'type': 'log_excel', 'param': 'כל הקבלות'}]},
+    {'name': 'מחכה 2 ימים — משימה ב-Google Tasks', 'trigger': 'waiting', 'wait_days': 2, 'conditions': [],
+     'actions': [{'type': 'gtask', 'param': 'לענות ל-{from_name}: {subject}'}]},
+    {'name': 'חשבון לתשלום — ביומן', 'trigger': 'receipt',
+     'conditions': [{'field': 'any', 'op': 'contains', 'value': 'לתשלום'}],
+     'actions': [{'type': 'gevent', 'param': '💸 לשלם: {from_name} {amount}'}, {'type': 'gtask', 'param': 'לשלם ל-{from_name} {amount}'}]},
     {'name': 'משרות — לארכיון', 'trigger': 'new_mail',
      'conditions': [{'field': 'from', 'op': 'contains', 'value': 'alljob'}],
      'actions': [{'type': 'label', 'param': 'משרות'}, {'type': 'archive'}]},

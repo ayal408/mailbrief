@@ -12,8 +12,9 @@
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![No AI](https://img.shields.io/badge/AI-none-7c3aed)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-16a34a)
+![License](https://img.shields.io/badge/license-MIT-f97316)
 
-[⬇️ הורדה (MailBrief.exe)](https://github.com/ayal408/mailbrief/releases/latest) · [English](#english)
+`winget install mailbrief` · [⬇️ הורדה (MailBrief.exe)](https://github.com/ayal408/mailbrief/releases/latest) · [English](#english)
 
 </div>
 
@@ -35,7 +36,11 @@ MailBrief רץ על המחשב שלך ומתחבר לתיבות הדואר של�
 | | |
 |---|---|
 | 📬 **תדריך שבועי** | כל יום ראשון: דחוף, מחכים לתשובה ממך, קבלות, אבטחה, ניוזלטרים — בדוח אחד בעברית |
-| ☀️ **היום שלי** | נפתח כשנכנסים למחשב: תאריך עברי, מזג אוויר, זמני שבת, תשלומים קרובים, תזכורות |
+| ☀️ **היום שלי** | נפתח כשנכנסים למחשב: יומן ומשימות, מזג אוויר, זמני שבת, תשלומים, הזמנות לפגישות, טיימר ריכוז ופתקים |
+| 🔎 **30 הימים שלך** | מיד אחרי החיבור: כמה עולים המנויים בחודש, אילו ניוזלטרים לבטל בלחיצה, ומי מחכה לתשובה |
+| ✉️ **סיכום יומי במייל** | כל בוקר (לא בשבת ובחג) — מה דחוף, מה ביומן ומי מחכה, נוח לקריאה בטלפון |
+| 📅 **Google Calendar ו-Tasks** | אירועים ומשימות ב„היום שלי”, הזמנות לפגישות ליומן בלחיצה, ופעולות באוטומציות |
+| 📤 **מחכה לתשובה מהם** | שיחות שפתחת ואף אחד לא ענה — עם תזכורת או משימה בלחיצה |
 | ⚡ **אוטומציות** | כש___ ← אם___ ← אז___: תווית, העברה, טיוטת תשובה, תשובה אוטומטית, Webhook, אקסל, תזכורת |
 | 🧾 **קבלות ואקסל** | שמירת ה-PDF לפי חודש, אקסל חודשי מוכן לרו״ח, שער יציג של בנק ישראל, זיהוי חיוב כפול |
 | 💳 **מנויים ותשלומים** | זיהוי חיובים קבועים, תאריכי „לתשלום עד” והתראה יומיים לפני |
@@ -60,12 +65,24 @@ MailBrief רץ על המחשב שלך ומתחבר לתיבות הדואר של�
 
 ## התקנה
 
-1. להוריד את `MailBrief.exe` מ-[Releases](https://github.com/ayal408/mailbrief/releases/latest) ולשים בתיקייה משלו (למשל `C:\MailBrief`).
-2. להפעיל — ייפתח דף ההגדרות בדפדפן, וסמל יופיע ליד השעון.
-3. הגדרה חד-פעמית של Google (כ-5 דקות, ההוראות בדף עצמו): פרויקט ב-Google Cloud ← Desktop client ← להדביק Client ID ו-Secret.
-4. „חיבור עם Google” — וזהו.
+**הכי פשוט — winget** (מובנה ב-Windows 10/11):
 
-> Windows עשוי להציג אזהרת SmartScreen כי הקובץ לא חתום דיגיטלית: „מידע נוסף” ← „הפעל בכל זאת”.
+```powershell
+winget install mailbrief     # התקנה
+mailbrief                            # הפעלה (או מתפריט התחל)
+winget upgrade mailbrief     # עדכון
+```
+
+הנתונים נשמרים ב-`מסמכים\MailBrief` ונשארים גם אחרי עדכון או הסרה.
+
+**או ידנית:** להוריד את `MailBrief.exe` מ-[Releases](https://github.com/ayal408/mailbrief/releases/latest), לשים בתיקייה משלו ולהפעיל
+(כאן הנתונים נשמרים ליד הקובץ, ובתוכנה עצמה יופיע כפתור „✨ עדכון עכשיו” כשיש גרסה חדשה).
+
+בפעם הראשונה: שם ולשון פנייה, מה חשוב לך — ואז „חיבור עם Google” (הגדרה חד-פעמית של כ-5 דקות, ההוראות בדף עצמו).
+התזמונים (תדריך שבועי, בדיקה כל שעה, „היום שלי” בכניסה) וקיצור בתפריט התחל נרשמים לבד.
+
+> בהורדה ידנית Windows עשוי להציג אזהרת SmartScreen כי הקובץ לא חתום דיגיטלית: „מידע נוסף” ← „הפעל בכל זאת”.
+> לפני מחיקת התוכנה אפשר להריץ `MailBrief.exe --uninstall` כדי להסיר את התזמונים.
 
 ## הרצה מקוד המקור
 
@@ -108,6 +125,6 @@ reply templates, vacation replies, a searchable offline archive, and client card
 Jewish holidays, based on your city.
 
 - Standard library only at runtime; OAuth sign-in; secrets encrypted with Windows DPAPI; the web UI listens on `127.0.0.1` only.
-- Download: [Releases](https://github.com/ayal408/mailbrief/releases/latest) · Run from source: `python main.py` · Tests: `python -m unittest discover -s tests`
+- Install: `winget install mailbrief` or download from [Releases](https://github.com/ayal408/mailbrief/releases/latest) · Run from source: `python main.py` · Tests: `python -m unittest discover -s tests`
 
-Made by [Ayal](https://github.com/ayal408).
+MIT License · Made by [Ayal](https://github.com/ayal408).

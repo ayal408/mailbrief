@@ -4,18 +4,53 @@ from urllib.parse import quote
 
 from mailbrief import config
 from mailbrief.features.calendar import holy_status, paused_until
+from mailbrief.features.google_apps import API_PAGES, gapps_account
 from mailbrief.features.maintenance import schedule_status
-from mailbrief.features.notify import telegram_cfg
 from mailbrief.features.replies import reply_templates, vacation_active, VACATION_DEFAULT
 from mailbrief.mail.classify import TAG_PREFIX
 from mailbrief.mail.oauth import PROVIDERS
+from mailbrief.profile import FORMS, g, GOALS, goals, profile
+from mailbrief.features.daily import daily_cfg
 from mailbrief.storage import load_json
 from mailbrief.util import e
-from mailbrief.web.layout import FONT, STYLE
+from mailbrief.web import extras
+from mailbrief.web.layout import FONT, STYLE, top_bar, update_banner
 from mailbrief.web.token import TOKEN
 
 
 FIELD_NAMES = {'from': 'השולח', 'subject': 'הנושא', 'any': 'השולח, הנושא או התוכן'}
+
+
+def gapps_section():
+    accounts = load_json(config.ACCOUNTS_FILE, [])
+    google = [a for a in accounts if a.get('auth') == 'google']
+    current = gapps_account(accounts)
+    if not google:
+        body = '<p class="muted">קודם צריך לחבר תיבת Gmail עם „🔵 חיבור עם Google” — ואז לחזור לכאן.</p>'
+    else:
+        rows = ''.join(
+            f'<tr><td dir="ltr" style="text-align:right">{e(a["email"])}</td><td>'
+            + ((('<b style="color:var(--good)">✓ מחובר</b>' + (' · מוצג ב„היום שלי”' if current and current['id'] == a['id'] else
+                f'<form method="post" action="/gapps_choose" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                f'<input type="hidden" name="email" value="{e(a["email"])}"><button class="ghost" style="margin:0 6px">להציג את זה</button></form>'))
+                if a.get('gapps') else '<span class="muted">לא מחובר</span>'))
+            + f'</td><td><form method="post" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="id" value="{e(a["id"])}">'
+            + ('<button formaction="/gapps_disconnect" class="ghost" style="margin:0">ניתוק</button>' if a.get('gapps') else
+               '<button formaction="/gapps_connect" style="margin:0">📅 חיבור יומן ומשימות</button>')
+            + '</form></td></tr>' for a in google)
+        body = f'<div class="scroll"><table><tbody>{rows}</tbody></table></div>'
+    return f'''
+<h2 id="gapps" style="direction:rtl;text-align:right;scroll-margin-top:80px">📅 Google Calendar ו-Tasks</h2>
+<p class="muted">האירועים של היום והמשימות הפתוחות מופיעים ב„היום שלי” — עם הוספה מהירה וסימון „בוצע”.
+ליד כל מייל שמחכה לתשובה יש „✅ משימה”, ובאוטומציות יש שתי פעולות חדשות: „✅ משימה ב-Google Tasks” ו„📅 אירוע ב-Google Calendar”
+(אם במייל יש תאריך תשלום — זה התאריך). כמו כל האוטומציות, לא רץ בשבת ובחג.</p>
+{body}
+<details {'' if current else 'open'}><summary><b>⚙️ פעם אחת לפני החיבור: להפעיל שני ממשקים בפרויקט (כדקה)</b></summary>
+<ol style="font-size:14px;padding-inline-start:20px">
+<li>לפתוח את <a href="{API_PAGES['calendar']}" target="_blank">Google Calendar API</a> ← לוודא שלמעלה נבחר הפרויקט MailBrief ← <b>Enable</b></li>
+<li>לפתוח את <a href="{API_PAGES['tasks']}" target="_blank">Google Tasks API</a> ← <b>Enable</b></li>
+<li>ללחוץ כאן „📅 חיבור יומן ומשימות”, לבחור את החשבון, ו<b>לסמן את שתי תיבות הסימון</b> (יומן ומשימות) בחלון של Google</li></ol>
+<p class="muted" style="font-size:13px">ההרשאה היא רק לאירועים ולמשימות — לא להגדרות היומן ולא לשיתופים. הכול נשמר מוצפן במחשב שלך כמו הרשאת המייל.</p></details>'''
 
 
 def extra_sections():
@@ -44,24 +79,11 @@ def extra_sections():
         for k, u in sorted(unsubs.items(), key=lambda kv: (bool(kv[1].get('done')), -kv[1].get('count', 0)))[:40]
     ) or '<tr><td colspan="3" class="muted">יופיעו כאן אחרי הריצה הראשונה</td></tr>'
 
-    token, chat, mirror = telegram_cfg()
-    tg_state = ('✓ מחובר' if token and chat else '⏳ הטוקן נשמר — עכשיו לשלוח הודעה כלשהי לבוט ואז „חיבור”' if token else 'לא מחובר')
-    telegram_html = f'''
-<h2 style="direction:rtl;text-align:right">📱 טלגרם בטלפון</h2>
-<p class="muted">מצב: <b>{tg_state}</b>. כל התראה תגיע גם לטלפון, ואפשר להוסיף פעולת „📱 טלגרם” באוטומציות.</p>
-<details {'' if token and chat else 'open'}><summary><b>איך מחברים (כ-2 דקות)</b></summary><ol style="font-size:14px;padding-inline-start:20px">
-<li>בטלגרם לפתוח את <a href="https://t.me/BotFather" target="_blank">@BotFather</a>, לשלוח <code dir="ltr">/newbot</code>, לבחור שם — ולהעתיק את ה-token שהוא נותן</li>
-<li>להדביק כאן ולשמור</li><li>לפתוח את הבוט החדש ולשלוח לו הודעה כלשהי (למשל „היי”)</li><li>ללחוץ „חיבור”</li></ol></details>
-<form method="post" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end"><input type="hidden" name="t" value="{TOKEN}">
-<div style="flex:1;min-width:220px"><label>Bot token</label><input type="password" name="token" dir="ltr" placeholder="{'••••••• (שמור)' if token else '123456:ABC...'}"></div>
-<button formaction="/tg_save" style="margin:0">שמירה</button><button formaction="/tg_connect" style="margin:0">🔗 חיבור</button>
-<button formaction="/tg_test" class="ghost" style="margin:0">הודעת ניסיון</button>
-<button formaction="/tg_mirror" class="ghost" style="margin:0">{'🔕 בלי שכפול התראות' if mirror else '🔔 לשכפל התראות לטלפון'}</button></form>'''
     vac = load_json(config.SETTINGS_FILE, {}).get('vacation') or {}
     active = vacation_active()
     field = 'font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
     vacation_html = f'''
-<h2 style="direction:rtl;text-align:right">🏖️ מצב חופשה</h2>
+<h2 id="vacation" style="direction:rtl;text-align:right;scroll-margin-top:80px">🏖️ מצב חופשה</h2>
 <p class="muted">{'<b style="color:var(--good)">פעיל עכשיו</b> — ' if active else ''}בין התאריכים, מי שכותב לך אישית מקבל מענה אוטומטי — פעם אחת לכל אדם בכל החופשה.
 לא לרשימות תפוצה, לא לשולחים אוטומטיים, ולא בשבת ובחג. המשתנה <span dir="ltr">{{to}}</span> = היום שחוזרים.</p>
 <form method="post" action="/vacation" class="box" style="display:grid;gap:8px"><input type="hidden" name="t" value="{TOKEN}">
@@ -75,7 +97,7 @@ def extra_sections():
         f'<input type="hidden" name="id" value="{e(t["id"])}"><button class="ghost" style="margin:0">מחיקה</button></form></td></tr>'
         for t in reply_templates())
     templates_html = f'''
-<h2 style="direction:rtl;text-align:right">📝 תבניות תשובה</h2>
+<h2 id="templates" style="direction:rtl;text-align:right;scroll-margin-top:80px">📝 תבניות תשובה</h2>
 <p class="muted">ב„היום שלי”, ליד כל מייל שמחכה לתשובה: בוחרים תבנית ← „📝 טיוטה” — ונוצרת טיוטה מוכנה ב-Gmail לעריכה ושליחה.</p>
 <div class="scroll"><table><tbody>{tmpl_rows}</tbody></table></div>
 <form method="post" action="/template_add" class="box" style="display:grid;gap:8px;margin-top:10px"><input type="hidden" name="t" value="{TOKEN}">
@@ -89,8 +111,34 @@ def extra_sections():
 <form method="post" action="/projects_root" style="display:flex;gap:8px;flex-wrap:wrap"><input type="hidden" name="t" value="{TOKEN}">
 <input type="text" name="root" dir="ltr" value="{e(root)}" placeholder="C:/projects" style="flex:1;min-width:220px;{field}">
 <button style="margin:0">שמירה</button></form>'''
-    return telegram_html + projects_html + vacation_html + templates_html + f'''
-<h2 style="direction:rtl;text-align:right">🏷️ הכללים שלי</h2>
+    me = profile()
+    form_opts = ''.join(f'<option value="{k}"{" selected" if k == me.get("form") else ""}>{icon} {label}</option>' for k, (icon, label) in FORMS.items())
+    profile_html = f'''
+<h2 id="profile" style="direction:rtl;text-align:right;scroll-margin-top:80px">👤 הפרופיל שלי</h2>
+<p class="muted">השם והלשון שבהם MailBrief פונה — בברכה, בהודעות ובטיפים.</p>
+<form method="post" action="/profile" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="hidden" name="t" value="{TOKEN}">
+<input type="text" name="name" value="{e(me.get('name', ''))}" maxlength="30" placeholder="השם שלך" style="flex:1;min-width:160px;{field}">
+<select name="form" style="{field}">{form_opts}</select><button style="margin:0">שמירה</button>
+<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><span class="muted">מה מוצג ב„היום שלי”:</span>
+{''.join(f'<label style="font-weight:400;margin:0;display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 10px">'
+         f'<input type="checkbox" name="goal" value="{k}"{" checked" if k in goals() else ""}> {icon} {e(title)}</label>' for k, (icon, title, _) in GOALS.items())}
+</div></form>'''
+    daily = daily_cfg()
+    accounts = load_json(config.ACCOUNTS_FILE, [])
+    acc_opts = ''.join(f'<option{" selected" if a["email"] == daily["account"] else ""}>{e(a["email"])}</option>' for a in accounts)
+    hour_opts = ''.join(f'<option value="{h}"{" selected" if h == daily["hour"] else ""}>{h:02d}:00</option>' for h in range(5, 23))
+    daily_html = f'''
+<h2 id="daily" style="direction:rtl;text-align:right;scroll-margin-top:80px">✉️ סיכום יומי במייל</h2>
+<p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if daily['on'] else ''}כל בוקר מגיע לתיבה שלך מייל קצר: מה דחוף, מה ביומן, מה לתשלום ומי מחכה לתשובה.
+נוח לקרוא בטלפון — גם בלי שהמחשב מולך. לא נשלח בשבת ובחג.</p>
+<form method="post" action="/daily" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="hidden" name="t" value="{TOKEN}">
+<span>לשלוח ל</span><select name="account" style="{field}">{acc_opts or '<option value="">(אין תיבה)</option>'}</select>
+<span>בשעה</span><select name="hour" style="{field}">{hour_opts}</select>
+<button name="action" value="on" style="margin:0">{'שמירה' if daily['on'] else '✅ הפעלה'}</button>
+{'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if daily['on'] else ''}
+<button formaction="/daily_test" class="ghost" style="margin:0">📨 לשלוח עכשיו לניסיון</button></form>'''
+    return profile_html + daily_html + gapps_section() + projects_html + vacation_html + templates_html + f'''
+<h2 id="rules" style="direction:rtl;text-align:right;scroll-margin-top:80px">🏷️ הכללים שלי</h2>
 <p class="muted">כל מייל שמתאים לכלל מקבל תווית משלו (תחת „{TAG_PREFIX}”) ומקבץ משלו בדוח. 🔔 = גם התראה ב-Windows.</p>
 <div class="scroll"><table><tbody>{rows}</tbody></table></div>
 <form method="post" action="/rule_add" class="box" style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end">
@@ -107,13 +155,17 @@ def extra_sections():
 <form method="post" action="/test_send"><input type="hidden" name="t" value="{TOKEN}">
 <button class="ghost">✉️ בדיקת שליחה (מייל ניסיון לעצמך)</button></form>
 
-<h2 style="direction:rtl;text-align:right">📰 ניוזלטרים</h2>
+<h2 id="news" style="direction:rtl;text-align:right;scroll-margin-top:80px">📰 ניוזלטרים</h2>
 <p class="muted">ביטול דרך הקישור הרשמי של השולח. ⚡ = ביטול מיידי מכאן; בלי ⚡ נפתח דף הביטול של השולח לאישור.</p>
 <div class="scroll"><table><thead><tr><th>שולח</th><th>הודעות</th><th></th></tr></thead><tbody>{news}</tbody></table></div>
 
 <h2 style="direction:rtl;text-align:right">🔔 התראות Windows</h2>
 <p class="muted">בדיקה קצרה כל שעה בין 7:00 ל-23:00 (לא בשבת ובחג). קופצת התראה רק על מייל דחוף, אירוע אבטחה חריג או כלל עם 🔔 — ורק פעם אחת לכל מייל.
 <br>סטטוס: {e(schedule_status(config.ALERTS_TASK))}</p>
+<form method="post" action="/setup" style="display:flex;gap:6px;flex-wrap:wrap"><input type="hidden" name="t" value="{TOKEN}">
+<button name="action" value="install" class="ghost" style="margin:0">🔧 רישום / תיקון התזמונים</button>
+<button name="action" value="remove" class="ghost" style="margin:0">הסרת התזמונים</button></form>
+<p class="muted" style="font-size:13px">הנתונים נשמרים ב: <span dir="ltr">{e(config.HERE)}</span></p>
 <form method="post"><input type="hidden" name="t" value="{TOKEN}">
 <button formaction="/test_toast" class="ghost">הצגת התראת ניסיון</button> <button formaction="/check">בדיקה עכשיו</button></form>'''
 
@@ -139,26 +191,20 @@ def settings_page(msg=''):
     rep = ''.join(f'<li><a href="/reports/{quote(f)}" target="_blank">{e(f[6:-5])}</a></li>' for f in reports) or '<li class="muted">אין עדיין</li>'
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
     return f'''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MailBrief</title>{FONT}<style>{STYLE}
+<title>תיבות והגדרות · MailBrief</title>{FONT}<style>{STYLE}
 input[type=text],input[type=email],input[type=password],input[type=number]{{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}}
-label{{display:block;margin:10px 0 4px;font-weight:500}} button{{font:inherit;border:0;background:var(--accent);color:#fff;padding:9px 16px;border-radius:10px;cursor:pointer;margin-top:8px}}
+label{{display:block;margin:10px 0 4px;font-weight:500}} button{{font:inherit;font-weight:500;border:0;background:var(--accent);color:#fff;padding:9px 16px;border-radius:12px;cursor:pointer;margin-top:8px}}
 button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--line)}} .grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px}}
 @media(max-width:760px){{.grid{{grid-template-columns:1fr}}}} .box{{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}}
-</style></head><body><main>
-<h1>📬 MailBrief</h1><p class="muted">תדריך מייל שבועי שרץ מקומית על המחשב שלך, לכל תיבת דואר, בלי AI. התדריך השבועי: {e(schedule_status())}<br>{e(holy_status())}</p>{note}
+</style></head><body>{top_bar('/')}<main>
+<h1>📬 <span class="g">תיבות והגדרות</span></h1><p class="muted">תדריך מייל שבועי שרץ מקומית על המחשב שלך, לכל תיבת דואר, בלי AI. התדריך השבועי: {e(schedule_status())}<br>{e(holy_status())}</p>{note}
+{update_banner()}
 <form method="post" action="/pause" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0"><input type="hidden" name="t" value="{TOKEN}">
 {f'<b style="color:var(--warn)">⏸️ מושהה עד {paused_until():%d/%m %H:%M}</b><button name="mode" value="off" style="margin:0">▶️ ביטול השהיה</button>' if paused_until() else
  '<span class="muted">⏸️ השהיית אוטומציות והתראות:</span><button name="mode" value="2h" class="ghost" style="margin:0">לשעתיים</button><button name="mode" value="tomorrow" class="ghost" style="margin:0">עד מחר בבוקר</button>'}</form>
 <form method="get" action="/search" style="display:flex;gap:8px;margin:16px 0"><input type="text" name="q" placeholder="🔍 חיפוש בכל התיבות..." style="flex:1">
 <button style="margin:0">חיפוש</button></form>
 <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><input type="hidden" name="t" value="{TOKEN}">
-<a href="/today" style="text-decoration:none"><button type="button" style="margin:0">☀️ היום שלי</button></a>
-<a href="/dashboard" style="text-decoration:none"><button type="button" style="margin:0">📊 לוח בקרה</button></a>
-<a href="/stats" style="text-decoration:none"><button type="button" style="margin:0">📈 במספרים</button></a>
-<a href="/automations" style="text-decoration:none"><button type="button" style="margin:0">⚡ אוטומציות</button></a>
-<a href="/clients" style="text-decoration:none"><button type="button" style="margin:0">👥 לקוחות</button></a>
-<a href="/help" style="text-decoration:none"><button type="button" style="margin:0">❓ מדריך</button></a>
-<a href="/reading" style="text-decoration:none"><button type="button" style="margin:0">📚 רשימת קריאה</button></a>
 <button formaction="/open_archive" class="ghost" style="margin:0">🗄️ ארכיון מקומי</button>
 <button formaction="/archive_backfill" class="ghost" style="margin:0" title="שומר במחשב קבלות ומיילים אישיים מ-90 הימים האחרונים">🗄️ גיבוי 90 יום</button>
 <button formaction="/open_receipts" class="ghost" style="margin:0">📂 תיקיית הקבלות והאקסל</button>
@@ -178,7 +224,7 @@ button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--lin
 <li>להיכנס ל-<a href="https://console.cloud.google.com/auth/overview" target="_blank">Google Auth Platform</a> ← Get started: שם האפליקציה MailBrief, המייל שלך, Audience = External</li>
 <li>ב-<b>Audience</b> ללחוץ <b>Publish app</b> (אחרת ההתחברות פגה כל 7 ימים)</li>
 <li>ב-<b>Clients</b> ← Create client ← סוג <b>Desktop app</b> ← להעתיק לכאן את ה-Client ID וה-Client secret</li>
-<li>בהתחברות Google יראה „האפליקציה לא אומתה” — זה תקין כי את המפתחת: Advanced ← Go to MailBrief</li></ol>
+<li>בהתחברות Google יראה „האפליקציה לא אומתה” — זה תקין כי {g('את המפתחת', 'אתה המפתח', 'זו האפליקציה שלך')}: Advanced ← Go to MailBrief</li></ol>
 <form method="post" action="/oauth_config"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="provider" value="google">
 <label>Client ID</label><input type="text" name="client_id" dir="ltr" value="{e(google_id)}">
 <label>Client secret</label><input type="password" name="client_secret" dir="ltr" placeholder="{'••••••• (שמור)' if google_ready else ''}">
@@ -205,4 +251,4 @@ button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--lin
 </section></div>{extra_sections()}
 <form method="post" action="/quit" style="margin-top:40px"><input type="hidden" name="t" value="{TOKEN}">
 <button class="ghost">⏻ סגירת MailBrief</button> <span class="muted" style="font-size:13px">הריצות המתוזמנות ימשיכו לעבוד גם כשהוא סגור.</span></form>
-</main></body></html>'''
+</main>{extras.HTML}</body></html>'''

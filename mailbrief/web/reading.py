@@ -5,7 +5,7 @@ import datetime as dt
 from mailbrief import config
 from mailbrief.storage import load_json
 from mailbrief.util import e
-from mailbrief.web.layout import page
+from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
 
@@ -23,7 +23,7 @@ def reading_page(msg=''):
         for name, hs in sorted(by.items(), key=lambda kv: -len(kv[1])))
     auto = load_json(config.SETTINGS_FILE, {}).get('auto_archive_news', False)
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
-    return page('רשימת קריאה', f'''<h1>📚 רשימת קריאה</h1>
+    return page('רשימת קריאה', f'''{heading('📚', 'רשימת קריאה')}
 <p class="muted">כל הניוזלטרים מהשבוע האחרון במקום אחד ({len(news)} מ-{len(by)} שולחים). לקרוא כשנוח — בלי שהם יסתירו את המיילים החשובים.</p>{note}
 <form method="post" style="display:flex;gap:8px;flex-wrap:wrap"><input type="hidden" name="t" value="{TOKEN}">
 <button formaction="/news_archive_now">📥 להעביר לארכיון עכשיו ניוזלטרים בני 3+ ימים (Gmail)</button>

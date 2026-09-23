@@ -10,6 +10,7 @@ from mailbrief.features.brief import run_all
 from mailbrief.features.calendar import is_holy_time, paused_until
 from mailbrief.features.maintenance import make_backup
 from mailbrief.features.reminders import fire_reminders
+from mailbrief.features.update import cleanup, finish_update
 from mailbrief.storage import load_json, save_json
 from mailbrief.web.server import serve
 
@@ -38,7 +39,15 @@ def set_weekly_pending(value):
 
 def main():
     """Entry point used by main.py / MailBrief.exe."""
+    if '--uninstall' in sys.argv:               # before removing the program: scheduled runs and Start menu
+        from mailbrief.features.setup import remove
+        remove()
+        return
+    if '--replace' in sys.argv:                  # the downloaded update, finishing the swap
+        finish_update(sys.argv[sys.argv.index('--replace') + 1])
+        return
     os.makedirs(config.DATA, exist_ok=True)
+    cleanup()
     automatic = any(flag in sys.argv for flag in ('--run', '--check', '--today'))
     user_paused = paused_until() is not None and '--today' not in sys.argv
     if automatic and (is_holy_time() or user_paused):

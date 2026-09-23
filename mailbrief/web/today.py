@@ -4,22 +4,50 @@ import datetime as dt
 from mailbrief import config
 from mailbrief import net
 from mailbrief.features.alerts import upcoming_payments
+from mailbrief.features.google_apps import today_overview
+from mailbrief.features.invites import invite_key, upcoming, when_text
 from mailbrief.features.calendar import CITIES, holy_status
 from mailbrief.features.replies import reply_templates, vacation_active
+from mailbrief.profile import g, goals
 from mailbrief.features.today import FORTUNES, project_pulse, projects_root, WEATHER
 from mailbrief.money.ledger import find_subscriptions
 from mailbrief.storage import load_json
 from mailbrief.util import e
-from mailbrief.web.layout import page
+from mailbrief.web.layout import page, update_banner
 from mailbrief.web.token import TOKEN
 
 
-def today_page():
+SMALL = ('font:inherit;font-size:12px;padding:1px 8px;margin:0 4px;border-radius:8px;border:1px solid var(--line);'
+         'background:transparent;color:var(--ink);cursor:pointer')
+
+
+FOCUS = """<div class="focus" id="mb-timer" data-mode="focus"><span id="focus"></span>
+<div class="ring"><svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="64" fill="none" stroke="var(--line)" stroke-width="10"/>
+<circle class="bar2" cx="75" cy="75" r="64" fill="none" stroke="url(#mbg)" stroke-width="10" stroke-linecap="round" stroke-dasharray="402.1" stroke-dashoffset="0"/>
+<defs><linearGradient id="mbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#f97316"/></linearGradient></defs></svg>
+<div class="t">25:00</div></div><div class="muted lbl" style="font-size:13px">ריכוז</div>
+<div class="row"><button type="button" data-mode="focus" onclick="MBFocus.mode('focus')">🍅 25</button>
+<button type="button" data-mode="short" onclick="MBFocus.mode('short')">☕ 5</button><button type="button" data-mode="long" onclick="MBFocus.mode('long')">🌿 15</button></div>
+<div class="row"><button type="button" data-go onclick="MBFocus.go()">▶ התחלה</button><button type="button" onclick="MBFocus.reset()">↺ איפוס</button></div></div>"""
+
+
+NOTES_JS = """<script>(function(){
+  var box = document.getElementById('mb-notes'), ok = document.getElementById('mb-saved'), t = null;
+  function save(){
+    var body = new URLSearchParams({t: '__TOKEN__', text: box.value});
+    fetch('/note_save', {method: 'POST', body: body, keepalive: true, redirect: 'manual'}).then(function(){
+      ok.classList.add('on'); setTimeout(function(){ ok.classList.remove('on'); }, 1400);
+    }).catch(function(){});
+  }
+  box.addEventListener('input', function(){ clearTimeout(t); t = setTimeout(save, 700); });
+  window.addEventListener('pagehide', function(){ if (t) { clearTimeout(t); save(); } });
+})();</script>"""
+
+
+def today_page(msg='', show_all=False):
     now = dt.datetime.now()
     city = load_json(config.SETTINGS_FILE, {}).get('city', 'ירושלים')
     lat, lon = CITIES.get(city, CITIES['ירושלים'])
-    hour = now.hour
-    greet = 'לילה טוב' if hour < 5 else 'בוקר טוב' if hour < 12 else 'צהריים טובים' if hour < 17 else 'ערב טוב' if hour < 21 else 'לילה טוב'
     days = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
     heb = (net.cached_json('hebdate', f'https://www.hebcal.com/converter?cfg=json&date={now.date()}&g2h=1&strict=1', 360) or {}).get('hebrew', '')
 
@@ -47,7 +75,46 @@ def today_page():
     holidays = ''.join(f'<li>{e(i.get("hebrew") or i["title"])} — {e(dt.date.fromisoformat(i["date"][:10]).strftime("%d/%m"))}</li>'
                        for i in hol['items'][:6])
 
+    wanted = set(goals())
+    def want(*keys):
+        return show_all or not keys or bool(wanted & set(keys))
+    card = lambda title, body: f'<div class="box" style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px"><h3 style="margin:0 0 8px">{title}</h3>{body}</div>'
     snap = load_json(config.SNAPSHOT_FILE, {})
+    gapps = today_overview()
+    calendar_card = tasks_card = ''
+    if gapps:
+        field = 'font:inherit;font-size:14px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
+        events = ''.join(
+            f'<li dir="auto"><b>{e(ev["time"])}{f"–{e(ev["end"])}" if ev["end"] else ""}</b> '
+            + (f'<a href="{e(ev["link"])}" target="_blank">{e(ev["title"][:70])}</a>' if ev['link'] else e(ev['title'][:70]))
+            + (f' <span class="muted">· 📍 {e(ev["where"][:40])}</span>' if ev['where'] else '') + '</li>'
+            for ev in gapps.get('events', [])) or ('' if gapps.get('events_error') else '<li class="muted">אין אירועים היום</li>')
+        calendar_card = card('📅 היום ביומן', (f'<div style="color:var(--bad);font-size:14px">⚠️ {e(gapps["events_error"])}</div>' if gapps.get('events_error') else '')
+            + f'<ul style="margin:0;padding-inline-start:18px">{events}</ul>'
+            f'<form method="post" action="/gevent_add" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"><input type="hidden" name="t" value="{TOKEN}">'
+            f'<input name="title" required maxlength="300" placeholder="אירוע חדש" style="flex:1;min-width:120px;{field}">'
+            f'<input type="date" name="day" required value="{now.date()}" style="{field}"><input type="time" name="at" style="{field}" title="ריק = כל היום">'
+            f'<button style="{SMALL}">➕</button></form>'
+            f'<div class="muted" style="font-size:12px;margin-top:4px"><a href="https://calendar.google.com/calendar/r/day" target="_blank">פתיחת היומן</a> · {e(gapps["account"])}</div>')
+        today_iso = now.date().isoformat()
+        def task_when(due):
+            if not due:
+                return ''
+            color = 'var(--bad)' if due < today_iso else 'var(--warn)' if due == today_iso else 'var(--muted)'
+            return f' <span style="color:{color};font-size:13px">· {"היום" if due == today_iso else f"{due[8:10]}/{due[5:7]}"}</span>'
+        tasks = ''.join(
+            f'<li dir="auto" style="list-style:none;margin-inline-start:-18px"><form method="post" action="/gtask_done" style="display:inline;margin:0">'
+            f'<input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="id" value="{e(t["id"])}">'
+            f'<button title="בוצע" style="font:inherit;padding:0 4px;border:0;background:transparent;color:var(--ink);cursor:pointer">⬜</button></form> '
+            + (f'<a href="{e(t["link"])}" target="_blank">{e(t["title"][:70])}</a>' if t['link'] else e(t['title'][:70])) + task_when(t['due']) + '</li>'
+            for t in gapps.get('tasks', [])[:12]) or ('' if gapps.get('tasks_error') else '<li class="muted">אין משימות פתוחות 🎉</li>')
+        more = len(gapps.get('tasks', [])) - 12
+        tasks_card = card('✅ משימות', (f'<div style="color:var(--bad);font-size:14px">⚠️ {e(gapps["tasks_error"])}</div>' if gapps.get('tasks_error') else '')
+            + f'<ul style="margin:0;padding-inline-start:18px">{tasks}</ul>' + (f'<div class="muted" style="font-size:13px">ועוד {more}…</div>' if more > 0 else '')
+            + f'<form method="post" action="/gtask_add" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"><input type="hidden" name="t" value="{TOKEN}">'
+            f'<input name="title" required maxlength="300" placeholder="משימה חדשה" style="flex:1;min-width:120px;{field}">'
+            f'<input type="date" name="due" style="{field}" title="תאריך יעד (לא חובה)"><button style="{SMALL}">➕</button></form>'
+            '<div class="muted" style="font-size:12px;margin-top:4px"><a href="https://tasks.google.com/" target="_blank">פתיחת Google Tasks</a></div>')
     def mail_row(r, tail, remind=False):
         title = f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:70])}</a>' if r.get('link') else e(r['subject'][:70])
         button = (f'<form method="post" action="/remind" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
@@ -62,6 +129,11 @@ def today_page():
                        + ''.join(f'<option value="{e(t["id"])}">{e(t["name"])}</option>' for t in reply_templates())
                        + '</select><button style="font:inherit;font-size:12px;padding:1px 8px;margin:0 4px;border-radius:8px;border:1px solid var(--line);'
                          'background:transparent;color:var(--ink);cursor:pointer">📝 טיוטה</button></form>')
+        if remind and gapps:
+            button += (f'<form method="post" action="/gtask_add" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                       f'<input type="hidden" name="title" value="{e("לענות ל-" + r["from"] + ": " + r["subject"][:120])}">'
+                       f'<input type="hidden" name="from" value="{e(r["from"])}"><input type="hidden" name="link" value="{e(r.get("link", ""))}">'
+                       f'<button style="{SMALL}" title="משימה ב-Google Tasks">✅ משימה</button></form>')
         return f'<li dir="auto">{title} <span class="muted">— {e(r["from"])} · {tail}</span>{button}</li>'
     waiting = ''.join(mail_row(r, f'⏳ {r["days"]} ימים', remind=True) for r in snap.get('waiting', [])[:8]) or '<li class="muted">אין — הכול נענה ✨</li>'
     def when(left):
@@ -81,11 +153,40 @@ def today_page():
         for r in sorted(load_json(config.REMINDERS_FILE, []), key=lambda r: r['due'])[:8]) or '<li class="muted">אין תזכורות</li>'
     urgent = ''.join(mail_row(r, e(r['why'])) for r in snap.get('urgent', [])[:6]) or '<li class="muted">אין משהו דחוף</li>'
 
-    upcoming = []
+    added = set(load_json(config.CACHE_FILE, {}).get('invites_added', []))
+    def invite_row(i):
+        title = f'<a href="{e(i["link"])}" target="_blank">{e(i["title"][:70])}</a>' if i.get('link') else e(i['title'][:70])
+        if invite_key(i) in added:
+            action = '<span style="color:var(--good);font-size:13px;margin:0 4px">✓ ביומן</span>'
+        elif gapps:
+            action = (f'<form method="post" action="/invite_add" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                      f'<input type="hidden" name="key" value="{e(invite_key(i))}"><button style="{SMALL}">📅 הוספה ליומן</button></form>')
+        else:
+            action = ''
+        return (f'<li dir="auto">{title}{action}<div class="muted" style="font-size:13px">{e(when_text(i))}'
+                + (f' · 📍 {e(i["where"][:50])}' if i.get('where') else '') + f' · מאת {e(i["from"])}</div></li>')
+    invites = [i for i in snap.get('invites', []) if upcoming(i)]
+    invites_card = card('📨 הזמנות לפגישות', f'<ul style="margin:0;padding-inline-start:18px">{"".join(invite_row(i) for i in invites[:6])}</ul>'
+                        + ('' if gapps else '<div class="muted" style="font-size:12px;margin-top:6px">חיבור היומן בדף ההגדרות = הוספה בלחיצה</div>')) if invites else ''
+
+    def awaiting_row(r):
+        title = f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:60])}</a>' if r.get('link') else e(r['subject'][:60])
+        hidden = lambda k, v: f'<input type="hidden" name="{k}" value="{e(str(v))}">'
+        remind = (f'<form method="post" action="/remind" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                  + hidden('subject', 'לבדוק מול ' + r['to'] + ': ' + r['subject'][:120]) + hidden('from', r['to'])
+                  + hidden('link', r.get('link', '')) + hidden('account', r['account']) + hidden('days', 1)
+                  + f'<button style="{SMALL}">⏰ מחר</button></form>')
+        task = (f'<form method="post" action="/gtask_add" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                + hidden('title', 'להזכיר ל-' + r['to'] + ': ' + r['subject'][:120]) + hidden('from', r['to'])
+                + hidden('link', r.get('link', '')) + f'<button style="{SMALL}">✅ משימה</button></form>') if gapps else ''
+        return f'<li dir="auto">{title} <span class="muted">— אל {e(r["to"])} · 📤 {r["days"]} ימים</span>{remind}{task}</li>'
+    awaiting = ''.join(awaiting_row(r) for r in snap.get('awaiting', [])[:8]) or '<li class="muted">כולם ענו לך ✨</li>'
+
+    expected = []
     for s in find_subscriptions(load_json(config.LEDGER_FILE, {})):
         nxt = dt.date.fromisoformat(s['last']) + dt.timedelta(days=30)
         if -3 <= (nxt - now.date()).days <= 10:
-            upcoming.append(f'<li dir="auto">{e(s["vendor"])} — בערך {nxt:%d/%m}'
+            expected.append(f'<li dir="auto">{e(s["vendor"])} — בערך {nxt:%d/%m}'
                             f'{f" · {e(s["currency"])}{s["amount"]}" if s["amount"] is not None else ""}</li>')
 
     projects = project_pulse()
@@ -95,22 +196,31 @@ def today_page():
     recent = sorted((p for p in projects if p['last']), key=lambda p: p['last'], reverse=True)[:1]
 
     fortune = FORTUNES[now.timetuple().tm_yday % len(FORTUNES)]
+    fortune = g(*fortune) if isinstance(fortune, tuple) else fortune
+    notes = load_json(config.NOTES_FILE, {}).get('text', '')
     options = ''.join(f'<option{" selected" if c == city else ""}>{e(c)}</option>' for c in CITIES)
-    card = lambda title, body: f'<div class="box" style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px"><h3 style="margin:0 0 8px">{title}</h3>{body}</div>'
 
     return page('היום שלי', f'''
-<h1>{greet} ☀️</h1>
+<h1>היום שלי <span class="floaty">☀️</span></h1>
 <p style="font-size:19px;margin:4px 0">יום {days[now.weekday()]}, {now:%d/%m/%Y}{f" · {e(heb)}" if heb else ""}{f" · פרשת {e(parasha.replace('פרשת ', ''))}" if parasha else ""}</p>
-<p class="muted" style="font-style:italic">🥠 {e(fortune)}</p>{vacation_note}
+<p class="muted" style="font-style:italic">🥠 {e(fortune)}</p>{update_banner()}{vacation_note}{f'<div class="item urgent">{e(msg)}</div>' if msg else ''}
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px">
 {card(f"🌤️ מזג האוויר ב{e(city)}", f'<div>{weather}</div><form method="post" action="/set_city" style="margin-top:8px"><input type="hidden" name="t" value="{TOKEN}"><select name="city" onchange="this.form.submit()" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{options}</select></form>')}
 {card("🕯️ שבת וחג", f'<ul style="margin:0;padding-inline-start:18px">{times or "<li class=muted>—</li>"}</ul><div style="font-size:13px;margin-top:6px">{e(holy_status())}</div><div class="muted" style="margin-top:8px;font-size:14px">בקרוב:</div><ul style="margin:0;padding-inline-start:18px;font-size:14px">{holidays or "<li class=muted>אין חגים בשלושת השבועות הקרובים</li>"}</ul>')}
+{calendar_card if want('calendar') else ''}{tasks_card if want('calendar') else ''}
 {card("🔥 דחוף במייל", f'<ul style="margin:0;padding-inline-start:18px">{urgent}</ul>')}
-{card("⏳ מחכים לתשובה ממך", f'<ul style="margin:0;padding-inline-start:18px">{waiting}</ul>')}
-{card("💸 תשלומים קרובים", f'<ul style="margin:0;padding-inline-start:18px">{payments}</ul>')}
-{card("⏰ תזכורות", f'<ul style="margin:0;padding-inline-start:18px">{reminders}</ul>')}
-{card("💳 חיובים צפויים", f'<ul style="margin:0;padding-inline-start:18px">{"".join(upcoming) or "<li class=muted>אין חיובים קבועים בעשרת הימים הקרובים</li>"}</ul>')}
+{card("⏳ מחכים לתשובה ממך", f'<ul style="margin:0;padding-inline-start:18px">{waiting}</ul>') if want('replies') else ''}
+{card("📤 מחכה לתשובה מהם", f'<ul style="margin:0;padding-inline-start:18px">{awaiting}</ul>') if want('replies') else ''}{invites_card if want('calendar') else ''}
+{card("💸 תשלומים קרובים", f'<ul style="margin:0;padding-inline-start:18px">{payments}</ul>') if want('money') else ''}
+{card("⏰ תזכורות", f'<ul style="margin:0;padding-inline-start:18px">{reminders}</ul>') if want('focus', 'replies') else ''}
+{card("💳 חיובים צפויים", f'<ul style="margin:0;padding-inline-start:18px">{"".join(expected) or "<li class=muted>אין חיובים קבועים בעשרת הימים הקרובים</li>"}</ul>') if want('money') else ''}
+{card("⏱️ טיימר ריכוז", FOCUS) if want('focus') else ''}
+{card("🗒️ פתקים", f'<textarea class="notes" id="mb-notes" placeholder="מה צריך לזכור היום? נשמר לבד…">{e(notes)}</textarea>'
+      f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px"><span class="muted" style="font-size:12px">נשמר במחשב שלך</span>'
+      f'<span class="saved" id="mb-saved">✓ נשמר</span></div>' + NOTES_JS.replace('__TOKEN__', TOKEN)) if want('focus') or notes else ''}
 {card("💻 פרויקטים", f'<ul style="margin:0;padding-inline-start:18px">{dirty}</ul>' + (f'<div class="muted" style="font-size:13px;margin-top:6px">הכי פעיל: <span dir="ltr">{e(recent[0]["name"])}</span> ({e(recent[0]["last"])})</div>' if recent else ''))}
 </div>
+<p style="text-align:center;margin-top:18px">{'<a href="/today">🎯 רק מה שחשוב לי</a>' if show_all else
+ '<a href="/today?all=1">✨ להציג הכול</a> <span class="muted" style="font-size:13px">· מה מוצג — בהגדרות ← 👤 הפרופיל שלי</span>'}</p>
 <p class="muted" style="margin-top:24px;font-size:13px">נתוני המייל מהבדיקה האחרונה ({e(snap.get("at", "עוד לא רצה"))}) ·
-<a href="/search">🔍 חיפוש</a> · <a href="/dashboard">📊 לוח בקרה</a> · <a href="/">⚙️ הגדרות</a></p>''')
+<a href="/insights">🔎 30 הימים שלך</a> · <a href="/search">🔍 חיפוש</a> · <a href="/dashboard">📊 לוח בקרה</a> · <a href="/">⚙️ הגדרות</a></p>''')

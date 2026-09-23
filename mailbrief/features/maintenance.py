@@ -7,9 +7,9 @@ import subprocess
 import zipfile
 
 from mailbrief import config
+from mailbrief.features import google_apps
 from mailbrief.mail import imap
 from mailbrief.features.calendar import holy_status, holy_windows
-from mailbrief.features.notify import telegram_cfg
 from mailbrief.mail.accounts import friendly_error
 from mailbrief.storage import load_json, save_json
 
@@ -77,8 +77,16 @@ def health_checks():
         rows.append(('ריצה שבועית אחרונה', 'FAILED' not in first, first[:60]))
     free = shutil.disk_usage(config.HERE).free / 1e9
     rows.append(('מקום פנוי בדיסק', free > 2, f'{free:.1f} GB'))
-    token, chat, _ = telegram_cfg()
-    rows.append(('טלגרם', True, 'מחובר' if token and chat else 'לא מחובר (לא חובה)'))
+    g = google_apps.gapps_account()
+    if not g:
+        rows.append(('יומן ומשימות Google', True, 'לא מחובר (לא חובה)'))
+    else:
+        for what, fetch in (('Google Calendar', google_apps.events_on), ('Google Tasks', google_apps.open_tasks)):
+            try:
+                found = len(fetch(g))
+                rows.append((what, True, f'מחובר ({g["email"]}) · {found} {"אירועים היום" if what == "Google Calendar" else "משימות פתוחות"}'))
+            except Exception as exc:
+                rows.append((what, False, str(exc)))
     rows.append(('גיבויים', bool(list_backups()), f'{len(list_backups())} גיבויים, האחרון: {list_backups()[0][10:26]}' if list_backups() else 'עוד אין — נוצר בריצה השבועית'))
     return rows
 

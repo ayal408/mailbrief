@@ -3,8 +3,11 @@ import datetime as dt
 from urllib.parse import quote
 
 from mailbrief import config
+from mailbrief.address import link
 from mailbrief.features import notify
 from mailbrief.mail import imap
+from mailbrief.features.followups import awaiting_replies
+from mailbrief.features.invites import find_invite, upcoming, when_text
 from mailbrief.features.automations import run_schedule_workflows, run_workflows, workflows_need_write
 from mailbrief.features.forwarding import process_forwards
 from mailbrief.features.replies import vacation_replies
@@ -14,22 +17,32 @@ from mailbrief.money.ledger import find_duplicate, item_key, parse_amount, vendo
 from mailbrief.storage import load_json, save_json
 
 
-def save_snapshot(per_account):
-    """per_account: [(email, items)] — what the "My day" page shows about mail, without a slow live scan."""
-    waiting, urgent, due = [], [], []
+def save_snapshot(per_account, awaiting=None):
+    """per_account: [(email, items)] — what the "My day" page shows about mail, without a slow live scan.
+    awaiting: conversations I started that got no answer (features.followups). None (the weekly run, which
+    doesn't look for them) keeps the ones from the last hourly check, and the invitations with them."""
+    previous = load_json(config.SNAPSHOT_FILE, {})
+    waiting, urgent, due, invites = [], [], [], {}
     for address, items in per_account:
         for it in items:
             row = {'account': address, 'from': it['sender_name'], 'subject': it['subject'], 'link': it.get('link', ''),
                    'message_id': it.get('message_id', '')}
             if it.get('due'):
                 due.append(row | {'due': it['due'], 'amount': it.get('amount', '')})
+            if it.get('invite'):
+                inv = it['invite']
+                invites[inv['uid'] or (inv['start'], inv['title'])] = row | inv
             if it.get('answered') is False:
                 waiting.append(row | {'days': it.get('waiting_days', 0)})
             if it['unusual'] or 'urgent' in it['cats'] or 'phishing' in it['cats']:
                 why = '🎣 חשד לפישינג' if 'phishing' in it['cats'] else 'חריג באבטחה' if it['unusual'] else 'דחוף'
                 urgent.append(row | {'why': why, 'date': it['date']})
     save_json(config.SNAPSHOT_FILE, {'at': dt.datetime.now().strftime('%d/%m %H:%M'),
-                              'waiting': sorted(waiting, key=lambda w: -w['days']), 'urgent': urgent, 'due': due})
+                              'waiting': sorted(waiting, key=lambda w: -w['days']), 'urgent': urgent, 'due': due,
+                              'invites': sorted(invites.values(), key=lambda i: i['start']) if awaiting is not None
+                              else [i for i in previous.get('invites', []) if upcoming(i)],
+                              'awaiting': sorted(awaiting, key=lambda w: -w['days']) if awaiting is not None
+                              else previous.get('awaiting', [])})
 
 
 def upcoming_payments(days=14):
@@ -59,7 +72,7 @@ def check_alerts():
     known_vendors = {r['vendor_key'] for r in ledger.values()}
     now = dt.datetime.now().astimezone()
     alerts = []                                  # (reason, item)
-    snapshot = []
+    snapshot, awaiting = [], []
     budget = [config.MAX_WORKFLOW_RUNS]                 # shared across mailboxes: at most this many automation runs per check
     for acc in accounts:
         try:
@@ -71,6 +84,9 @@ def check_alerts():
                     it['uid'] = uid
                     it['message_id'] = (msg.get('Message-ID') or '').strip()
                     it['link'] = f"https://mail.google.com/mail/?authuser={quote(acc['email'])}#all/{gid:x}" if gid else ''
+                    invite = find_invite(msg)
+                    if invite and upcoming(invite):
+                        it['invite'] = invite
                     items.append(it)
                     pairs.append((it, msg))
                     if it['forward']:
@@ -79,6 +95,10 @@ def check_alerts():
                 mark_unanswered(m, items)
                 run_workflows(m, acc, pairs, state, ledger, budget)
                 vacation_replies(acc, pairs, state)
+                try:
+                    awaiting += awaiting_replies(m, acc, {a['email'].lower() for a in accounts})
+                except Exception:
+                    pass                                 # a slow or odd Sent folder must not stop the check
             finally:
                 m.logout()
             if pending:
@@ -95,6 +115,7 @@ def check_alerts():
                 ('rule', ' · '.join(it['rules']), fresh and it['notify']),
                 ('vendor', 'חיוב מספק חדש', fresh and 'receipts' in it['cats'] and bool(known_vendors)
                  and vendor_key(it['sender']) not in known_vendors),
+                ('invite', f'📅 הזמנה לפגישה — {when_text(it["invite"])}' if it.get('invite') else '', fresh and bool(it.get('invite'))),
                 ('waiting', f'ממתין לתשובה {it.get("waiting_days", 0)} ימים', it.get('waiting_days', 0) >= config.WAIT_DAYS),
                 ('due', f'לתשלום עד {it.get("due", "")[8:10]}/{it.get("due", "")[5:7]}',
                  bool(it.get('due')) and 0 <= (dt.date.fromisoformat(it['due']) - now.date()).days <= 2),
@@ -108,8 +129,13 @@ def check_alerts():
                     seen.add(key)
                     alerts.append((text, it))
     if snapshot:
-        save_snapshot(snapshot)
+        save_snapshot(snapshot, awaiting)
     run_schedule_workflows(state, accounts)
+    from mailbrief.features.daily import maybe_send_daily        # (imports this module)
+    try:
+        maybe_send_daily(state, accounts)
+    except Exception:
+        pass                                     # try again next hour
     state['_alerted'] = sorted(seen)[-3000:]
     save_json(config.STATE_FILE, state)
     save_json(config.ACCOUNTS_FILE, accounts)          # keep rotated refresh tokens
@@ -118,5 +144,5 @@ def check_alerts():
     why, first = alerts[0]
     title = f'📬 MailBrief — {why}' if len(alerts) == 1 else f'📬 MailBrief — {len(alerts)} הודעות דורשות תשומת לב'
     notify.toast(title, [f'{first["subject"]} ({first["sender_name"]})'] + [f'{t}: {a["subject"]}' for t, a in alerts[1:2]],
-          first.get('link') or f'http://127.0.0.1:{config.PORT}/')
+          first.get('link') or link())
     return len(alerts)

@@ -1,4 +1,4 @@
-"""The local web server (127.0.0.1 only) and all its routes."""
+"""The local web server (127.0.0.1 only, shown as http://mailbrief.localhost) and all its routes."""
 import datetime as dt
 import json
 import os
@@ -16,6 +16,8 @@ from urllib.parse import unquote
 from urllib.parse import urlparse
 
 from mailbrief import config
+from mailbrief.address import base_url, link, remember
+from mailbrief.profile import FORMS, g, has_profile, save_profile
 from mailbrief.features import notify
 from mailbrief.mail import imap
 from mailbrief.mail import smtp
@@ -23,10 +25,11 @@ from mailbrief.features.alerts import check_alerts
 from mailbrief.features.archive import archive_backfill, archive_old_newsletters, write_archive_index
 from mailbrief.features.automations import ACTIONS, COND_FIELDS, COND_OPS, log_run, RECIPES, run_action, SCHEDULE_ACTIONS, schedule_context, test_workflow, TRIGGERS, WEEKDAYS, workflows
 from mailbrief.features.brief import import_receipts, run_all
+from mailbrief.features import google_apps
 from mailbrief.features.calendar import CITIES, pause_for
 from mailbrief.features.history import build_history
+from mailbrief.features.invites import event_resource, invite_key
 from mailbrief.features.maintenance import make_backup, restore_backup
-from mailbrief.features.notify import telegram_api, telegram_cfg, telegram_send
 from mailbrief.features.reminders import add_reminder
 from mailbrief.features.replies import create_draft_reply, reply_templates, VACATION_DEFAULT
 from mailbrief.features.search import download_search_attachments
@@ -46,6 +49,12 @@ from mailbrief.web.reading import reading_page
 from mailbrief.web.search import search_page
 from mailbrief.web.settings import FIELD_NAMES, settings_page
 from mailbrief.web.today import today_page
+from mailbrief.web.welcome import welcome_page
+from mailbrief.web.insights import insights_page
+from mailbrief.features.insights import first_look
+from mailbrief.features.daily import daily_account, send_daily
+from mailbrief.features.update import start_update, update_available
+from mailbrief.features import setup
 from mailbrief.web.token import TOKEN
 
 
@@ -54,7 +63,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _host_ok(self):
-        return self.headers.get('Host', '') in (f'127.0.0.1:{config.PORT}', f'localhost:{config.PORT}')
+        return self.headers.get('Host', '').lower() in allowed_hosts()
 
     def _send(self, body, ctype='text/html; charset=utf-8', code=200):
         data = body.encode('utf-8') if isinstance(body, str) else body
@@ -74,6 +83,13 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self._send('forbidden', code=403)
         url = urlparse(self.path)
+        nice = urlparse(base_url()).netloc
+        if url.path != '/oauth/callback' and self.headers.get('Host', '').lower() != nice:
+            return self._redirect(base_url() + self.path)        # old 127.0.0.1:8765 links -> the nice address
+        if url.path == '/welcome':
+            return self._send(welcome_page())
+        if not has_profile() and url.path in ('/', '/today', '/dashboard', '/stats', '/automations', '/clients', '/reading', '/search', '/help', '/insights'):
+            return self._redirect('/welcome')                     # first run: name and form of address first
         if url.path == '/':
             return self._send(settings_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/oauth/callback':
@@ -81,7 +97,12 @@ class Handler(BaseHTTPRequestHandler):
                 msg = finish_oauth(parse_qs(url.query))
             except Exception as exc:
                 msg = f'שגיאה: {exc}'
-            return self._redirect(f'http://127.0.0.1:{config.PORT}/?msg=' + quote(msg))
+            first = (msg.startswith('✓') and len(load_json(config.ACCOUNTS_FILE, [])) == 1
+                     and not os.path.exists(config.INSIGHTS_FILE))
+            return self._redirect(link(('insights?run=1&msg=' if first else '?msg=') + quote(msg)))   # first mailbox: show its 30 days
+        if url.path == '/insights':
+            q = parse_qs(url.query)
+            return self._send(insights_page(q.get('msg', [''])[0], run=q.get('run', [''])[0] == '1'))
         if url.path.startswith('/reports/'):
             name = os.path.basename(unquote(url.path[9:]))
             path = os.path.join(config.REPORTS, name)
@@ -91,7 +112,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/dashboard':
             return self._send(dashboard_page())
         if url.path == '/today':
-            return self._send(today_page())
+            q = parse_qs(url.query)
+            return self._send(today_page(q.get('msg', [''])[0], show_all=q.get('all', [''])[0] == '1'))
         if url.path == '/stats':
             return self._send(stats_page())
         if url.path == '/help':
@@ -212,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
                       'forward_to': forward_to, 'created': dt.datetime.now().astimezone().isoformat()})
         save_json(config.RULES_FILE, rules)
         extra = f' מיילים חדשים שמתאימים יועברו אל {forward_to}.' if forward_to else ''
-        loop = ' (שימי לב: זו אחת התיבות שלך — שלא ייווצר כלל הפוך שמחזיר אותם.)' if forward_to.lower() in own else ''
+        loop = f' ({g("שימי לב", "שים לב", "לתשומת לב")}: זו אחת התיבות שלך — שלא ייווצר כלל הפוך שמחזיר אותם.)' if forward_to.lower() in own else ''
         return f'✓ נוסף כלל: {label}.{extra}{loop}'
 
     def post_test_send(self, f):
@@ -247,41 +269,15 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'done' and value.startswith('✓'):
             entry['done'] = dt.date.today().strftime('%d/%m')
             save_json(config.UNSUBS_FILE, unsubs)
-        return (value, None) if kind == 'open' else value
+        if kind == 'open':
+            return (value, None)
+        return ('/insights?msg=' + quote(value), None) if f.get('back') == '/insights' else value
 
-    def _save_telegram(self, **changes):
-        settings = load_json(config.SETTINGS_FILE, {})
-        settings['telegram'] = (settings.get('telegram') or {}) | changes
-        save_json(config.SETTINGS_FILE, settings)
-
-    def post_tg_save(self, f):
-        token = f.get('token', '').strip()
-        if not re.fullmatch(r'\d{5,}:[\w-]{20,}', token):
-            return 'ה-token לא נראה תקין (צריך להיראות כמו 123456789:ABC-def...)'
-        me = telegram_api(token, 'getMe', {})
-        self._save_telegram(token=encrypt(token), chat_id=None)
-        return f'✓ הבוט @{me.get("username")} נשמר. עכשיו לשלוח לו הודעה בטלגרם וללחוץ „חיבור”.'
-
-    def post_tg_connect(self, f):
-        token, _, _ = telegram_cfg()
-        if not token:
-            return 'קודם לשמור את ה-token'
-        updates = telegram_api(token, 'getUpdates', {'timeout': 0})
-        chats = [u['message']['chat'] for u in updates if u.get('message', {}).get('chat', {}).get('type') == 'private']
-        if not chats:
-            return 'לא מצאתי הודעה — לפתוח את הבוט בטלגרם, לשלוח לו „היי”, ולנסות שוב'
-        self._save_telegram(chat_id=chats[-1]['id'])
-        telegram_send('✓ MailBrief מחובר! מעכשיו ההתראות יגיעו גם לכאן 📬')
-        return f'✓ טלגרם מחובר ({chats[-1].get("first_name", "")}) — נשלחה הודעת אישור'
-
-    def post_tg_test(self, f):
-        telegram_send('🧪 הודעת ניסיון מ-MailBrief', 'https://mail.google.com/')
-        return '✓ נשלחה הודעת ניסיון לטלגרם'
-
-    def post_tg_mirror(self, f):
-        _, _, mirror = telegram_cfg()
-        self._save_telegram(mirror=not mirror)
-        return '✓ ההתראות ישוכפלו לטלפון' if not mirror else '✓ ההתראות יופיעו רק במחשב (פעולת טלגרם באוטומציות עדיין תעבוד)'
+    def post_first_look(self, f):
+        if not load_json(config.ACCOUNTS_FILE, []):
+            return 'קודם צריך לחבר תיבת מייל'
+        first_look()
+        return ('/insights', None)
 
     def post_remind(self, f):
         days = int(f.get('days', '1')) if f.get('days', '1').isdigit() else 1
@@ -289,6 +285,97 @@ class Handler(BaseHTTPRequestHandler):
         due = add_reminder(days, f.get('subject', '')[:200], f.get('from', '')[:100],
                            link if link.startswith('https://mail.google.com/') else '', f.get('account', ''))
         return ('/today', None) if due else 'שגיאה'
+
+    def post_gapps_connect(self, f):
+        accounts = load_json(config.ACCOUNTS_FILE, [])
+        acc = next((a for a in accounts if a['id'] == f.get('id') and a.get('auth') == 'google'), None)
+        return (start_oauth('google', google_apps.SCOPES, acc['email'] if acc else ''), None)
+
+    def post_gapps_choose(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['gapps_account'] = f.get('email', '')
+        save_json(config.SETTINGS_FILE, settings)
+        google_apps.forget_cache()
+        return f'✓ היומן והמשימות יוצגו מ-{f.get("email", "")}'
+
+    def post_gapps_disconnect(self, f):
+        accounts = load_json(config.ACCOUNTS_FILE, [])
+        for a in accounts:
+            if a['id'] == f.get('id'):
+                a['gapps'] = False
+        save_json(config.ACCOUNTS_FILE, accounts)
+        google_apps.forget_cache()
+        return 'היומן והמשימות נותקו מ-MailBrief (המייל ממשיך לעבוד). לביטול מלא אצל Google: myaccount.google.com/connections'
+
+    def _gapps_or_back(self):
+        acc = google_apps.gapps_account()
+        if not acc:
+            raise RuntimeError('היומן והמשימות לא מחוברים — „📅 חיבור יומן ומשימות” בדף ההגדרות')
+        return acc
+
+    def _today_back(self, msg=''):
+        return ('/today' + ('?msg=' + quote(msg) if msg else ''), None)
+
+    def post_gtask_add(self, f):
+        title = f.get('title', '').strip()[:300]
+        if not title:
+            return self._today_back('צריך לכתוב מה המשימה')
+        link = f.get('link', '')
+        notes = '\n'.join(x for x in (f.get('from', '')[:100], link if link.startswith('https://mail.google.com/') else '') if x)
+        due = f.get('due', '') if re.fullmatch(r'\d{4}-\d{2}-\d{2}', f.get('due', '')) else ''
+        try:
+            google_apps.add_task(self._gapps_or_back(), title, notes, due)
+        except Exception as exc:
+            return self._today_back(f'⚠️ {exc}')
+        return self._today_back(f'✅ נוספה משימה: {title}')
+
+    def post_gtask_done(self, f):
+        try:
+            google_apps.complete_task(self._gapps_or_back(), f.get('id', ''))
+        except Exception as exc:
+            return self._today_back(f'⚠️ {exc}')
+        return self._today_back()
+
+    def post_gevent_add(self, f):
+        title = f.get('title', '').strip()[:300]
+        try:
+            day = dt.date.fromisoformat(f.get('day', ''))
+        except ValueError:
+            return self._today_back('צריך לבחור תאריך')
+        at = f.get('at', '') if re.fullmatch(r'\d{2}:\d{2}', f.get('at', '')) else None
+        if not title:
+            return self._today_back('צריך לכתוב כותרת לאירוע')
+        try:
+            google_apps.add_event(self._gapps_or_back(), title, day, at=at)
+        except Exception as exc:
+            return self._today_back(f'⚠️ {exc}')
+        return self._today_back(f'📅 נוסף ליומן: {title} ({day:%d/%m}{f" {at}" if at else ""})')
+
+    def post_invite_add(self, f):
+        invite = next((i for i in load_json(config.SNAPSHOT_FILE, {}).get('invites', []) if invite_key(i) == f.get('key')), None)
+        if not invite:
+            return self._today_back('ההזמנה כבר לא ברשימה — אולי היא עברה או בוטלה')
+        notes = '\n'.join(x for x in (f'הוזמנת על ידי {invite["from"]} ({invite["account"]})', invite.get('link', '')) if x)
+        try:
+            google_apps.import_invite(self._gapps_or_back(), event_resource(invite, notes))
+        except Exception as exc:
+            return self._today_back(f'⚠️ {exc}')
+        cache = load_json(config.CACHE_FILE, {})
+        cache['invites_added'] = (cache.get('invites_added', []) + [invite_key(invite)])[-300:]
+        save_json(config.CACHE_FILE, cache)
+        return self._today_back(f'📅 נוסף ליומן: {invite["title"]}')
+
+    def post_welcome(self, f):
+        me = save_profile(f.get('name', ''), f.get('form', ''), f['_lists'].get('goal', []))
+        hello = f'שלום{" " + me["name"] if me["name"] else ""}! '
+        if not load_json(config.ACCOUNTS_FILE, []):
+            return hello + g('עכשיו נחברי', 'עכשיו נחבר', 'עכשיו מחברים') + ' את תיבת המייל הראשונה 👇'
+        return ('/today' if os.path.exists(config.INSIGHTS_FILE) else '/insights', None)
+
+    def post_note_save(self, f):
+        save_json(config.NOTES_FILE, {'text': f.get('text', '')[:20000], 'at': dt.datetime.now().isoformat(timespec='seconds')})
+        self._send('ok', 'text/plain; charset=utf-8')
+        return None
 
     def post_reminder_delete(self, f):
         save_json(config.REMINDERS_FILE, [r for r in load_json(config.REMINDERS_FILE, []) if r['id'] != f.get('id')])
@@ -314,7 +401,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_restore(self, f):
         count = restore_backup(f.get('name', ''))
-        return ('/help?msg=' + quote(f'✓ שוחזרו {count} קבצים. גיבוי של המצב הקודם נשמר למקרה שתרצי לחזור.'), None)
+        return ('/help?msg=' + quote(f'✓ שוחזרו {count} קבצים. גיבוי של המצב הקודם נשמר, למקרה שצריך לחזור אליו.'), None)
 
     def post_news_archive_now(self, f):
         moved, errors = archive_old_newsletters(3)
@@ -336,6 +423,28 @@ class Handler(BaseHTTPRequestHandler):
             write_archive_index(load_json(config.ARCHIVE_MANIFEST, {}))
         os.startfile(index)
         return '🗄️ הארכיון נפתח'
+
+    def post_daily(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        hour = int(f['hour']) if f.get('hour', '').isdigit() and 5 <= int(f['hour']) <= 22 else 7
+        settings['daily'] = {'on': f.get('action') != 'off', 'hour': hour, 'account': f.get('account', '')}
+        save_json(config.SETTINGS_FILE, settings)
+        if f.get('action') == 'off':
+            return 'הסיכום היומי כבוי'
+        return f'✓ כל יום ב-{hour:02d}:00 יגיע סיכום קצר ל-{f.get("account", "")} (לא בשבת ובחג)'
+
+    def post_daily_test(self, f):
+        accounts = load_json(config.ACCOUNTS_FILE, [])
+        acc = daily_account(accounts)
+        if not acc:
+            return 'קודם צריך לחבר תיבת מייל'
+        subject = send_daily(acc)
+        save_json(config.ACCOUNTS_FILE, accounts)
+        return f'✓ נשלח ל-{acc["email"]}: „{subject}” — אפשר לבדוק בטלפון'
+
+    def post_profile(self, f):
+        me = save_profile(f.get('name', ''), f.get('form', ''), f['_lists'].get('goal', []))
+        return f'✓ נשמר — {me["name"] or "בלי שם"}, {FORMS[me["form"]][1]}'
 
     def post_projects_root(self, f):
         root = f.get('root', '').strip().strip('"')
@@ -406,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
         if trigger == 'schedule':
             bad = [ACTIONS[a['type']][0] for a in actions if a['type'] not in SCHEDULE_ACTIONS]
             if bad:
-                return self._wf_back(f'בתזמון אפשר רק התראה, מייל אליי, Webhook או אקסל (לא: {", ".join(bad)})')
+                return self._wf_back(f'בתזמון אפשר רק: {", ".join(ACTIONS[k][0] for k in sorted(SCHEDULE_ACTIONS))} (לא: {", ".join(bad)})')
         wf = {'id': secrets.token_hex(4), 'name': name, 'enabled': True, 'trigger': trigger, 'conditions': conditions,
               'actions': actions, 'created': dt.datetime.now().astimezone().isoformat()}
         if trigger == 'waiting':
@@ -415,7 +524,7 @@ class Handler(BaseHTTPRequestHandler):
             days = [int(d) for d in f['_lists'].get('day', []) if d.isdigit() and int(d) in dict((d, n) for n, d in WEEKDAYS)]
             wf['schedule'] = {'days': days or [6], 'hour': max(7, min(23, int(f.get('hour') or 9)))}
         save_json(config.WF_FILE, workflows() + [wf])
-        warn = ' שימי לב: תשובה אוטומטית נשלחת לאנשים אמיתיים.' if any(a['type'] == 'auto_reply' for a in actions) else ''
+        warn = f' {g("שימי לב", "שים לב", "לתשומת לב")}: תשובה אוטומטית נשלחת לאנשים אמיתיים.' if any(a['type'] == 'auto_reply' for a in actions) else ''
         return self._wf_back(f'✓ האוטומציה „{name}” נשמרה ופעילה. אפשר ללחוץ 🧪 כדי לראות מה היא הייתה תופסת.{warn}')
 
     def post_wf_recipe(self, f):
@@ -479,7 +588,7 @@ class Handler(BaseHTTPRequestHandler):
         return f'✓ יובאו {count} קבלות מ-90 הימים האחרונים' + (' · ' + ' | '.join(errors) if errors else '')
 
     def post_test_toast(self, f):
-        notify.toast('📬 MailBrief — התראת ניסיון', ['ככה ייראו התראות על מייל דחוף או חריג.'], f'http://127.0.0.1:{config.PORT}/')
+        notify.toast('📬 MailBrief — התראת ניסיון', ['ככה ייראו התראות על מייל דחוף או חריג.'], link())
         return '✓ נשלחה התראת ניסיון — היא אמורה להופיע בפינת המסך'
 
     def post_check(self, f):
@@ -494,22 +603,65 @@ class Handler(BaseHTTPRequestHandler):
         close_tray()
         return None
 
+    def post_update(self, f):
+        rel = update_available()
+        if not rel:
+            return 'יש כבר את הגרסה האחרונה ✓'
+        start_update(rel)
+        self._send(f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">{FONT}<style>{STYLE}</style></head>'
+                   f'<body><main style="text-align:center;margin-top:60px"><div style="font-size:64px" class="floaty">✨</div>'
+                   f'<h1>מתעדכן לגרסה {e(rel["version"])}…</h1><p class="muted">MailBrief ייפתח מחדש בעוד רגע. אפשר לסגור את הלשונית הזו.</p>'
+                   '<script>setTimeout(function(){ setInterval(function(){ fetch("/today", {cache: "no-store"}).then(function(r){ if (r.ok) location.href = "/today"; }).catch(function(){}); }, 1500); }, 4000);</script>'
+                   '</main></body></html>')
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
+        close_tray()
+        return None
+
+    def post_setup(self, f):
+        if f.get('action') == 'remove':
+            setup.remove()
+            return 'התזמונים הוסרו — MailBrief ירוץ רק כשפותחים אותו. אפשר להחזיר באותו כפתור.'
+        setup.install()
+        return '✓ התזמונים נרשמו: תדריך ביום ראשון 8:00, בדיקה כל שעה 7:00–23:00, „היום שלי” בכניסה ל-Windows'
+
     def post_pause(self, f):
         until = pause_for(f.get('mode', 'off'))
         return f'⏸️ האוטומציות וההתראות מושהות עד {until:%d/%m %H:%M}' if until else '▶️ ההשהיה בוטלה — הכול פועל כרגיל'
 
 
+def _ensure_setup():
+    try:
+        setup.ensure()
+    except Exception:
+        with open(os.path.join(config.DATA, 'setup.log'), 'w', encoding='utf-8') as f:
+            f.write(traceback.format_exc())
+
+
+def allowed_hosts():
+    ports = {config.PORT, config.NICE_PORT}
+    hosts = {f'{h}:{p}' for h in ('127.0.0.1', 'localhost', config.NICE_HOST) for p in ports}
+    return hosts | ({config.NICE_HOST} if config.NICE_PORT == 80 else set())
+
+
 def serve(start_page=''):
     os.makedirs(config.DATA, exist_ok=True)
-    url = f'http://127.0.0.1:{config.PORT}/{start_page}'
     try:
         server = ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler)
     except OSError:                              # already running: just show it
-        webbrowser.open(url)
+        webbrowser.open(link(start_page))
         return
-    worker = threading.Thread(target=server.serve_forever, daemon=True)
-    worker.start()
-    webbrowser.open(url)
+    servers = [server]
+    try:                                         # the port-less address, when nothing else uses port 80
+        servers.append(ThreadingHTTPServer(("127.0.0.1", config.NICE_PORT), Handler))
+        remember(config.NICE_PORT)
+    except OSError:
+        remember(config.PORT)
+    workers = [threading.Thread(target=s.serve_forever, daemon=True) for s in servers]
+    for worker in workers:
+        worker.start()
+    threading.Thread(target=_ensure_setup, daemon=True).start()    # a new computer: scheduled runs + Start menu
+    worker = workers[0]
+    webbrowser.open(link(start_page))
     try:
         run_tray()                               # returns when the user picks "Exit"
     except Exception:
@@ -517,4 +669,5 @@ def serve(start_page=''):
             f.write(traceback.format_exc())
         worker.join()                            # no tray: keep serving until "⏻ Close" on the page
     finally:
-        server.shutdown()
+        for s in servers:
+            s.shutdown()
