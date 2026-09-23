@@ -1,0 +1,19 @@
+# Personal data — never commit (mail history, receipts, tokens, backups)
+data/
+קבלות/
+ארכיון/
+גיבויים/
+הורדות/
+יומני אוטומציה/
+
+# Build output
+*.exe
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/

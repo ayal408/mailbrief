@@ -1,0 +1,3 @@
+# Build and lint tools only — MailBrief itself uses the Python standard library.
+pyinstaller>=6.10
+pyflakes>=3.2
