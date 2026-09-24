@@ -13,7 +13,7 @@ from mailbrief import config
 from mailbrief.storage import decrypt, load_json
 cfg = load_json(config.SETTINGS_FILE, {}).get('google') or {}
 if not cfg.get('client_id') or not cfg.get('client_secret'):
-    raise SystemExit('No Google key in the settings - first fill the "Google one-time setup" in MailBrief')
+    raise SystemExit('No Google key in the settings - first fill the Google one-time setup in MailBrief')
 with open('google_client.json', 'w', encoding='utf-8') as f:
     json.dump({'client_id': cfg['client_id'], 'client_secret': decrypt(cfg['client_secret'])}, f)
 print('google_client.json written (' + cfg['client_id'].split('-')[0] + '-...)')
