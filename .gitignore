@@ -17,3 +17,6 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# The Google sign-in key built into MailBrief.exe — local builds only (the release gets it from a GitHub secret)
+google_client.json

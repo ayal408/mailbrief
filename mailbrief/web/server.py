@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import threading
+import subprocess
 import traceback
 import ctypes
 import socket
@@ -60,6 +61,7 @@ from mailbrief.web.greetings import greetings_page
 from mailbrief.features import greetings, snooze
 from mailbrief.features.replies import reply_details, reply_now
 from mailbrief.features import migrate, outbox, triage
+from mailbrief.features.diag import log_error, problem_report
 from mailbrief import view
 from mailbrief.money import accountant
 from mailbrief.util import money
@@ -92,6 +94,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        try:
+            self._get()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        except Exception:                      # a page that crashed: say so (instead of an empty window) and keep a log
+            log_error(f'GET {urlparse(self.path).path}')
+            try:
+                self._send(f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>תקלה</title>{FONT}<style>{STYLE}</style></head>'
+                           '<body><main><h1>😕 משהו השתבש בדף הזה</h1><p>התקלה נרשמה ביומן השגיאות. אפשר לחזור <a href="/today">להיום שלי</a>, '
+                           'ואם זה חוזר — ב<a href="/help#report">מדריך</a> יש כפתור „📋 דוח תקלה” שמכין קובץ לשליחה.</p></main></body></html>', code=500)
+            except Exception:
+                pass
+
+    def _get(self):
         if not self._host_ok():
             return self._send('forbidden', code=403)
         url = urlparse(self.path)
@@ -145,6 +161,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(today_page(q.get('msg', [''])[0], show_all=q.get('all', [''])[0] == '1'))
         if url.path == '/stats':
             return self._send(stats_page())
+        if url.path == '/notices':               # the licenses of what is inside MailBrief.exe
+            try:
+                with open(config.NOTICES_FILE, encoding='utf-8') as f:
+                    return self._send(f.read(), 'text/plain; charset=utf-8')
+            except OSError:
+                return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
         if url.path == '/help':
             return self._send(help_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/clients':
@@ -192,8 +214,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             msg = getattr(self, 'post_' + route.strip('/'))(form)
         except AttributeError:
-            return self._send('not found', code=404)
+            if not hasattr(self, 'post_' + route.strip('/')):
+                return self._send('not found', code=404)
+            log_error(f'POST {route}')
+            msg = 'שגיאה פנימית — נרשמה ביומן השגיאות'
         except Exception as exc:
+            log_error(f'POST {route}')
             msg = f'שגיאה: {exc}'
         if msg is None:                         # handler already answered
             return
@@ -586,6 +612,12 @@ class Handler(BaseHTTPRequestHandler):
     def post_health(self, f):
         self._send(health_page())
         return None
+
+    def post_problem_report(self, f):
+        path = problem_report()
+        subprocess.Popen(['explorer', '/select,', path])
+        return ('/help?msg=' + quote(f'✓ הדוח נשמר בשולחן העבודה: {os.path.basename(path)} — בלי תוכן מיילים, סיסמאות או מפתחות, '
+                                     'והכתובות מוסתרות. אפשר לצרף אותו לפנייה.') + '#report', None)
 
     def post_backup_now(self, f):
         path = make_backup('manual')

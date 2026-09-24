@@ -3,7 +3,8 @@ import datetime as dt
 
 from mailbrief.features.maintenance import health_checks, list_backups
 from mailbrief.util import e
-from mailbrief import __version__
+from mailbrief import __version__, config
+from mailbrief.profile import g
 from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
@@ -42,7 +43,22 @@ def help_page(msg=''):
 <button formaction="/health">🩺 בדיקת תקינות</button><button formaction="/backup_now">💾 גיבוי עכשיו</button></form>
 <h3>מה יש כאן</h3>{guide}
 <h3>💾 גיבויים</h3><p class="muted">כל הריצה השבועית שומרת גיבוי של הכללים, האוטומציות, התבניות, הקבלות וההיסטוריה (10 אחרונים). לפני כל שחזור נשמר גיבוי נוסף.</p>
-<div class="scroll"><table><tbody>{backups}</tbody></table></div>''')
+<div class="scroll"><table><tbody>{backups}</tbody></table></div>
+<h3 id="report">📋 משהו לא עובד?</h3>
+<p class="muted">„דוח תקלה” שומר בשולחן העבודה קובץ zip עם הגרסה, פרטי Windows, בדיקת התקינות ויומן השגיאות — <b>בלי</b> תוכן של מיילים,
+סיסמאות או מפתחות, והכתובות מוסתרות (a***@gmail.com). שום דבר לא נשלח לבד: {g('את מחליטה', 'אתה מחליט', 'מחליטים')} אם ולמי לשלוח אותו.</p>
+<form method="post" action="/problem_report"><input type="hidden" name="t" value="{TOKEN}"><button>📋 דוח תקלה</button></form>
+<h3 id="privacy">🔒 פרטיות</h3>
+<ul class="muted" style="line-height:1.8">
+<li>MailBrief רץ רק על המחשב {g('שלך', 'שלך', 'הזה')}. אין לו שרת, אין חשבון, ואין איסוף נתונים או סטטיסטיקות שימוש.</li>
+<li>המיילים נקראים ישירות מ-Google / Microsoft / ספק הדואר אל המחשב, והכול נשמר בתיקייה <span dir="ltr">{e(config.HERE)}</span>.</li>
+<li>הרשאות ההתחברות והסיסמאות נשמרות מוצפנות למשתמש Windows הזה. „הסרה” של תיבה, או ביטול הגישה ב-<a href="https://myaccount.google.com/permissions" target="_blank">myaccount.google.com/permissions</a>, מנתקים אותה.</li>
+<li>פניות החוצה: ספק הדואר, יומן ומשימות Google (אם חיברת), לוח שבתות וחגים ומזג אוויר (לפי עיר בלבד), שערי מטבע של בנק ישראל, גופני התצוגה (Google Fonts), בדיקת עדכונים ב-GitHub, וקישור „ביטול מנוי” של שולח — רק כשלוחצים עליו.</li>
+<li>אין AI ואין שליחת תוכן לשירות חיצוני כלשהו — כל המיון נעשה בכללים שרצים אצלך.</li></ul>
+<h3 id="about">ℹ️ אודות</h3>
+<p class="muted">MailBrief {__version__} · קוד פתוח ברישיון MIT ·
+<a href="https://github.com/ayal408/mailbrief" target="_blank">github.com/ayal408/mailbrief</a> ·
+<a href="/notices" target="_blank">רכיבי צד שלישי ורישיונות</a></p>''')
 
 
 def health_page():

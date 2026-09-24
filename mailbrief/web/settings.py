@@ -8,7 +8,7 @@ from mailbrief.features.google_apps import API_PAGES, gapps_account
 from mailbrief.features.maintenance import schedule_status
 from mailbrief.features.replies import reply_templates, vacation_active, VACATION_DEFAULT
 from mailbrief.mail.classify import TAG_PREFIX
-from mailbrief.mail.oauth import PROVIDERS
+from mailbrief.mail.oauth import PROVIDERS, bundled_client
 from mailbrief.profile import FORMS, g, GOALS, goals, profile
 from mailbrief.features.daily import daily_cfg
 from mailbrief.features import migrate
@@ -208,7 +208,8 @@ def settings_page(msg=''):
     oauth = load_json(config.SETTINGS_FILE, {})
     google_id = (oauth.get('google') or {}).get('client_id', '')
     ms_id = (oauth.get('microsoft') or {}).get('client_id', '')
-    google_ready = bool(google_id and (oauth.get('google') or {}).get('client_secret'))
+    built_in = bool(bundled_client('google')[0])
+    google_ready = bool(google_id and (oauth.get('google') or {}).get('client_secret')) or built_in
     ms_ready = bool(ms_id)
     cards = []
     for a in accounts:
@@ -255,7 +256,9 @@ button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--lin
 <form method="post" action="/connect"><input type="hidden" name="t" value="{TOKEN}">
 <button name="provider" value="google" {'' if google_ready else 'disabled title="קודם הגדרה חד-פעמית"'}>🔵 חיבור עם Google</button>
 <button name="provider" value="microsoft" {'' if ms_ready else 'disabled title="קודם הגדרה חד-פעמית"'}>🟦 חיבור עם Microsoft</button></form>
-<details {'' if google_ready else 'open'} style="margin-top:16px"><summary><b>⚙️ הגדרה חד-פעמית של Google</b> {'✓' if google_ready else '(נדרש פעם אחת, כ-5 דקות)'}</summary>
+{'<p class="muted" style="font-size:13px">אם Google מציג „Google hasn’t verified this app” — לוחצים <b>Advanced</b> ← <b>Go to MailBrief</b>. הגישה נשארת רק במחשב שלך: MailBrief לא שולח את המייל לשום שרת.</p>' if built_in and not google_id else ''}
+<details {'' if google_ready else 'open'} style="margin-top:16px"><summary><b>⚙️ {'מפתח Google משלך (לא חובה)' if built_in else 'הגדרה חד-פעמית של Google'}</b> {'' if built_in else '✓' if google_ready else '(נדרש פעם אחת, כ-5 דקות)'}</summary>
+{'<p class="muted" style="font-size:13px">ל-MailBrief יש מפתח מובנה, אז אין צורך בזה. רק למי שרוצה להשתמש בפרויקט Google Cloud משלו:</p>' if built_in else ''}
 <ol style="font-size:14px;padding-inline-start:20px">
 <li>ליצור פרויקט: <a href="https://console.cloud.google.com/projectcreate" target="_blank">console.cloud.google.com/projectcreate</a> — שם: MailBrief</li>
 <li>להיכנס ל-<a href="https://console.cloud.google.com/auth/overview" target="_blank">Google Auth Platform</a> ← Get started: שם האפליקציה MailBrief, המייל שלך, Audience = External</li>
@@ -264,7 +267,7 @@ button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--lin
 <li>בהתחברות Google יראה „האפליקציה לא אומתה” — זה תקין כי {g('את המפתחת', 'אתה המפתח', 'זו האפליקציה שלך')}: Advanced ← Go to MailBrief</li></ol>
 <form method="post" action="/oauth_config"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="provider" value="google">
 <label>Client ID</label><input type="text" name="client_id" dir="ltr" value="{e(google_id)}">
-<label>Client secret</label><input type="password" name="client_secret" dir="ltr" placeholder="{'••••••• (שמור)' if google_ready else ''}">
+<label>Client secret</label><input type="password" name="client_secret" dir="ltr" placeholder="{'••••••• (שמור)' if (oauth.get('google') or {}).get('client_secret') else ''}">
 <button>שמירה</button></form></details>
 <details style="margin-top:12px"><summary><b>⚙️ הגדרה חד-פעמית של Microsoft</b> (Outlook / Hotmail / Office 365) {'✓' if ms_ready else ''}</summary>
 <ol style="font-size:14px;padding-inline-start:20px">

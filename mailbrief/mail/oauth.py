@@ -33,10 +33,22 @@ PROVIDERS = {
 PENDING = {}    # state -> (provider, PKCE verifier, extra scope), lives only while the settings page is open
 
 
+def bundled_client(provider):
+    """The key built into MailBrief.exe (see RELEASING.md) — for Google only."""
+    if provider != 'google':
+        return '', ''
+    cfg = load_json(config.BUNDLED_GOOGLE, {})
+    cfg = cfg.get('installed', cfg)           # the file Google offers for download, or just {client_id, client_secret}
+    return cfg.get('client_id', ''), cfg.get('client_secret', '')
+
+
 def client_for(provider):
+    """The user's own key when set in the settings, otherwise the one built into the program."""
     cfg = load_json(config.SETTINGS_FILE, {}).get(provider) or {}
-    secret = decrypt(cfg['client_secret']) if cfg.get('client_secret') else ''
-    return cfg.get('client_id', ''), secret
+    if cfg.get('client_id'):
+        secret = decrypt(cfg['client_secret']) if cfg.get('client_secret') else ''
+        return cfg['client_id'], secret
+    return bundled_client(provider)
 
 
 def token_request(provider, fields):

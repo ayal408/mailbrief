@@ -39,3 +39,18 @@
 
 - **❌ בבדיקות** — הפירוט ב-Actions; מתקנים, `git push`, ומריצים שוב `release.ps1` עם אותו מספר (התגית לא נוצרה).
 - **❌ אחרי שהתגית נדחפה** — מתקנים ומשחררים את המספר הבא (`1.2.1`). לא מוחקים גרסה שכבר יצאה — winget ומשתמשים כבר מסתמכים עליה.
+
+## The built-in Google key
+
+MailBrief.exe can carry its own Google sign-in key, so users just click "Connect with Google" with no Google Cloud setup.
+The key is never in git: `google_client.json` is git-ignored, and release builds read it from the `GOOGLE_CLIENT_JSON`
+repository secret.
+
+1. In MailBrief -> Settings -> "Google one-time setup", save the Client ID and secret of the MailBrief project
+   (a **Desktop app** client; in Google Auth Platform -> Audience the app must be **In production**).
+2. Run `powershell -ExecutionPolicy Bypass -File set-google-key.ps1`: it writes `google_client.json` for local builds
+   and sets the GitHub secret. The key is not printed.
+3. The next `build.ps1` / release includes it ("Built-in Google key: yes" in the log).
+
+Until Google verifies the app, users see "Google hasn't verified this app" (Advanced -> Go to MailBrief), and at most
+100 users can connect. A user's own key in the settings always wins over the built-in one.

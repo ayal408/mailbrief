@@ -52,6 +52,7 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 [Files]
 Source: "..\dist\MailBrief.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\MailBrief"; Filename: "{app}\MailBrief.exe"; WorkingDir: "{app}"

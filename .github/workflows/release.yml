@@ -45,10 +45,19 @@ jobs:
 
       - name: Build MailBrief.exe
         shell: pwsh
+        env:
+          GOOGLE_CLIENT_JSON: ${{ secrets.GOOGLE_CLIENT_JSON }}     # the built-in Google sign-in key (set-google-key.ps1)
         run: |
-          # --specpath build makes relative paths resolve inside build\ - so the icon gets a full path
-          pyinstaller --onefile --noconsole --name MailBrief --icon (Resolve-Path assets/mailbrief.ico).Path `
+          # --specpath build makes relative paths resolve inside build\ - so the icon and data files get full paths
+          $data = @('--add-data', "$((Resolve-Path THIRD-PARTY-NOTICES.txt).Path);.")
+          if ($env:GOOGLE_CLIENT_JSON) {
+            [IO.File]::WriteAllText("$PWD\google_client.json", $env:GOOGLE_CLIENT_JSON)
+            $data += @('--add-data', "$PWD\google_client.json;.")
+            Write-Host 'Built-in Google key: yes'
+          } else { Write-Host '::warning::No GOOGLE_CLIENT_JSON secret - users will have to set up their own Google key' }
+          pyinstaller --onefile --noconsole --name MailBrief --icon (Resolve-Path assets/mailbrief.ico).Path @data `
             --paths . --distpath dist --workpath build --specpath build --noconfirm --log-level WARN main.py
+          Remove-Item google_client.json -ErrorAction SilentlyContinue
           if ($LASTEXITCODE) { throw 'PyInstaller failed' }
 
       - name: Build the installer (MailBrief-Setup.exe)

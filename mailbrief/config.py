@@ -25,6 +25,11 @@ MANAGED = (getattr(sys, 'frozen', False) and not os.path.isdir(os.path.join(APP_
            and (INSTALLED or '\\winget\\packages\\' in APP_DIR.lower()
                 or APP_DIR.lower().startswith(os.environ.get('ProgramFiles', 'C:\\Program Files').lower())))
 HERE = os.path.join(_documents(), 'MailBrief') if MANAGED else APP_DIR
+# Files that travel inside MailBrief.exe (PyInstaller unpacks them to _MEIPASS), or the project folder from source.
+RESOURCES = getattr(sys, '_MEIPASS', APP_DIR)
+# The program's own Google sign-in key, added at build time (never in git): users just click "Connect with Google".
+BUNDLED_GOOGLE = os.path.join(RESOURCES, 'google_client.json')
+NOTICES_FILE = os.path.join(RESOURCES, 'THIRD-PARTY-NOTICES.txt')
 DATA = os.path.join(HERE, 'data')
 REPORTS = os.path.join(DATA, 'reports')
 ACCOUNTS_FILE = os.path.join(DATA, 'accounts.json')

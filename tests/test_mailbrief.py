@@ -756,6 +756,62 @@ class Address(Isolated):
         self.assertNotIn('evil.example', hosts)
 
 
+class Diagnostics(Isolated):
+    def test_redact_hides_addresses_and_tokens(self):
+        from mailbrief.features.diag import redact
+        out = redact('failed for dana.levi@gmail.com token ya29.' + 'A' * 60)
+        self.assertIn('d***@gmail.com', out)
+        self.assertNotIn('dana.levi', out)
+        self.assertNotIn('A' * 40, out)
+
+    def test_problem_report_is_masked(self):
+        import logging
+        from mailbrief.features import diag
+        os.makedirs(diag.log_dir(), exist_ok=True)
+        with open(diag.log_file(), 'w', encoding='utf-8') as f:
+            f.write('ERROR POST /check\nRuntimeError: login failed for someone.private@walla.co.il\n')
+        with mock.patch('mailbrief.features.maintenance.health_checks', return_value=[('תיבה me@gmail.com', True, 'מחובר')]):
+            path = diag.problem_report(self.tmp)
+        with zipfile.ZipFile(path) as z:
+            names = z.namelist()
+            text = ''.join(z.read(n).decode('utf-8') for n in names)
+        self.assertIn('about.txt', names)
+        self.assertIn('logs/mailbrief.log', names)
+        self.assertNotIn('someone.private', text)
+        self.assertNotIn('me@gmail.com', text)
+        self.assertIn('s***@walla.co.il', text)
+        logging.shutdown()
+
+    def test_built_in_google_key(self):
+        from mailbrief.mail import oauth
+        self.assertEqual(oauth.client_for('google'), ('', ''))
+        storage.save_json(config.BUNDLED_GOOGLE, {'installed': {'client_id': 'built-in.apps.googleusercontent.com', 'client_secret': 's1'}})
+        self.assertEqual(oauth.client_for('google'), ('built-in.apps.googleusercontent.com', 's1'))
+        self.assertEqual(oauth.client_for('microsoft'), ('', ''))
+        storage.save_json(config.SETTINGS_FILE, {'google': {'client_id': 'own.apps.googleusercontent.com', 'client_secret': storage.encrypt('s2')}})
+        self.assertEqual(oauth.client_for('google'), ('own.apps.googleusercontent.com', 's2'))     # the user's own key wins
+        from mailbrief.web import settings
+        storage.save_json(config.SETTINGS_FILE, {})
+        storage.save_json(config.ACCOUNTS_FILE, [])
+        with mock.patch.object(net, 'cached_json', return_value=None):
+            html = settings.settings_page()
+        self.assertIn('מפתח Google משלך (לא חובה)', html)
+        self.assertNotIn('disabled title="קודם הגדרה חד-פעמית">🔵', html)
+
+    def test_help_has_report_privacy_about(self):
+        from mailbrief.web import help as wh
+        html = wh.help_page()
+        for part in ('/problem_report', 'id="privacy"', '/notices'):
+            self.assertIn(part, html)
+
+    def test_notices_ship_with_the_program(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, 'THIRD-PARTY-NOTICES.txt'), encoding='utf-8') as f:
+            text = f.read()
+        for name in ('pywebview', 'pythonnet', 'clr_loader', 'bottle', 'cffi', 'pycparser', 'typing_extensions', 'PyInstaller'):
+            self.assertIn(name, text)
+
+
 def message_b64(claims):
     import base64
     import json

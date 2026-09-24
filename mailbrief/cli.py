@@ -39,6 +39,8 @@ def set_weekly_pending(value):
 
 def main():
     """Entry point used by main.py / MailBrief.exe."""
+    from mailbrief.features.diag import setup_logging
+    setup_logging()
     if '--uninstall' in sys.argv:               # before removing the program: scheduled runs and Start menu
         from mailbrief.features.setup import remove
         remove()
