@@ -17,10 +17,11 @@ from mailbrief.money.ledger import find_duplicate, item_key, parse_amount, vendo
 from mailbrief.storage import load_json, save_json
 
 
-def save_snapshot(per_account, awaiting=None):
+def save_snapshot(per_account, awaiting=None, only=None):
     """per_account: [(email, items)] — what the "My day" page shows about mail, without a slow live scan.
     awaiting: conversations I started that got no answer (features.followups). None (the weekly run, which
-    doesn't look for them) keeps the ones from the last hourly check, and the invitations with them."""
+    doesn't look for them) keeps the ones from the last hourly check, and the invitations with them.
+    only: a run of one mailbox — the other mailboxes' rows stay as they were."""
     previous = load_json(config.SNAPSHOT_FILE, {})
     waiting, urgent, due, invites = [], [], [], {}
     for address, items in per_account:
@@ -37,18 +38,24 @@ def save_snapshot(per_account, awaiting=None):
             if it['unusual'] or 'urgent' in it['cats'] or 'phishing' in it['cats']:
                 why = '🎣 חשד לפישינג' if 'phishing' in it['cats'] else 'חריג באבטחה' if it['unusual'] else 'דחוף'
                 urgent.append(row | {'why': why, 'date': it['date']})
-    save_json(config.SNAPSHOT_FILE, {'at': dt.datetime.now().strftime('%d/%m %H:%M'),
+    data = {'at': dt.datetime.now().strftime('%d/%m %H:%M'),
                               'waiting': sorted(waiting, key=lambda w: -w['days']), 'urgent': urgent, 'due': due,
                               'invites': sorted(invites.values(), key=lambda i: i['start']) if awaiting is not None
                               else [i for i in previous.get('invites', []) if upcoming(i)],
                               'awaiting': sorted(awaiting, key=lambda w: -w['days']) if awaiting is not None
-                              else previous.get('awaiting', [])})
+                              else previous.get('awaiting', [])}
+    if only:
+        for key in ('waiting', 'urgent', 'due', 'invites', 'awaiting'):
+            others = [r for r in previous.get(key, []) if (r.get('account') or '').lower() != only.lower()]
+            fresh = [r for r in data[key] if (r.get('account') or '').lower() == only.lower()]
+            data[key] = sorted(others + fresh, key=lambda r: -r.get('days', 0)) if key in ('waiting', 'awaiting') else others + fresh
+    save_json(config.SNAPSHOT_FILE, data)
 
 
 def upcoming_payments(days=14):
     """Payment deadlines from the receipts ledger and from the latest check, soonest first."""
     today, seen, rows = dt.date.today(), set(), []
-    sources = [{'from': r['vendor'], 'subject': r['subject'], 'link': r.get('link', ''), 'due': r['due'],
+    sources = [{'from': r['vendor'], 'subject': r['subject'], 'link': r.get('link', ''), 'due': r['due'], 'account': r.get('account', ''),
                 'amount': f"{r['currency']}{r['amount']}" if r['amount'] is not None else ''}
                for r in load_json(config.LEDGER_FILE, {}).values() if r.get('due')] + load_json(config.SNAPSHOT_FILE, {}).get('due', [])
     for r in sources:
@@ -62,8 +69,9 @@ def upcoming_payments(days=14):
     return sorted(rows, key=lambda r: r['due'])
 
 
-def check_alerts():
-    """Quick look at the last 2 days; pop a Windows notification only for new urgent / unusual / flagged mail."""
+def check_alerts(only=None):
+    """Quick look at the last 2 days; pop a Windows notification only for new urgent / unusual / flagged mail.
+    only: check just this mailbox (the others, and the daily / monthly jobs, wait for the regular hourly check)."""
     accounts = load_json(config.ACCOUNTS_FILE, [])
     state = load_json(config.STATE_FILE, {})
     rules = load_json(config.RULES_FILE, [])
@@ -74,7 +82,7 @@ def check_alerts():
     alerts = []                                  # (reason, item)
     snapshot, awaiting = [], []
     budget = [config.MAX_WORKFLOW_RUNS]                 # shared across mailboxes: at most this many automation runs per check
-    for acc in accounts:
+    for acc in [a for a in accounts if not only or a['email'].lower() == only.lower()]:
         try:
             m = imap.connect(acc)
             try:
@@ -129,13 +137,24 @@ def check_alerts():
                     seen.add(key)
                     alerts.append((text, it))
     if snapshot:
-        save_snapshot(snapshot, awaiting)
-    run_schedule_workflows(state, accounts)
+        save_snapshot(snapshot, awaiting, only=only)
+    if not only:
+        run_schedule_workflows(state, accounts)
     from mailbrief.features.daily import maybe_send_daily        # (imports this module)
-    try:
-        maybe_send_daily(state, accounts)
-    except Exception:
-        pass                                     # try again next hour
+    from mailbrief.features.outbox import send_due
+    from mailbrief.money.accountant import maybe_send_monthly, price_change_text, price_changes
+    from mailbrief.features.snooze import wake_due
+    jobs = (lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due)
+    for job in (jobs if not only else ()):
+        try:
+            job()
+        except Exception:
+            pass                                 # try again next hour
+    for change in price_changes(ledger):
+        key = f"price|{change['key']}|{change['date']}"
+        if key not in seen:
+            seen.add(key)
+            alerts.append(('💳 התייקרות', {'subject': price_change_text(change), 'sender_name': change['vendor'], 'link': ''}))
     state['_alerted'] = sorted(seen)[-3000:]
     save_json(config.STATE_FILE, state)
     save_json(config.ACCOUNTS_FILE, accounts)          # keep rotated refresh tokens

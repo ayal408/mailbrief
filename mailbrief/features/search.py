@@ -19,8 +19,11 @@ from mailbrief.util import safe_name, write_once
 
 
 def search_mail(query):
-    accounts, found, errors = load_json(config.ACCOUNTS_FILE, []), [], []
+    from mailbrief.view import current_account
+    accounts, found, errors, box = load_json(config.ACCOUNTS_FILE, []), [], [], current_account()
     for acc in accounts:
+        if box and acc['email'].lower() != box.lower():
+            continue
         try:
             m = imap.connect(acc)
             try:

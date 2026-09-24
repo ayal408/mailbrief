@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -34,13 +35,14 @@ def latest_release():
     if not data or not data.get('tag_name'):
         _FAILED[0] = time.time()
         return None
-    asset = next((a for a in data.get('assets', []) if a.get('name', '').lower() == 'mailbrief.exe'), None)
+    assets = {a.get('name', '').lower(): a for a in data.get('assets', [])}
+    asset = assets.get('mailbrief-setup.exe') if config.INSTALLED else assets.get('mailbrief.exe')
     if not asset:
         return None
     digest = asset.get('digest') or ''
     return {'version': data['tag_name'].lstrip('vV'), 'url': asset['browser_download_url'], 'size': asset.get('size', 0),
             'sha256': digest.split(':', 1)[1] if digest.startswith('sha256:') else '', 'notes': (data.get('body') or '')[:1500],
-            'page': data.get('html_url', f'https://github.com/{REPO}/releases/latest')}
+            'page': data.get('html_url', f'https://github.com/{REPO}/releases/latest'), 'setup': config.INSTALLED}
 
 
 def update_available():
@@ -49,8 +51,8 @@ def update_available():
 
 
 def can_self_update():
-    """A winget install is updated by winget (`winget upgrade mailbrief`), not by swapping the file."""
-    return bool(getattr(sys, 'frozen', False)) and not config.MANAGED
+    """A winget install is updated by winget (`winget upgrade mailbrief`); an installed copy by its new setup; a loose EXE by swapping it."""
+    return bool(getattr(sys, 'frozen', False)) and (config.INSTALLED or not config.MANAGED)
 
 
 def download(rel, dest):
@@ -75,6 +77,11 @@ def start_update(rel):
     """Download next to the program and start it with --replace; the caller then closes this copy."""
     if not can_self_update():
         raise RuntimeError('MailBrief רץ מקוד המקור — לעדכון: git pull')
+    if rel.get('setup'):
+        setup = os.path.join(tempfile.gettempdir(), f'MailBrief-Setup-{rel["version"]}.exe')
+        download(rel, setup)
+        subprocess.Popen([setup, '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/RELAUNCH=1'], creationflags=0x00000008 | 0x00000200)
+        return
     new = os.path.join(config.APP_DIR, NEW_EXE)
     download(rel, new)
     subprocess.Popen([new, '--replace', sys.executable], cwd=config.APP_DIR, creationflags=0x00000008 | 0x00000200)   # detached

@@ -1,3 +1,4 @@
-# Build and lint tools only — MailBrief itself uses the Python standard library.
-pyinstaller>=6.10
-pyflakes>=3.2
+# Building and checking MailBrief. Pinned, so a release built by GitHub Actions matches one built locally.
+-r requirements.txt
+pyinstaller==6.22.3
+pyflakes==4.0.0

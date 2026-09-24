@@ -15,6 +15,7 @@ from mailbrief.mail.accounts import friendly_error
 from mailbrief.mail.classify import classify, demote_automated
 from mailbrief.mail.imap import fetch_recent, is_gmail, mark_unanswered, special_folder
 from mailbrief.mail.labels import apply_tags
+from mailbrief.money.pdftext import amount_from_attachments
 from mailbrief.money.ledger import BOI_CODES, find_subscriptions, item_key, save_attachments, update_ledger
 from mailbrief.storage import load_json, save_json
 
@@ -46,6 +47,8 @@ def scan_account(acc, state, rules=(), days=config.DAYS, receipts_only=False):
                         it['files'] = save_attachments(msg, it)
                     except OSError:
                         it['files'] = []
+                    if not it.get('amount'):             # the total only inside the attached PDF
+                        it['amount'] = amount_from_attachments(msg)
                 result['items'].append(it)
                 if not receipts_only:
                     result.setdefault('_keep', []).append((it, msg))   # for the local archive, after demote_automated
@@ -65,11 +68,13 @@ def scan_account(acc, state, rules=(), days=config.DAYS, receipts_only=False):
     return result
 
 
-def run_all(open_report=True):
+def run_all(open_report=True, only=None):
+    """The brief for every mailbox — or, with only=address, for that one mailbox (the others' data stays as it was)."""
     accounts = load_json(config.ACCOUNTS_FILE, [])
     state = load_json(config.STATE_FILE, {})
     rules = load_json(config.RULES_FILE, [])
-    results = [scan_account(a, state, rules) for a in accounts]
+    targets = [a for a in accounts if not only or a['email'].lower() == only.lower()]
+    results = [scan_account(a, state, rules) for a in targets]
     save_json(config.STATE_FILE, state)
     for res in results:
         try:
@@ -88,9 +93,9 @@ def run_all(open_report=True):
                 if row['currency'] in BOI_CODES and row.get('amount_ils') is not None:
                     it['amount'] = f"{it.get('amount', '')} (≈₪{row['amount_ils']:,.2f})"
     update_history(results)
-    save_snapshot([(r['email'], r['items']) for r in results if not r['error']])
+    save_snapshot([(r['email'], r['items']) for r in results if not r['error']], only=only)
     path = write_report(results, find_subscriptions(ledger))
-    for acc, res in zip(accounts, results):
+    for acc, res in zip(targets, results):
         acc['last'] = {'at': dt.datetime.now().strftime('%d/%m %H:%M'), 'error': res['error'],
                        'count': len(res['items']), 'tagged': res['tagged']}
     save_json(config.ACCOUNTS_FILE, accounts)

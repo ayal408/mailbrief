@@ -1,0 +1,10 @@
+# What MailBrief.exe needs at run time. Everything else is the Python standard library.
+# pywebview: the program's own window (Windows' built-in WebView2 engine). Without it MailBrief falls back to a browser window.
+pywebview==6.2.1
+pythonnet==3.1.0
+clr_loader==0.3.1
+proxy_tools==0.1.0
+bottle==0.13.4
+cffi==2.1.1
+pycparser==3.0
+typing_extensions==4.16.0

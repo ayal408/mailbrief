@@ -61,6 +61,7 @@ HTML = """
     '/check': ['בודקת מיילים חדשים…', ''],
     '/build_history': ['בונה היסטוריה…', 'עוברת על 30 הימים האחרונים'],
     '/wf_test': ['בודקת מה האוטומציה הייתה תופסת…', 'עוברת על השבוע האחרון'],
+    '/greetings': ['מתזמנת את הברכות…', ''],
     '/first_look': ['עוברת על 30 הימים האחרונים…', 'ניוזלטרים, מנויים ומי מחכה לתשובה — דקה-שתיים']
   };
   var LONG = ['עדיין עובדת על זה ☕', 'כמעט שם…', 'מיילים רבים, סבלנות קטנה 🙂'];
@@ -133,6 +134,7 @@ HTML = """
     var a = ev.target.closest && ev.target.closest('a[href]');
     if (!a || ev.defaultPrevented || ev.button || ev.ctrlKey || ev.metaKey || ev.shiftKey || a.target === '_blank' || a.hasAttribute('download')) return;
     var u = local(a.href);
+    if (!u && /^https?:/.test(a.href)) { a.target = '_blank'; return; }      // another site: the user's own browser
     if (!u || (u.pathname === location.pathname && u.search === location.search && u.hash)) return;
     if (swappable(u)) { ev.preventDefault(); navigate(u.href, true, a.closest('nav.tabs') || a.classList.contains('gift') ? a : null); return; }
     busy(a); progress(true); show(u.pathname);
@@ -186,10 +188,11 @@ HTML = """
   window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') { hide(); close(); } });
 
   var ITEMS = [
-    ['☀️ היום שלי', '/today'], ['🔎 30 הימים שלי במבט אחד', '/insights'], ['⚙️ הגדרות ותיבות', '/'], ['📊 לוח בקרה', '/dashboard'], ['📈 המייל במספרים', '/stats'],
-    ['⚡ אוטומציות', '/automations'], ['👥 לקוחות', '/clients'], ['📚 רשימת קריאה', '/reading'], ['🔍 חיפוש', '/search'],
+    ['☀️ היום שלי', '/today'], ['⚡ מיון מהיר', '/triage'], ['✉️ מייל מתוזמן', '/compose'], ['🗓️ ברכות חג ללקוחות', '/greetings'], ['🔎 30 הימים שלי במבט אחד', '/insights'],
+    ['🧾 לרואה החשבון', '/#accountant'], ['🔕 שעות שקטות', '/#quiet'], ['📦 העברת נתונים', '/#migrate'], ['⚙️ הגדרות ותיבות', '/'], ['📊 לוח בקרה', '/dashboard'], ['📈 המייל במספרים', '/stats'],
+    ['⚡ אוטומציות', '/automations'], ['👥 לקוחות', '/clients'], ['📰 ניוזלטרים ורשימת קריאה', '/reading'], ['🔍 חיפוש', '/search'],
     ['❓ מדריך ובדיקת תקינות', '/help'], ['📅 חיבור יומן ומשימות', '/#gapps'], ['🏖️ מצב חופשה', '/#vacation'],
-    ['📝 תבניות תשובה', '/#templates'], ['🏷️ הכללים שלי', '/#rules'], ['📰 ניוזלטרים וביטול מנויים', '/#news'],
+    ['📝 תבניות תשובה', '/#templates'], ['🏷️ הכללים שלי', '/#rules'], ['✂️ ביטול מנויים', '/reading'],
     ['✉️ סיכום יומי במייל', '/#daily'], ['👤 הפרופיל שלי', '/#profile'],
     ['📅 Google Calendar', 'https://calendar.google.com/'], ['✅ Google Tasks', 'https://tasks.google.com/']
   ];
@@ -277,6 +280,8 @@ background:linear-gradient(90deg,var(--accent),var(--accent-2));font-variant-num
 .focus .row button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 textarea.notes{width:100%;min-height:150px;font:inherit;font-size:15px;line-height:1.6;padding:10px 12px;border-radius:12px;border:1px solid var(--line);
 background:color-mix(in srgb,#fde68a 16%,var(--surface));color:var(--ink);resize:vertical}
+ul.sortable{margin:0;padding-inline-start:18px;max-height:340px;overflow:auto}
+ul.sortable li{transition:background-color .3s}ul.sortable li.moved{background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .saved{font-size:12px;color:var(--good);opacity:0;transition:opacity .3s}.saved.on{opacity:1}
 @media (prefers-reduced-motion:reduce){.pop,.floaty,.fchip.on,.ripple{animation:none!important}}
 """
@@ -287,7 +292,26 @@ HTML += """
 (function(){
   var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  function sortLists(){
+    Array.prototype.forEach.call(document.querySelectorAll('select.mb-sort'), function(sel){
+      var list = document.getElementById(sel.dataset.for); if (!list) return;
+      function apply(){
+        var rows = Array.prototype.slice.call(list.querySelectorAll('li[data-days]')), how = sel.value;
+        rows.sort(function(a, b){
+          if (how === 'new') return (+a.dataset.days) - (+b.dataset.days);
+          if (how === 'name') return a.dataset.name.localeCompare(b.dataset.name, 'he');
+          if (how === 'account') return a.dataset.account.localeCompare(b.dataset.account) || (+b.dataset.days) - (+a.dataset.days);
+          return (+b.dataset.days) - (+a.dataset.days);
+        });
+        rows.forEach(function(r){ list.appendChild(r); r.classList.add('moved'); setTimeout(function(){ r.classList.remove('moved'); }, 400); });
+      }
+      try { sel.value = localStorage.getItem('mb-sort-' + sel.dataset.for) || 'old'; } catch(e){}
+      if (sel.value !== 'old') apply();
+      sel.onchange = function(){ try { localStorage.setItem('mb-sort-' + sel.dataset.for, sel.value); } catch(e){} apply(); };
+    });
+  }
   function fx(){
+  sortLists();
   // cards and rows rise one after another
   if (!still) Array.prototype.forEach.call(document.querySelectorAll('main .box, main .kpi, main > .item, main section > .item, main .scroll'), function(el, i){
     el.style.animationDelay = Math.min(i * 45, 700) + 'ms'; el.classList.add('pop');

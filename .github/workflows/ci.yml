@@ -1,0 +1,37 @@
+# Every push and pull request: lint + the offline test suite on Windows (DPAPI, paths and toasts are Windows-only).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Tools
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Lint (pyflakes)
+        run: python -m pyflakes main.py mailbrief tests
+
+      - name: Tests
+        run: python -m unittest discover -s tests -v

@@ -11,10 +11,10 @@
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![No AI](https://img.shields.io/badge/AI-none-7c3aed)
-![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-16a34a)
+![Window](https://img.shields.io/badge/window-WebView2-16a34a)
 ![License](https://img.shields.io/badge/license-MIT-f97316)
 
-`winget install mailbrief` · [⬇️ הורדה (MailBrief.exe)](https://github.com/ayal408/mailbrief/releases/latest) · [English](#english)
+[⬇️ הורדה — MailBrief-Setup.exe](https://github.com/ayal408/mailbrief/releases/latest) · `winget install mailbrief` · [English](#english)
 
 </div>
 
@@ -65,7 +65,11 @@ MailBrief רץ על המחשב שלך ומתחבר לתיבות הדואר של�
 
 ## התקנה
 
-**הכי פשוט — winget** (מובנה ב-Windows 10/11):
+**הכי פשוט — תוכנת התקנה:** להוריד את `MailBrief-Setup.exe` מ-[Releases](https://github.com/ayal408/mailbrief/releases/latest) ולהריץ.
+בלי הרשאות מנהל, קיצור בתפריט התחל (ואם רוצים — בשולחן העבודה), והסרה רגילה מ„הגדרות ← אפליקציות”.
+MailBrief נפתח בחלון משלו (מנוע WebView2 של Windows), וסגירת החלון משאירה אותו ליד השעון — „יציאה” מהתפריט של הסמל סוגרת לגמרי.
+
+**או winget** (מובנה ב-Windows 10/11):
 
 ```powershell
 winget install mailbrief     # התקנה
@@ -75,14 +79,15 @@ winget upgrade mailbrief     # עדכון
 
 הנתונים נשמרים ב-`מסמכים\MailBrief` ונשארים גם אחרי עדכון או הסרה.
 
-**או ידנית:** להוריד את `MailBrief.exe` מ-[Releases](https://github.com/ayal408/mailbrief/releases/latest), לשים בתיקייה משלו ולהפעיל
-(כאן הנתונים נשמרים ליד הקובץ, ובתוכנה עצמה יופיע כפתור „✨ עדכון עכשיו” כשיש גרסה חדשה).
+**או נייד, בלי התקנה:** `MailBrief.exe` מ-[Releases](https://github.com/ayal408/mailbrief/releases/latest), בתיקייה משלו — כאן הנתונים נשמרים ליד הקובץ.
+
+בכל הדרכים מופיע בתוכנה כפתור „✨ עדכון עכשיו” כשיש גרסה חדשה (ב-winget: `winget upgrade mailbrief`).
 
 בפעם הראשונה: שם ולשון פנייה, מה חשוב לך — ואז „חיבור עם Google” (הגדרה חד-פעמית של כ-5 דקות, ההוראות בדף עצמו).
 התזמונים (תדריך שבועי, בדיקה כל שעה, „היום שלי” בכניסה) וקיצור בתפריט התחל נרשמים לבד.
 
-> בהורדה ידנית Windows עשוי להציג אזהרת SmartScreen כי הקובץ לא חתום דיגיטלית: „מידע נוסף” ← „הפעל בכל זאת”.
-> לפני מחיקת התוכנה אפשר להריץ `MailBrief.exe --uninstall` כדי להסיר את התזמונים.
+> Windows עשוי להציג אזהרת SmartScreen כי הקובץ לא חתום דיגיטלית: „מידע נוסף” ← „הפעל בכל זאת”.
+> בהסרה (מ„אפליקציות”) התזמונים נמחקים, ונשאלת שאלה אם למחוק גם את הנתונים. בגרסה הניידת: `MailBrief.exe --uninstall` לפני מחיקה.
 
 ## הרצה מקוד המקור
 
@@ -94,7 +99,8 @@ python -m unittest discover -s tests -v
 .\build.ps1               # בניית MailBrief.exe
 ```
 
-אין תלויות בזמן ריצה — ספריית התקן של Python בלבד. לבנייה: `requirements-dev.txt`.
+הלוגיקה כולה בספריית התקן של Python; החלון עצמו — `pywebview` (`requirements.txt`). בלעדיו MailBrief נפתח בחלון דפדפן.
+לבנייה: `requirements-dev.txt`, ולתוכנת ההתקנה [Inno Setup](https://jrsoftware.org/isinfo.php) (`installer/mailbrief.iss`). שחרור גרסה: [RELEASING.md](RELEASING.md).
 
 ## מבנה הקוד
 
@@ -124,7 +130,7 @@ receipts saved to monthly Excel workbooks (with Bank of Israel exchange rates an
 reply templates, vacation replies, a searchable offline archive, and client cards. Automations pause automatically on Shabbat and
 Jewish holidays, based on your city.
 
-- Standard library only at runtime; OAuth sign-in; secrets encrypted with Windows DPAPI; the web UI listens on `127.0.0.1` only.
-- Install: `winget install mailbrief` or download from [Releases](https://github.com/ayal408/mailbrief/releases/latest) · Run from source: `python main.py` · Tests: `python -m unittest discover -s tests`
+- Its own window (WebView2 via pywebview); logic uses the standard library only; OAuth sign-in; secrets encrypted with Windows DPAPI; the local server listens on `127.0.0.1` only.
+- Install: `MailBrief-Setup.exe` (per-user, no admin) or `winget install mailbrief` from [Releases](https://github.com/ayal408/mailbrief/releases/latest) · Run from source: `python main.py` · Tests: `python -m unittest discover -s tests`
 
 MIT License · Made by [Ayal](https://github.com/ayal408).

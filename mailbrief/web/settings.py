@@ -11,6 +11,10 @@ from mailbrief.mail.classify import TAG_PREFIX
 from mailbrief.mail.oauth import PROVIDERS
 from mailbrief.profile import FORMS, g, GOALS, goals, profile
 from mailbrief.features.daily import daily_cfg
+from mailbrief.features import migrate
+from mailbrief import view
+from mailbrief.money.accountant import accountant_cfg, previous_month
+import datetime as dt
 from mailbrief.storage import load_json
 from mailbrief.util import e
 from mailbrief.web import extras
@@ -67,17 +71,6 @@ def extra_sections():
         f'<tr><td>{e(f["at"])}</td><td dir="auto">{e(f["subject"][:60])}</td><td dir="ltr">→ {e(f["to"])}</td><td>'
         + ('<span style="color:var(--good)">✓ נשלח</span>' if f.get('ok') else f'<span style="color:var(--bad)">⚠️ {e(f.get("error", ""))}</span>')
         + '</td></tr>' for f in reversed(load_json(config.FORWARD_LOG, [])[-10:])) or '<tr><td class="muted">עוד לא הועבר כלום</td></tr>'
-
-    unsubs = load_json(config.UNSUBS_FILE, {})
-    news = ''.join(
-        f'<tr><td dir="auto">{e(u.get("name") or u["sender"])}<div class="muted" dir="ltr" style="font-size:12px;text-align:right">{e(u["sender"])} → {e(u["account"])}</div></td>'
-        f'<td>{u.get("count", 0)}</td><td>'
-        + (f'<span style="color:var(--good)">✓ בוטל {e(u["done"])}</span>' if u.get('done') else
-           f'<form method="post" action="/unsubscribe" style="margin:0"><input type="hidden" name="t" value="{TOKEN}">'
-           f'<input type="hidden" name="id" value="{k}"><button style="margin:0">ביטול מנוי{" ⚡" if u.get("one_click") else ""}</button></form>')
-        + '</td></tr>'
-        for k, u in sorted(unsubs.items(), key=lambda kv: (bool(kv[1].get('done')), -kv[1].get('count', 0)))[:40]
-    ) or '<tr><td colspan="3" class="muted">יופיעו כאן אחרי הריצה הראשונה</td></tr>'
 
     vac = load_json(config.SETTINGS_FILE, {}).get('vacation') or {}
     active = vacation_active()
@@ -137,7 +130,48 @@ def extra_sections():
 <button name="action" value="on" style="margin:0">{'שמירה' if daily['on'] else '✅ הפעלה'}</button>
 {'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if daily['on'] else ''}
 <button formaction="/daily_test" class="ghost" style="margin:0">📨 לשלוח עכשיו לניסיון</button></form>'''
-    return profile_html + daily_html + gapps_section() + projects_html + vacation_html + templates_html + f'''
+    acct = accountant_cfg()
+    acct_accounts = ''.join(f'<option{" selected" if a["email"] == acct["account"] else ""}>{e(a["email"])}</option>' for a in accounts)
+    this_year = dt.date.today().year
+    accountant_html = f'''
+<h2 id="accountant" style="direction:rtl;text-align:right;scroll-margin-top:80px">🧾 לרואה החשבון</h2>
+<p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if acct['on'] else ''}בכל חודש, ביום שבוחרים: קובץ ZIP עם האקסל של החודש הקודם
+ועם כל הקבלות והחשבוניות — נשלח לרו״ח מהתיבה שלך (לא בשבת ובחג). אפשר גם להכין ידנית.</p>
+<form method="post" action="/accountant" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="hidden" name="t" value="{TOKEN}">
+<input type="email" name="email" value="{e(acct['email'])}" placeholder="cpa@example.co.il" dir="ltr" style="flex:1;min-width:200px;{field}">
+<input type="text" name="name" value="{e(acct['name'])}" placeholder="שם הרו״ח (לפתיחת המייל)" style="min-width:160px;{field}">
+<span>ב-</span><input type="number" name="day" min="1" max="28" value="{acct['day']}" style="width:70px;{field}"><span>לחודש, מ-</span>
+<select name="account" style="{field}">{acct_accounts or '<option value="">(אין תיבה)</option>'}</select>
+<button name="action" value="on" style="margin:0">{'שמירה' if acct['on'] else '✅ הפעלה'}</button>
+{'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if acct['on'] else ''}</form>
+<form method="post" action="/accountant_package" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"><input type="hidden" name="t" value="{TOKEN}">
+<input type="month" name="month" value="{previous_month()}" style="{field}">
+<button name="action" value="zip" class="ghost" style="margin:0">📦 להכין חבילה</button>
+<button name="action" value="send" class="ghost" style="margin:0">📨 לשלוח עכשיו לרו״ח</button></form>
+<form method="post" action="/yearly" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"><input type="hidden" name="t" value="{TOKEN}">
+<span class="muted">סיכום שנתי לפי סיווג וספק (לדוח השנתי):</span>
+<select name="year" style="{field}">{''.join(f'<option>{y}</option>' for y in range(this_year, this_year - 4, -1))}</select>
+<button class="ghost" style="margin:0">📊 להכין סיכום שנתי</button></form>'''
+    quiet = load_json(config.SETTINGS_FILE, {}).get('quiet') or {}
+    hours = lambda chosen: ''.join(f'<option value="{h}"{" selected" if h == chosen else ""}>{h:02d}:00</option>' for h in range(24))
+    quiet_html = f'''
+<h2 id="quiet" style="direction:rtl;text-align:right;scroll-margin-top:80px">🔕 שעות שקטות</h2>
+<p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if quiet.get('on') else ''}בשעות האלה לא קופצות התראות. שום דבר לא הולך לאיבוד — הכול מחכה ב„היום שלי”.</p>
+<form method="post" action="/quiet" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="hidden" name="t" value="{TOKEN}">
+<span>מ-</span><select name="from" style="{field}">{hours(int(quiet.get('from', 22)))}</select>
+<span>עד</span><select name="to" style="{field}">{hours(int(quiet.get('to', 7)))}</select>
+<button name="action" value="on" style="margin:0">{'שמירה' if quiet.get('on') else '✅ הפעלה'}</button>
+{'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if quiet.get('on') else ''}</form>'''
+    prev = migrate.previous_copy()
+    prev_info = migrate.summary(prev) if prev else None
+    migrate_html = f'''
+<h2 id="migrate" style="direction:rtl;text-align:right;scroll-margin-top:80px">📦 העברת נתונים מעותק קודם</h2>
+<p class="muted">עוברים למחשב חדש או לגרסה המותקנת? מעתיקים לכאן את התיבות, הקבלות, הארכיון, הכללים וההגדרות. מה שיש כאן עכשיו נשמר קודם בגיבוי.</p>
+{f'<div class="item urgent">נמצא MailBrief קודם ב-<span dir="ltr">{e(prev)}</span> — {len(prev_info["accounts"])} תיבות, {prev_info["receipts"]} קבלות.</div>' if prev else ''}
+<form method="post" action="/migrate" style="display:flex;gap:8px;flex-wrap:wrap"><input type="hidden" name="t" value="{TOKEN}">
+<input type="text" name="folder" dir="ltr" value="{e(prev)}" placeholder="C:\\MailBrief" style="flex:1;min-width:240px;{field}">
+<button style="margin:0">📦 להעביר לכאן</button></form>'''
+    return profile_html + daily_html + accountant_html + quiet_html + gapps_section() + projects_html + vacation_html + templates_html + migrate_html + f'''
 <h2 id="rules" style="direction:rtl;text-align:right;scroll-margin-top:80px">🏷️ הכללים שלי</h2>
 <p class="muted">כל מייל שמתאים לכלל מקבל תווית משלו (תחת „{TAG_PREFIX}”) ומקבץ משלו בדוח. 🔔 = גם התראה ב-Windows.</p>
 <div class="scroll"><table><tbody>{rows}</tbody></table></div>
@@ -156,8 +190,7 @@ def extra_sections():
 <button class="ghost">✉️ בדיקת שליחה (מייל ניסיון לעצמך)</button></form>
 
 <h2 id="news" style="direction:rtl;text-align:right;scroll-margin-top:80px">📰 ניוזלטרים</h2>
-<p class="muted">ביטול דרך הקישור הרשמי של השולח. ⚡ = ביטול מיידי מכאן; בלי ⚡ נפתח דף הביטול של השולח לאישור.</p>
-<div class="scroll"><table><thead><tr><th>שולח</th><th>הודעות</th><th></th></tr></thead><tbody>{news}</tbody></table></div>
+<p class="muted">ביטול מנויים, רשימת קריאה וארכוב — עברו ללשונית משלהם: <a href="/reading">📰 ניוזלטרים ←</a></p>
 
 <h2 style="direction:rtl;text-align:right">🔔 התראות Windows</h2>
 <p class="muted">בדיקה קצרה כל שעה בין 7:00 ל-23:00 (לא בשבת ובחג). קופצת התראה רק על מייל דחוף, אירוע אבטחה חריג או כלל עם 🔔 — ורק פעם אחת לכל מייל.
@@ -186,7 +219,10 @@ def settings_page(msg=''):
           <div class="m" dir="ltr" style="text-align:right">{e(PROVIDERS[a["auth"]]["name"] + " sign-in" if a.get("auth") in PROVIDERS else a["host"])} · {"תיוג פעיל" if a.get("tag", True) else "בלי תיוג"}</div>
           <div class="s">{status}</div>
           <form method="post" style="display:inline"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="id" value="{e(a["id"])}">
-          <button formaction="/test">בדיקת חיבור</button> <button formaction="/remove" class="ghost">הסרה</button></form></div>''')
+          <button formaction="/test">בדיקת חיבור</button> <button formaction="/remove" class="ghost">הסרה</button></form>
+          <form method="post" style="display:inline"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="only" value="{e(a["email"])}">
+          <button formaction="/check" class="ghost" title="בדיקה מהירה של היומיים האחרונים — רק לתיבה הזו">🔄 בדיקה</button>
+          <button formaction="/run" class="ghost" title="תדריך מלא לשבוע — רק לתיבה הזו">▶ תדריך לתיבה הזו</button></form></div>''')
     reports = sorted((f for f in os.listdir(config.REPORTS) if f.endswith('.html')), reverse=True)[:8] if os.path.isdir(config.REPORTS) else []
     rep = ''.join(f'<li><a href="/reports/{quote(f)}" target="_blank">{e(f[6:-5])}</a></li>' for f in reports) or '<li class="muted">אין עדיין</li>'
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
@@ -199,6 +235,7 @@ button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--lin
 </style></head><body>{top_bar('/')}<main>
 <h1>📬 <span class="g">תיבות והגדרות</span></h1><p class="muted">תדריך מייל שבועי שרץ מקומית על המחשב שלך, לכל תיבת דואר, בלי AI. התדריך השבועי: {e(schedule_status())}<br>{e(holy_status())}</p>{note}
 {update_banner()}
+{'<div class="item urgent">📦 נמצאו נתונים של MailBrief קודם — <a href="#migrate">להעביר אותם לכאן</a></div>' if migrate.previous_copy() else ''}
 <form method="post" action="/pause" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0"><input type="hidden" name="t" value="{TOKEN}">
 {f'<b style="color:var(--warn)">⏸️ מושהה עד {paused_until():%d/%m %H:%M}</b><button name="mode" value="off" style="margin:0">▶️ ביטול השהיה</button>' if paused_until() else
  '<span class="muted">⏸️ השהיית אוטומציות והתראות:</span><button name="mode" value="2h" class="ghost" style="margin:0">לשעתיים</button><button name="mode" value="tomorrow" class="ghost" style="margin:0">עד מחר בבוקר</button>'}</form>
@@ -211,7 +248,7 @@ button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--lin
 <button formaction="/import_receipts" class="ghost" style="margin:0" title="סורק 90 ימים אחורה, שומר קבלות ובונה את האקסל החודשי">⬇️ ייבוא קבלות מ-90 הימים האחרונים</button></form>
 <div class="grid"><section>
 <h3>התיבות שלי</h3>{"".join(cards) or '<p class="muted">עוד לא הוספת תיבה.</p>'}
-<form method="post" action="/run"><input type="hidden" name="t" value="{TOKEN}"><button>▶ הרצה עכשיו</button></form>
+<form method="post" action="/run"><input type="hidden" name="t" value="{TOKEN}"><button>▶ הרצה עכשיו{' — ' + e(view.current_account()) if view.current_account() else (' — כל התיבות' if len(accounts) > 1 else '')}</button></form>
 <h3>דוחות אחרונים</h3><ul>{rep}</ul></section>
 <section class="box"><h3 style="margin-top:0">➕ חיבור תיבה</h3>
 <p class="muted" style="margin-top:0">כמו „התחברות עם Google” באתרים: נפתח חלון התחברות, מאשרים — וזהו. בלי סיסמאות.</p>

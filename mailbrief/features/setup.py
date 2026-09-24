@@ -33,8 +33,12 @@ $s.TargetPath = $exe; $s.WorkingDirectory = $dir; $s.IconLocation = "$exe,0"; $s
 
 
 REMOVE_PS = r'''
-foreach ($n in @($env:MB_WEEKLY, $env:MB_ALERTS, 'MailBrief Today')) { Unregister-ScheduledTask -TaskName $n -Confirm:$false -ErrorAction SilentlyContinue }
-Remove-Item (Join-Path ([Environment]::GetFolderPath('Programs')) 'MailBrief.lnk') -ErrorAction SilentlyContinue
+foreach ($n in @($env:MB_WEEKLY, $env:MB_ALERTS, 'MailBrief Today')) {
+  $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+  if ($t -and (-not $env:MB_EXE -or $t.Actions[0].Execute -eq $env:MB_EXE)) { Unregister-ScheduledTask -TaskName $n -Confirm:$false }
+}
+$lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'MailBrief.lnk'
+if ((Test-Path $lnk) -and (-not $env:MB_EXE -or (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath -eq $env:MB_EXE)) { Remove-Item $lnk }
 '''
 
 
@@ -79,14 +83,19 @@ def install(exe=None):
         raise RuntimeError('רישום התזמונים נכשל: ' + (done.stderr.strip().splitlines() or ['?'])[-1][:200])
 
 
-def remove():
-    _powershell(REMOVE_PS)
+def remove(only_this_copy=True):
+    _powershell(REMOVE_PS, program_path() if only_this_copy else '')
 
 
 def ensure():
     """On start: register the runs when missing or pointing at another copy (e.g. after winget moved the program)."""
     exe = program_path()
     if exe and not schedule_ok(exe):
+        from mailbrief.features.migrate import remember_previous
+        for old in installed_paths():
+            if old != '-' and os.path.normcase(old) != os.path.normcase(exe):
+                remember_previous(old)             # its data can be brought over from the settings page
+                break
         install(exe)
         return True
     return False

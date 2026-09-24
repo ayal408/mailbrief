@@ -20,8 +20,9 @@ def _documents():
 
 # Installed by winget (or into Program Files) the program folder is replaced on every upgrade, so the data lives in
 # Documents\MailBrief. A copy that already keeps its data next to the EXE (or runs from source) keeps doing that.
+INSTALLED = getattr(sys, 'frozen', False) and os.path.isfile(os.path.join(APP_DIR, 'unins000.exe'))   # MailBrief-Setup.exe
 MANAGED = (getattr(sys, 'frozen', False) and not os.path.isdir(os.path.join(APP_DIR, 'data'))
-           and ('\\winget\\packages\\' in APP_DIR.lower()
+           and (INSTALLED or '\\winget\\packages\\' in APP_DIR.lower()
                 or APP_DIR.lower().startswith(os.environ.get('ProgramFiles', 'C:\\Program Files').lower())))
 HERE = os.path.join(_documents(), 'MailBrief') if MANAGED else APP_DIR
 DATA = os.path.join(HERE, 'data')
@@ -50,6 +51,10 @@ CACHE_FILE = os.path.join(DATA, 'cache.json')
 URL_FILE = os.path.join(DATA, 'url.txt')
 NOTES_FILE = os.path.join(DATA, 'notes.json')
 INSIGHTS_FILE = os.path.join(DATA, 'insights.json')
+OUTBOX_FILE = os.path.join(DATA, 'outbox.json')
+TRIAGE_FILE = os.path.join(DATA, 'triage.json')
+SNOOZE_FILE = os.path.join(DATA, 'snoozed.json')
+MAX_UPLOAD = 20_000_000       # attachments in one form (Gmail's limit is 25MB after encoding)
 REMINDERS_FILE = os.path.join(DATA, 'reminders.json')
 DOWNLOADS_DIR = os.path.join(HERE, 'הורדות')
 MAX_VACATION_REPLIES = 30

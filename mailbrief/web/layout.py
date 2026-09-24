@@ -5,6 +5,7 @@ from mailbrief.util import e
 from mailbrief import __version__
 from mailbrief.profile import profile, welcome_back
 from mailbrief.web import extras
+from mailbrief import view
 
 
 STYLE = """
@@ -49,6 +50,9 @@ nav.tabs a{font-size:16px;border:1px solid var(--line);background:var(--surface)
 transition:.15s;white-space:nowrap}
 nav.tabs a:hover{border-color:var(--accent);transform:translateY(-1px)}
 nav.tabs a.on{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 35%,transparent)}
+.mbxs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:-4px 16px 16px}
+.mbx{font:inherit;font-size:13px;border:1px dashed var(--line);background:transparent;color:var(--muted);padding:4px 12px;border-radius:999px;cursor:pointer;margin:0}
+.mbx:hover{border-color:var(--accent);color:var(--ink);filter:none}.mbx.on{border-style:solid;border-color:var(--accent);color:var(--ink);background:var(--surface);font-weight:500}
 @media(max-width:760px){nav.tabs{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}nav.tabs::-webkit-scrollbar{display:none}
 .hero{padding-top:56px}.hero .gift{font-size:48px}.hero .tag{font-size:16px}}
 button{transition:filter .15s,transform .1s}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.97)}
@@ -65,13 +69,13 @@ FONT = ('<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500
 
 
 TABS = [('/today', '☀️', 'היום שלי'), ('/', '⚙️', 'הגדרות'), ('/dashboard', '📊', 'לוח בקרה'), ('/stats', '📈', 'במספרים'),
-        ('/automations', '⚡', 'אוטומציות'), ('/clients', '👥', 'לקוחות'), ('/reading', '📚', 'קריאה'),
+        ('/automations', '⚡', 'אוטומציות'), ('/clients', '👥', 'לקוחות'), ('/reading', '📰', 'ניוזלטרים'),
         ('/search', '🔍', 'חיפוש'), ('/help', '❓', 'מדריך')]
 
 
 TITLE_TAB = {'היום שלי': '/today', 'לוח בקרה': '/dashboard', 'המייל שלי במספרים': '/stats', 'אוטומציות': '/automations',
-             'לקוחות': '/clients', 'לקוח': '/clients', 'רשימת קריאה': '/reading', 'חיפוש': '/search', 'מדריך': '/help',
-             'בדיקת תקינות': '/help', '30 הימים שלך': '/today'}
+             'לקוחות': '/clients', 'לקוח': '/clients', 'רשימת קריאה': '/reading', 'ניוזלטרים': '/reading', 'חיפוש': '/search', 'מדריך': '/help',
+             'בדיקת תקינות': '/help', '30 הימים שלך': '/today', 'מיון מהיר': '/today', 'מייל מתוזמן': '/today', 'ברכות חג': '/today'}
 
 
 def top_bar(active=''):
@@ -85,7 +89,7 @@ def top_bar(active=''):
             f'<span class="gift" id="mb-gift" title="🎉">📬</span><h1 class="name g" id="mb-hello" data-name="{e(me.get("name", ""))}" '
             f'data-back="{e(welcome_back() if me.get("form") else "")}">שלום!</h1>'
             '<p class="tag"><span id="mb-type"></span><span class="caret"></span></p></header>'
-            f'<nav class="tabs" id="mb-tabs">{tabs}</nav>')
+            f'<nav class="tabs" id="mb-tabs">{tabs}</nav>{view.switcher()}')
 
 
 def update_banner():

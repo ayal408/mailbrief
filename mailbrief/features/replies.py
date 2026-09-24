@@ -29,6 +29,52 @@ def reply_templates():
     return load_json(config.SETTINGS_FILE, {}).get('templates') or DEFAULT_TEMPLATES
 
 
+def _original(m, message_id):
+    m.select(f'"{special_folder(m, chr(92) + "All") or "INBOX"}"', readonly=True)
+    typ, data = m.uid('SEARCH', None, 'HEADER', 'Message-ID', f'"{message_id.replace(chr(34), "")}"')
+    uids = data[0].split() if typ == 'OK' and data[0] else []
+    if not uids:
+        raise RuntimeError('ההודעה לא נמצאה בתיבה')
+    typ, rows = m.uid('FETCH', uids[-1], '(BODY.PEEK[])')
+    return email.message_from_bytes(rows[0][1], policy=default_policy)
+
+
+def reply_now(account, message_id, text, attachments=()):
+    """Answers an email right away from MailBrief (quick sorting). Gmail keeps the reply in "Sent" by itself."""
+    accounts = load_json(config.ACCOUNTS_FILE, [])
+    acc = next((a for a in accounts if a['email'] == account), None)
+    if not acc or not message_id or not text.strip():
+        raise RuntimeError('חסר נוסח או הודעה')
+    m = imap.connect(acc)
+    try:
+        msg = _original(m, message_id)
+    finally:
+        m.logout()
+    reply = build_reply(msg, acc, fill(text, wf_context(acc, classify(msg, acc['email']))), auto=False)
+    del reply['X-MailBrief-Auto']                     # a person answered: it may still wait for their reply
+    for name, data in attachments:
+        reply.add_attachment(data, maintype='application', subtype='octet-stream', filename=name)
+    smtp.send_mail(acc, reply)
+    save_json(config.ACCOUNTS_FILE, accounts)
+    return reply['To']
+
+
+def reply_details(account, message_id):
+    """To, subject and threading headers of a reply — to schedule it for later."""
+    accounts = load_json(config.ACCOUNTS_FILE, [])
+    acc = next((a for a in accounts if a['email'] == account), None)
+    if not acc:
+        raise RuntimeError('התיבה לא נמצאה')
+    m = imap.connect(acc)
+    try:
+        msg = _original(m, message_id)
+    finally:
+        m.logout()
+    shell = build_reply(msg, acc, '', auto=False)
+    return {'to': shell['To'], 'subject': shell['Subject'], 'in_reply_to': shell.get('In-Reply-To', ''),
+            'references': shell.get('References', '')}
+
+
 def create_draft_reply(account, message_id, text):
     """Find the original email by Message-ID and put a reply draft in the account's Drafts folder."""
     accounts = load_json(config.ACCOUNTS_FILE, [])
@@ -37,13 +83,7 @@ def create_draft_reply(account, message_id, text):
         raise RuntimeError('ההודעה לא נמצאה')
     m = imap.connect(acc)
     try:
-        m.select(f'"{special_folder(m, chr(92) + "All") or "INBOX"}"', readonly=True)
-        typ, data = m.uid('SEARCH', None, 'HEADER', 'Message-ID', f'"{message_id.replace(chr(34), "")}"')
-        uids = data[0].split() if typ == 'OK' and data[0] else []
-        if not uids:
-            raise RuntimeError('ההודעה לא נמצאה בתיבה')
-        typ, rows = m.uid('FETCH', uids[-1], '(BODY.PEEK[])')
-        msg = email.message_from_bytes(rows[0][1], policy=default_policy)
+        msg = _original(m, message_id)
         ctx = wf_context(acc, classify(msg, acc['email']))
         drafts = special_folder(m, r'\Drafts')
         if not drafts:

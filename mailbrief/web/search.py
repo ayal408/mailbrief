@@ -2,6 +2,7 @@
 
 from mailbrief.features.search import search_mail
 from mailbrief.util import e
+from mailbrief.view import dot
 from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
@@ -13,7 +14,7 @@ def search_page(query):
         rows = ''.join(
             f'<tr><td>{e(r["when"].strftime("%d/%m/%y") if r["when"] else "")}</td><td dir="auto">{e(r["from"])}</td><td dir="auto">'
             + (f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"])}</a>' if r['link'] else e(r['subject']))
-            + f'</td><td dir="ltr" class="muted" style="font-size:12px">{e(r["account"])}</td></tr>' for r in found)
+            + f'</td><td dir="ltr" class="muted" style="font-size:12px">{dot(r["account"])}{e(r["account"])}</td></tr>' for r in found)
         download = (f'<form method="post" action="/search_download" style="margin:8px 0"><input type="hidden" name="t" value="{TOKEN}">'
                     f'<input type="hidden" name="q" value="{e(query)}"><button>📥 הורדת כל הקבצים המצורפים מהתוצאות</button></form>') if found else ''
         results_html = (''.join(f'<div class="err">⚠️ {e(x)}</div>' for x in errors)

@@ -6,7 +6,8 @@ import re
 import secrets
 import threading
 import traceback
-import webbrowser
+import ctypes
+import socket
 from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
@@ -39,6 +40,8 @@ from mailbrief.mail.domains import guess_host
 from mailbrief.mail.oauth import PROVIDERS, start_oauth
 from mailbrief.storage import encrypt, load_json, save_json
 from mailbrief.tray import close_tray, run_tray
+from mailbrief import window
+from mailbrief.window import open_window
 from mailbrief.util import e
 from mailbrief.web.automations import automations_page
 from mailbrief.web.clients import client_page, clients_page
@@ -51,6 +54,15 @@ from mailbrief.web.settings import FIELD_NAMES, settings_page
 from mailbrief.web.today import today_page
 from mailbrief.web.welcome import welcome_page
 from mailbrief.web.insights import insights_page
+from mailbrief.web.triage import triage_page
+from mailbrief.web.compose import compose_page
+from mailbrief.web.greetings import greetings_page
+from mailbrief.features import greetings, snooze
+from mailbrief.features.replies import reply_details, reply_now
+from mailbrief.features import migrate, outbox, triage
+from mailbrief import view
+from mailbrief.money import accountant
+from mailbrief.util import money
 from mailbrief.features.insights import first_look
 from mailbrief.features.daily import daily_account, send_daily
 from mailbrief.features.update import start_update, update_available
@@ -84,11 +96,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send('forbidden', code=403)
         url = urlparse(self.path)
         nice = urlparse(base_url()).netloc
+        if url.path == '/_show':                                  # a second start of MailBrief: show this window
+            page = parse_qs(url.query).get('page', [''])[0]
+            threading.Thread(target=open_window, args=(link(page if re.fullmatch(r'[\w/?=&.-]*', page) else ''),), daemon=True).start()
+            return self._send('ok', 'text/plain')
         if url.path != '/oauth/callback' and self.headers.get('Host', '').lower() != nice:
             return self._redirect(base_url() + self.path)        # old 127.0.0.1:8765 links -> the nice address
         if url.path == '/welcome':
             return self._send(welcome_page())
-        if not has_profile() and url.path in ('/', '/today', '/dashboard', '/stats', '/automations', '/clients', '/reading', '/search', '/help', '/insights'):
+        if not has_profile() and url.path in ('/', '/today', '/dashboard', '/stats', '/automations', '/clients', '/reading', '/search', '/help', '/insights', '/triage', '/compose', '/greetings'):
             return self._redirect('/welcome')                     # first run: name and form of address first
         if url.path == '/':
             return self._send(settings_page(parse_qs(url.query).get('msg', [''])[0]))
@@ -99,7 +115,20 @@ class Handler(BaseHTTPRequestHandler):
                 msg = f'שגיאה: {exc}'
             first = (msg.startswith('✓') and len(load_json(config.ACCOUNTS_FILE, [])) == 1
                      and not os.path.exists(config.INSIGHTS_FILE))
-            return self._redirect(link(('insights?run=1&msg=' if first else '?msg=') + quote(msg)))   # first mailbox: show its 30 days
+            target = link(('insights?run=1&msg=' if first else '?msg=') + quote(msg))   # first mailbox: show its 30 days
+            if window.in_app():
+                threading.Thread(target=window.show, args=(target,), daemon=True).start()
+                return self._send(f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">{FONT}<style>{STYLE}</style></head>'
+                                  f'<body><main style="text-align:center;margin-top:60px"><div style="font-size:60px">📬</div>'
+                                  f'<h1>{e(msg)}</h1><p class="muted">אפשר לסגור את הלשונית הזו ולחזור לחלון של MailBrief.</p>'
+                                  '<script>setTimeout(function(){ window.close(); }, 2500);</script></main></body></html>')
+            return self._redirect(target)
+        if url.path == '/triage':
+            return self._send(triage_page())
+        if url.path == '/greetings':
+            return self._send(greetings_page(parse_qs(url.query).get('msg', [''])[0]))
+        if url.path == '/compose':
+            return self._send(compose_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/insights':
             q = parse_qs(url.query)
             return self._send(insights_page(q.get('msg', [''])[0], run=q.get('run', [''])[0] == '1'))
@@ -145,9 +174,18 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self._send('forbidden', code=403)
         length = int(self.headers.get('Content-Length', 0))
-        raw = parse_qs(self.rfile.read(length).decode('utf-8'))
+        if length > config.MAX_UPLOAD + 1_000_000:
+            return self._redirect('/?msg=' + quote('הקבצים גדולים מדי — עד 20MB ביחד'))
+        body = self.rfile.read(length)
+        ctype = self.headers.get('Content-Type', '')
+        files = []
+        if ctype.startswith('multipart/form-data'):
+            raw, files = parse_multipart(ctype, body)
+        else:
+            raw = parse_qs(body.decode('utf-8'))
         form = {k: v[0] for k, v in raw.items()}
         form['_lists'] = raw                     # multi-value fields (checkbox groups)
+        form['_files'] = files                   # [(file name, bytes)]
         if not secrets.compare_digest(form.get('t', ''), TOKEN):
             return self._redirect('/?msg=' + quote('הדף היה ישן (MailBrief עודכן או הופעל מחדש) — הפעולה לא בוצעה. אפשר לנסות שוב עכשיו.'))
         route = urlparse(self.path).path
@@ -160,7 +198,15 @@ class Handler(BaseHTTPRequestHandler):
         if msg is None:                         # handler already answered
             return
         if isinstance(msg, tuple):              # (redirect target, None)
-            return self._redirect(msg[0])
+            target = msg[0]
+            if window.in_app() and target.startswith(('http://', 'https://')) and not target.startswith(base_url()):
+                window.open_external(target)
+                back = urlparse(self.headers.get('Referer', '')).path or '/'
+                sign_in = route in ('/connect', '/gapps_connect')
+                note = ('🔐 נפתח חלון התחברות בדפדפן — אחרי האישור שם, MailBrief יתעדכן כאן לבד' if sign_in
+                        else '↗ נפתח בדפדפן')
+                return self._redirect(back + ('&' if '?' in back else '?') + 'msg=' + quote(note))
+            return self._redirect(target)
         self._redirect('/?msg=' + quote(msg))
 
     def post_add(self, f):
@@ -216,7 +262,8 @@ class Handler(BaseHTTPRequestHandler):
     def post_run(self, f):
         if not load_json(config.ACCOUNTS_FILE, []):
             return 'קודם צריך להוסיף תיבה'
-        path, _ = run_all(open_report=False)
+        only = f.get('only', '') or view.current_account()
+        path, _ = run_all(open_report=False, only=only or None)
         return ('/reports/' + quote(os.path.basename(path)), None)
 
     def post_rule_add(self, f):
@@ -271,7 +318,9 @@ class Handler(BaseHTTPRequestHandler):
             save_json(config.UNSUBS_FILE, unsubs)
         if kind == 'open':
             return (value, None)
-        return ('/insights?msg=' + quote(value), None) if f.get('back') == '/insights' else value
+        if f.get('back') in ('/insights', '/reading'):
+            return (f['back'] + '?msg=' + quote(value), None)
+        return value
 
     def post_first_look(self, f):
         if not load_json(config.ACCOUNTS_FILE, []):
@@ -371,6 +420,149 @@ class Handler(BaseHTTPRequestHandler):
         if not load_json(config.ACCOUNTS_FILE, []):
             return hello + g('עכשיו נחברי', 'עכשיו נחבר', 'עכשיו מחברים') + ' את תיבת המייל הראשונה 👇'
         return ('/today' if os.path.exists(config.INSIGHTS_FILE) else '/insights', None)
+
+    def post_view_account(self, f):
+        view.set_account(f.get('account', ''))
+        back = urlparse(self.headers.get('Referer', '')).path or '/today'
+        return (back, None)
+
+    def post_triage_done(self, f):
+        triage.dismiss(f.get('key', '')[:400])
+        self._send('ok', 'text/plain')
+        return None
+
+    def post_triage_undo(self, f):
+        triage.undo(f.get('key', '')[:400])
+        self._send('ok', 'text/plain')
+        return None
+
+    def post_schedule_mail(self, f):
+        back = lambda m: ('/compose?msg=' + quote(m), None)
+        accounts = load_json(config.ACCOUNTS_FILE, [])
+        if not any(a['email'] == f.get('account') for a in accounts):
+            return back('צריך לבחור תיבה לשליחה')
+        try:
+            when = outbox.when_for(f.get('when', 'after_holy'), f.get('custom', ''))
+            outbox.schedule(f['account'], f.get('to', ''), f.get('subject', ''), f.get('body', ''), when, files=f['_files'])
+        except (ValueError, KeyError) as exc:
+            return back(f'⚠️ {exc}')
+        return back(f'✓ יישלח ב-{when:%d/%m} בשעה {when:%H:%M}')
+
+    def post_greetings(self, f):
+        back = lambda m: ('/greetings?msg=' + quote(m), None)
+        wanted = set(f['_lists'].get('to', []))
+        people = [p for p in greetings.recipients() if p['email'] in wanted]
+        try:
+            when = outbox.when_for('custom', f"{f.get('day', '')}T{f.get('at', '10:00') or '10:00'}")
+            count = greetings.schedule_greetings(f.get('account', ''), people, f.get('subject', ''), f.get('text', ''), when,
+                                                 f.get('my_name', '').strip())
+        except ValueError as exc:
+            return back(f'⚠️ {exc}')
+        return ('/compose?msg=' + quote(f'🗓️ {count} ברכות אישיות יישלחו ב-{when:%d/%m} מ-{when:%H:%M} (בקבוצות קטנות). אפשר לבטל כל אחת כאן.'), None)
+
+    def _snooze_until(self, choice):
+        if choice == 'week':
+            now = dt.datetime.now().astimezone()
+            return outbox.out_of_holy((now + dt.timedelta(days=7)).replace(hour=8, minute=0, second=0, microsecond=0))
+        return outbox.when_for(choice)
+
+    def post_snooze(self, f):
+        back = urlparse(self.headers.get('Referer', '')).path or '/today'
+        try:
+            until = self._snooze_until(f.get('when', 'tomorrow8'))
+            snooze.snooze(f.get('account', ''), f.get('message_id', ''), f.get('subject', ''), until, f.get('link', ''))
+            triage.dismiss(f"{f.get('account', '')}|{f.get('message_id', '')}")
+        except Exception as exc:
+            if f.get('ajax'):
+                self._send(str(exc), 'text/plain; charset=utf-8', code=400)
+                return None
+            return (back + '?msg=' + quote(f'⚠️ {exc}'), None)
+        if f.get('ajax'):
+            self._send(f'{until:%d/%m %H:%M}', 'text/plain; charset=utf-8')
+            return None
+        return (back + '?msg=' + quote(f'💤 יחזור לתיבה ב-{until:%d/%m} בשעה {until:%H:%M}'), None)
+
+    def post_snooze_wake(self, f):
+        item = snooze.wake_now(f.get('id', ''))
+        return ('/today?msg=' + quote(f'💤 „{item["subject"]}” חזר לתיבה' if item else 'כבר חזר'), None)
+
+    def post_reply_now(self, f):
+        """From quick sorting: answer now, or schedule the answer (after Shabbat, tomorrow morning), with files."""
+        text, when_choice = f.get('text', ''), f.get('when', 'now')
+        try:
+            if not text.strip():
+                raise RuntimeError('התשובה ריקה')
+            if when_choice == 'now':
+                to = reply_now(f.get('account', ''), f.get('message_id', ''), text, f['_files'])
+                result = f'✉️ נשלח ל-{to}'
+            else:
+                when = outbox.when_for(when_choice)
+                d = reply_details(f.get('account', ''), f.get('message_id', ''))
+                outbox.schedule(f['account'], d['to'], d['subject'], text, when, files=f['_files'], thread=d)
+                result = f'⏳ יישלח ב-{when:%d/%m %H:%M}'
+            triage.dismiss(f"{f.get('account', '')}|{f.get('message_id', '')}")
+        except Exception as exc:
+            self._send(str(exc), 'text/plain; charset=utf-8', code=400)
+            return None
+        self._send(result, 'text/plain; charset=utf-8')
+        return None
+
+    def post_schedule_cancel(self, f):
+        outbox.cancel(f.get('id', ''))
+        return ('/compose?msg=' + quote('המייל בוטל ולא יישלח'), None)
+
+    def post_accountant(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        email = f.get('email', '').strip()
+        if email and not outbox.EMAIL.fullmatch(email):
+            return 'כתובת הרו״ח לא נראית תקינה'
+        day = int(f['day']) if f.get('day', '').isdigit() and 1 <= int(f['day']) <= 28 else 2
+        settings['accountant'] = {'email': email, 'name': f.get('name', '').strip()[:40], 'day': day,
+                                  'account': f.get('account', ''), 'on': f.get('action') == 'on' and bool(email)}
+        save_json(config.SETTINGS_FILE, settings)
+        return (f'✓ ב-{day} לכל חודש תישלח חבילת החודש הקודם ל-{email}' if settings['accountant']['on']
+                else 'השליחה האוטומטית לרו״ח כבויה (ההגדרות נשמרו)')
+
+    def post_accountant_package(self, f):
+        month = f.get('month') or accountant.previous_month()
+        if not re.fullmatch(r'\d{4}-\d{2}', month):
+            return 'חודש לא תקין'
+        if f.get('action') == 'send':
+            cfg = accountant.accountant_cfg()
+            accounts = load_json(config.ACCOUNTS_FILE, [])
+            acc = next((a for a in accounts if a['email'] == cfg['account']), accounts[0] if accounts else None)
+            if not cfg['email'] or not acc:
+                return 'קודם למלא את כתובת הרו״ח ולחבר תיבה'
+            count, total, big = accountant.send_package(month, acc, cfg['email'], cfg['name'])
+            save_json(config.ACCOUNTS_FILE, accounts)
+            return (f'✓ נשלח ל-{cfg["email"]}: {count} מסמכים, {money(total)}' +
+                    (' (החבילה גדולה מדי למייל — נשלח האקסל בלבד, והחבילה המלאה בתיקיית הקבלות)' if big else ''))
+        path, rows, total = accountant.month_package(month)
+        os.startfile(os.path.dirname(path))
+        return f'📦 החבילה מוכנה: {len(rows)} מסמכים, {money(total)} — התיקייה נפתחה'
+
+    def post_yearly(self, f):
+        year = f.get('year', '')
+        if not re.fullmatch(r'20\d\d', year):
+            return 'שנה לא תקינה'
+        path, count = accountant.yearly_report(int(year))
+        os.startfile(os.path.dirname(path))
+        return f'📊 הסיכום השנתי ל-{year} מוכן ({count} מסמכים) — „סיכום שנתי {year}.xlsx” בתיקיית הקבלות'
+
+    def post_quiet(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        start = int(f['from']) if f.get('from', '').isdigit() and int(f['from']) < 24 else 22
+        end = int(f['to']) if f.get('to', '').isdigit() and int(f['to']) < 24 else 7
+        settings['quiet'] = {'on': f.get('action') != 'off', 'from': start, 'to': end}
+        save_json(config.SETTINGS_FILE, settings)
+        return f'🔕 שעות שקטות: {start:02d}:00–{end:02d}:00 — בלי התראות קופצות (הכול עדיין מופיע ב„היום שלי”)' if settings['quiet']['on'] else '🔔 שעות שקטות כבויות'
+
+    def post_migrate(self, f):
+        try:
+            count = migrate.import_from(f.get('folder', '') or migrate.previous_copy())
+        except ValueError as exc:
+            return f'⚠️ {exc}'
+        return f'✓ הועברו {count} קבצים — התיבות, הקבלות, הכללים וההגדרות כאן. מה שהיה קודם נשמר בגיבוי.'
 
     def post_note_save(self, f):
         save_json(config.NOTES_FILE, {'text': f.get('text', '')[:20000], 'at': dt.datetime.now().isoformat(timespec='seconds')})
@@ -592,7 +784,10 @@ class Handler(BaseHTTPRequestHandler):
         return '✓ נשלחה התראת ניסיון — היא אמורה להופיע בפינת המסך'
 
     def post_check(self, f):
-        count = check_alerts()
+        only = f.get('only', '') or view.current_account()
+        count = check_alerts(only=only or None)
+        if only:
+            return (f'✓ {only} נבדקה — ' + (f'{count} הודעות להתראה' if count else 'אין כרגע משהו דחוף או חריג'))
         return f'✓ נמצאו {count} הודעות חדשות להתראה' if count else '✓ נבדק — אין כרגע משהו דחוף או חריג'
 
     def post_quit(self, f):
@@ -601,6 +796,7 @@ class Handler(BaseHTTPRequestHandler):
                    'לפתיחה מחדש: הקיצור MailBrief בשולחן העבודה.</p></main></body></html>')
         threading.Thread(target=self.server.shutdown, daemon=True).start()
         close_tray()
+        window.quit_app()
         return None
 
     def post_update(self, f):
@@ -615,6 +811,7 @@ class Handler(BaseHTTPRequestHandler):
                    '</main></body></html>')
         threading.Thread(target=self.server.shutdown, daemon=True).start()
         close_tray()
+        threading.Timer(1.5, window.quit_app).start()      # let the page above show first
         return None
 
     def post_setup(self, f):
@@ -643,16 +840,65 @@ def allowed_hosts():
     return hosts | ({config.NICE_HOST} if config.NICE_PORT == 80 else set())
 
 
+def parse_multipart(ctype, body):
+    """Fields and files of a multipart form — with the standard email parser (the cgi module is gone since 3.13)."""
+    import email
+    from email import policy
+    msg = email.message_from_bytes(b'Content-Type: ' + ctype.encode('latin-1') + b'\r\n\r\n' + body, policy=policy.HTTP)
+    fields, files = {}, []
+    for part in msg.iter_parts():
+        name = part.get_param('name', header='content-disposition')
+        filename = part.get_filename()
+        data = part.get_payload(decode=True) or b''
+        if filename:
+            if data:
+                files.append((filename, data))
+        elif name:
+            fields.setdefault(name, []).append(data.decode('utf-8', 'replace'))
+    return fields, files
+
+
+class LocalServer(ThreadingHTTPServer):
+    """On Windows, SO_REUSEADDR lets a second program bind the same port — that is how two MailBriefs (and two icons
+    next to the clock) could run at once. Exclusive binding makes the second attempt fail instead."""
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+_INSTANCE = []      # keeps the mutex handle for the life of the process
+
+
+def first_instance():
+    """One MailBrief window/tray per Windows user: a named mutex, released automatically when the process ends."""
+    try:
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        handle = kernel32.CreateMutexW(None, False, 'Local\\MailBrief-app')
+        already = ctypes.get_last_error() == 183          # ERROR_ALREADY_EXISTS
+    except Exception:
+        return True
+    _INSTANCE.append(handle)
+    return not already
+
+
 def serve(start_page=''):
     os.makedirs(config.DATA, exist_ok=True)
+    if not first_instance():                     # already running: ask it to show its window
+        _show_running_copy(start_page)
+        return
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler)
-    except OSError:                              # already running: just show it
-        webbrowser.open(link(start_page))
+        server = LocalServer(("127.0.0.1", config.PORT), Handler)
+    except OSError:                              # the port is taken (an older copy still running): just show it
+        open_window(link(start_page))
         return
     servers = [server]
     try:                                         # the port-less address, when nothing else uses port 80
-        servers.append(ThreadingHTTPServer(("127.0.0.1", config.NICE_PORT), Handler))
+        servers.append(LocalServer(("127.0.0.1", config.NICE_PORT), Handler))
         remember(config.NICE_PORT)
     except OSError:
         remember(config.PORT)
@@ -660,14 +906,59 @@ def serve(start_page=''):
     for worker in workers:
         worker.start()
     threading.Thread(target=_ensure_setup, daemon=True).start()    # a new computer: scheduled runs + Start menu
+    threading.Thread(target=_outbox_timer, daemon=True).start()
     worker = workers[0]
-    webbrowser.open(link(start_page))
     try:
-        run_tray()                               # returns when the user picks "Exit"
-    except Exception:
-        with open(os.path.join(config.DATA, 'tray.log'), 'w', encoding='utf-8') as f:
-            f.write(traceback.format_exc())
-        worker.join()                            # no tray: keep serving until "⏻ Close" on the page
+        if window.available():                   # a real window (WebView2) on the main thread, the tray icon beside it
+            threading.Thread(target=_tray_thread, daemon=True).start()
+            window.run_app(link(start_page), on_hidden=_hidden_hint)
+            close_tray()
+        else:                                    # from source without pywebview: browser window + tray
+            open_window(link(start_page))
+            try:
+                run_tray()                       # returns when the user picks "Exit"
+            except Exception:
+                _log_tray()
+                worker.join()                    # no tray: keep serving until "⏻ Close" on the page
     finally:
         for s in servers:
             s.shutdown()
+
+
+def _outbox_timer():
+    import time
+    while True:
+        time.sleep(120)
+        try:
+            if any(it['status'] == 'waiting' for it in outbox.outbox()):
+                outbox.send_due()
+            if snooze.snoozed():
+                snooze.wake_due()
+        except Exception:
+            pass
+
+
+def _log_tray():
+    with open(os.path.join(config.DATA, 'tray.log'), 'w', encoding='utf-8') as f:
+        f.write(traceback.format_exc())
+
+
+def _tray_thread():
+    try:
+        run_tray(on_exit=window.quit_app)
+    except Exception:
+        _log_tray()
+
+
+def _hidden_hint():
+    notify.toast('📬 MailBrief ממשיך לעבוד ליד השעון', ['לחיצה כפולה על הסמל מחזירה את החלון. יציאה מלאה — מהתפריט של הסמל.'])
+
+
+def _show_running_copy(start_page):
+    import urllib.request
+    try:
+        req = urllib.request.Request(f'http://127.0.0.1:{config.PORT}/_show?page={quote(start_page)}',
+                                     headers={'Host': f'127.0.0.1:{config.PORT}'})
+        urllib.request.urlopen(req, timeout=5).read()
+    except Exception:
+        open_window(link(start_page))            # an older copy without /_show: at least open a window

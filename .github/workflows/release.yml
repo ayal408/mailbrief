@@ -1,0 +1,96 @@
+# Pushing a tag like v1.2.0 builds MailBrief.exe, publishes the GitHub release and sends the new version to winget.
+# Start it with:  .\release.ps1 1.2.0
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write          # create the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Tools
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Tag matches the version in the code
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          $code = python -c "import mailbrief; print(mailbrief.__version__)"
+          if ($tag -ne $code) { throw "Tag v$tag but mailbrief/__init__.py says $code - run .\release.ps1 $tag" }
+          "VERSION=$tag" >> $env:GITHUB_ENV
+
+      - name: Lint
+        run: python -m pyflakes main.py mailbrief tests
+
+      - name: Tests
+        run: python -m unittest discover -s tests
+
+      - name: Build MailBrief.exe
+        shell: pwsh
+        run: |
+          # --specpath build makes relative paths resolve inside build\ - so the icon gets a full path
+          pyinstaller --onefile --noconsole --name MailBrief --icon (Resolve-Path assets/mailbrief.ico).Path `
+            --paths . --distpath dist --workpath build --specpath build --noconfirm --log-level WARN main.py
+          if ($LASTEXITCODE) { throw 'PyInstaller failed' }
+
+      - name: Build the installer (MailBrief-Setup.exe)
+        shell: pwsh
+        run: |
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress | Out-Null
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc /Q "/DAppVersion=$env:VERSION" installer\mailbrief.iss
+          if ($LASTEXITCODE) { throw 'Inno Setup failed' }
+
+      - name: Check the EXE
+        shell: pwsh
+        run: |
+          $exe = 'dist\MailBrief.exe'
+          if ((Get-Item $exe).Length -lt 5MB) { throw 'MailBrief.exe is suspiciously small' }
+          $bytes = [IO.File]::ReadAllBytes((Resolve-Path $exe))[0..1]
+          if ([Text.Encoding]::ASCII.GetString($bytes) -ne 'MZ') { throw 'MailBrief.exe is not a Windows program' }
+          Write-Host "SHA256 $((Get-FileHash $exe -Algorithm SHA256).Hash)"
+          if ((Get-Item dist\MailBrief-Setup.exe).Length -lt 5MB) { throw 'MailBrief-Setup.exe is suspiciously small' }
+
+      - name: GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          **התקנה:** להוריד את ``MailBrief-Setup.exe`` למטה ולהריץ (בלי הרשאות מנהל) · או ``winget install mailbrief`` · או ``MailBrief.exe`` נייד בלי התקנה.
+          מי שכבר מותקן יקבל בתוכנה כפתור „✨ עדכון עכשיו”.
+
+          > בהורדה ידנית Windows SmartScreen עשוי להזהיר כי הקובץ לא חתום: „מידע נוסף” ← „הפעל בכל זאת”.
+          "@
+          gh release create '${{ github.ref_name }}' dist/MailBrief-Setup.exe dist/MailBrief.exe --title "MailBrief $env:VERSION" --notes $notes --generate-notes --verify-tag
+
+      - name: Send the new version to winget
+        shell: pwsh
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if (-not $env:WINGET_TOKEN) { Write-Host '::notice::No WINGET_TOKEN secret - skipping winget (see RELEASING.md)'; exit 0 }
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          $url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MailBrief.exe"
+          .\wingetcreate.exe update MailBrief.App --version $env:VERSION --urls $url --submit --token $env:WINGET_TOKEN

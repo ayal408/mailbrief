@@ -9,6 +9,7 @@ from mailbrief.mail.classify import RX
 from mailbrief.mail.domains import FREE_MAIL
 from mailbrief.mail.message import decode
 from mailbrief.money.excel import write_xlsx
+from mailbrief.money.pdftext import total_from_pdf
 from mailbrief.net import _PUBLIC_TLS
 from mailbrief.storage import load_json, save_json
 from mailbrief.util import safe_name, write_once
@@ -70,6 +71,17 @@ def update_ledger(results):
                 'recurring': bool(RECURRING_HINT.search(f"{it['subject']} {it['snippet']}")), 'due': it.get('due', '')}
             months.add(it['iso'][:7])
     for key, r in ledger.items():
+        if r['amount'] is None and not r.get('pdf_checked'):      # the total may be only inside the saved PDF
+            r['pdf_checked'] = True
+            for rel in r.get('files', []):
+                path = os.path.join(config.RECEIPTS_DIR, rel)
+                if rel.lower().endswith('.pdf') and os.path.isfile(path):
+                    with open(path, 'rb') as f:
+                        r['amount'], r['currency'] = parse_amount(total_from_pdf(f.read()))
+                    if r['amount'] is not None:
+                        r['amount_from'] = 'pdf'
+                        months.add(r['date'][:7])
+                        break
         if r['currency'] in BOI_CODES and r['amount'] is not None and r.get('amount_ils') is None:
             rate = boi_rate(r['currency'], r['date'])
             if rate:

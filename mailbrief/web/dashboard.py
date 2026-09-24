@@ -6,6 +6,7 @@ from mailbrief import config
 from mailbrief.mail.classify import CATS
 from mailbrief.money.ledger import find_subscriptions, ils
 from mailbrief.storage import load_json
+from mailbrief.view import current_account, mine
 from mailbrief.util import e, money, month_back
 from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
@@ -13,7 +14,8 @@ from mailbrief.web.token import TOKEN
 
 def stats_page():
     cutoff = (dt.date.today() - dt.timedelta(days=30)).isoformat()
-    rows = [h for h in load_json(config.HISTORY_FILE, {}).values() if h['date'] >= cutoff]
+    box = current_account()
+    rows = [h for h in load_json(config.HISTORY_FILE, {}).values() if h['date'] >= cutoff and mine(h, current=box)]
     if not rows:
         return page('המייל שלי במספרים', f'''{heading('📈', 'המייל שלי במספרים')}<p>עוד אין מספיק היסטוריה.</p>
 <form method="post" action="/build_history"><input type="hidden" name="t" value="{TOKEN}"><button>📥 בניית היסטוריה של 30 יום (כדקה)</button></form>''')
@@ -65,7 +67,9 @@ def stats_page():
 
 
 def dashboard_page():
-    ledger, history = load_json(config.LEDGER_FILE, {}), load_json(config.HISTORY_FILE, {})
+    box = current_account()
+    ledger = {k: r for k, r in load_json(config.LEDGER_FILE, {}).items() if mine(r, current=box)}
+    history = {k: h for k, h in load_json(config.HISTORY_FILE, {}).items() if mine(h, current=box)}
     labels = [r['label'] for r in load_json(config.RULES_FILE, [])]
     month = month_back(0)
     priced = [r for r in ledger.values() if ils(r) is not None]

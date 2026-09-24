@@ -45,8 +45,11 @@ class Isolated(unittest.TestCase):
             value = getattr(config, name)
             if name.isupper() and isinstance(value, str) and value.startswith(config.HERE) and name != 'HERE':
                 self.patches.append(mock.patch.object(config, name, value.replace(config.HERE, self.tmp, 1)))
+        self.patches.append(mock.patch.object(config, 'HERE', self.tmp))      # code that joins HERE itself too
         for p in self.patches:
             p.start()
+        real = os.path.normcase(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        assert not os.path.normcase(os.path.abspath(config.DATA)).startswith(real), 'tests must never touch the real data folder'
         os.makedirs(config.DATA, exist_ok=True)
         storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
 
@@ -379,6 +382,12 @@ class Pages(Isolated):
                      dashboard.dashboard_page(), dashboard.stats_page(), wh.help_page(), reading.reading_page(), search.search_page('')]
         for html in pages:
             self.assertIn('mb-pal', html)                 # the shared header (palette, loader, theme) is on every page
+        from mailbrief.web import compose, greetings as wg, triage as wt
+        with mock.patch.object(net, 'cached_json', return_value=None):
+            self.assertIn('tri-reply', wt.triage_page())
+            self.assertIn('multipart/form-data', compose.compose_page())
+            self.assertIn('gr-preview', wg.greetings_page())
+            self.assertIn('ביטול מנויים', reading.reading_page())
         from mailbrief.web import insights as wi, welcome
         from mailbrief.features import insights as fi
         with mock.patch.object(net, 'cached_json', return_value=None):
@@ -443,6 +452,11 @@ class Personal(Isolated):
         update._FAILED[0] = 0
         with mock.patch.object(net, 'cached_json', return_value=release):
             self.assertEqual(update.update_available()['sha256'], 'ab')
+        setup_asset = {'name': 'MailBrief-Setup.exe', 'browser_download_url': 'https://github.com/x/MailBrief-Setup.exe', 'size': 20}
+        with mock.patch.object(net, 'cached_json', return_value=release | {'assets': release['assets'] + [setup_asset]}), \
+                mock.patch.object(config, 'INSTALLED', True):
+            rel = update.update_available()
+            self.assertEqual((rel['url'], rel['setup']), ('https://github.com/x/MailBrief-Setup.exe', True))   # installed copy: new setup
         with mock.patch.object(net, 'cached_json', return_value=release | {'tag_name': 'v0.1'}):
             self.assertIsNone(update.update_available())
         with mock.patch.object(net, 'cached_json', return_value=None) as offline:
@@ -450,6 +464,265 @@ class Personal(Isolated):
             self.assertIsNone(update.latest_release())                         # no second network try right away
             self.assertEqual(offline.call_count, 1)
         update._FAILED[0] = 0
+
+
+class Accountant(Isolated):
+    def book(self):
+        def row(key, vendor, day, amount, cur='₪', book='תוכנה ומנויים', files=()):
+            return {'vendor_key': key, 'vendor': vendor, 'date': day, 'amount': amount, 'currency': cur, 'amount_ils': amount if cur == '₪' else amount * 3.7,
+                    'book': book, 'subject': 'Invoice', 'account': 'me@gmail.com', 'email': f'billing@{key}', 'files': list(files), 'recurring': True}
+        today = dt.date.today()
+        this, prev = today.replace(day=1), (today.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+        return {'a': row('netflix.com', 'Netflix', prev.isoformat(), 55.0), 'b': row('netflix.com', 'Netflix', this.isoformat(), 65.0),
+                'c': row('paz.co.il', 'פז', prev.replace(day=3).isoformat(), 300.0, book='רכב', files=[f'{prev:%Y-%m}/paz.pdf'])}
+
+    def test_month_package_zip(self):
+        from mailbrief.money import accountant
+        book = self.book()
+        month = book['c']['date'][:7]
+        os.makedirs(os.path.join(config.RECEIPTS_DIR, month), exist_ok=True)
+        with open(os.path.join(config.RECEIPTS_DIR, month, 'paz.pdf'), 'wb') as f:
+            f.write(b'%PDF-1.4 test')
+        path, rows, total = accountant.month_package(month, book)
+        with zipfile.ZipFile(path) as z:
+            names = z.namelist()
+        self.assertEqual((len(rows), total), (2, 355.0))
+        self.assertIn(f'קבלות {month}.xlsx', names)
+        self.assertIn('קבצים/paz.pdf', names)
+
+    def test_monthly_send_once(self):
+        from mailbrief.money import accountant
+        storage.save_json(config.LEDGER_FILE, self.book())
+        storage.save_json(config.SETTINGS_FILE, {'accountant': {'on': True, 'email': 'cpa@x.co.il', 'day': 2, 'account': 'me@gmail.com'}})
+        state, accounts = {}, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com'}]
+        today = dt.date.today()
+        with mock.patch.object(smtp, 'send_mail') as send:
+            self.assertIsNone(accountant.maybe_send_monthly(state, accounts, today.replace(day=1)))      # before the day
+            self.assertIsNotNone(accountant.maybe_send_monthly(state, accounts, today.replace(day=2)))
+            self.assertIsNone(accountant.maybe_send_monthly(state, accounts, today.replace(day=5)))      # once a month
+        msg = send.call_args[0][1]
+        self.assertEqual((send.call_count, msg['To']), (1, 'cpa@x.co.il'))
+        self.assertTrue(any(p.get_filename().endswith('.zip') for p in msg.iter_attachments()))
+
+    def test_price_increase_and_yearly(self):
+        from mailbrief.money import accountant
+        book = self.book()
+        changes = accountant.price_changes(book)
+        self.assertEqual([(c['vendor'], c['old'], c['new'], c['percent']) for c in changes], [('Netflix', 55.0, 65.0, 18)])
+        path, count = accountant.yearly_report(dt.date.today().year, book)
+        with zipfile.ZipFile(path) as z:
+            sheet = z.read('xl/worksheets/sheet1.xml').decode('utf-8')
+        self.assertIn('סה״כ לשנה', sheet)
+        self.assertIn('Netflix', sheet)
+
+
+class Outbox(Isolated):
+    SAT = (dt.datetime(2026, 9, 25, 17, 42, tzinfo=IL), dt.datetime(2026, 9, 26, 19, 7, tzinfo=IL))
+
+    def test_times_never_on_shabbat(self):
+        from mailbrief.features import outbox
+        friday = dt.datetime(2026, 9, 25, 12, 0, tzinfo=IL)
+        after = outbox.when_for('after_holy', now=friday, windows=[self.SAT])
+        self.assertEqual(after, dt.datetime(2026, 9, 26, 19, 27, tzinfo=IL))
+        inside = outbox.when_for('custom', '2026-09-26T10:00', now=friday, windows=[self.SAT])
+        self.assertEqual(inside, after)                                   # a time on Shabbat moves to after havdalah
+        self.assertEqual(outbox.when_for('sunday8', now=friday, windows=[self.SAT]).isoformat()[:16], '2026-09-27T08:00')
+        with self.assertRaises(ValueError):
+            outbox.when_for('custom', '2020-01-01T10:00', now=friday, windows=[])
+
+    def test_send_due_once_and_not_on_shabbat(self):
+        from mailbrief.features import outbox
+        acc = {'email': 'me@gmail.com', 'host': 'imap.gmail.com'}
+        outbox.schedule('me@gmail.com', 'a@x.co.il, b@y.co.il', 'שלום', 'גוף', dt.datetime(2026, 9, 25, 10, 0, tzinfo=IL))
+        with self.assertRaises(ValueError):
+            outbox.schedule('me@gmail.com', 'not-an-address', 's', 'b', dt.datetime(2026, 9, 25, 10, 0, tzinfo=IL))
+        with mock.patch.object(smtp, 'send_mail') as send:
+            with mock.patch.object(outbox, 'is_holy_time', return_value=True):
+                self.assertEqual(outbox.send_due([acc], now=dt.datetime(2026, 9, 26, 12, 0, tzinfo=IL)), 0)
+            with mock.patch.object(outbox, 'is_holy_time', return_value=False):
+                self.assertEqual(outbox.send_due([acc], now=dt.datetime(2026, 9, 27, 9, 0, tzinfo=IL)), 1)
+                self.assertEqual(outbox.send_due([acc], now=dt.datetime(2026, 9, 27, 10, 0, tzinfo=IL)), 0)
+        self.assertEqual(send.call_args[0][1]['To'], 'a@x.co.il, b@y.co.il')
+        self.assertEqual(outbox.outbox()[0]['status'], 'sent')
+
+
+class Comfort(Isolated):
+    def test_quiet_hours_cross_midnight(self):
+        storage.save_json(config.SETTINGS_FILE, {'quiet': {'on': True, 'from': 22, 'to': 7}})
+        self.assertTrue(notify.quiet_now(dt.datetime(2026, 9, 24, 23, 0)))
+        self.assertTrue(notify.quiet_now(dt.datetime(2026, 9, 24, 6, 0)))
+        self.assertFalse(notify.quiet_now(dt.datetime(2026, 9, 24, 12, 0)))
+        with mock.patch.object(notify.subprocess, 'run') as run, mock.patch.object(notify, 'is_holy_time', return_value=False), \
+                mock.patch.object(notify, 'quiet_now', return_value=True):
+            notify.toast('x', ['y'])
+        run.assert_not_called()
+
+    def test_triage_done_hides_from_queue(self):
+        from mailbrief.features import triage
+        storage.save_json(config.SNAPSHOT_FILE, {'waiting': [{'account': 'me@gmail.com', 'message_id': '<a>', 'subject': 'א', 'from': 'דנה', 'days': 3}],
+                                                 'awaiting': [{'account': 'me@gmail.com', 'message_id': '<b>', 'subject': 'ב', 'to': 'אבי', 'days': 5}]})
+        self.assertEqual([q['kind'] for q in triage.queue()], ['mine', 'theirs'])
+        triage.dismiss('me@gmail.com|<a>')
+        self.assertEqual([q['from'] for q in triage.queue()], ['אבי'])
+        triage.undo('me@gmail.com|<a>')
+        self.assertEqual(len(triage.queue()), 2)
+
+    def test_import_previous_copy(self):
+        from mailbrief.features import migrate
+        old = tempfile.mkdtemp()
+        os.makedirs(os.path.join(old, 'data', 'window'))
+        storage.save_json(os.path.join(old, 'data', 'accounts.json'), [{'email': 'old@gmail.com'}])
+        storage.save_json(os.path.join(old, 'data', 'url.txt.json'), {})
+        with open(os.path.join(old, 'data', 'window', 'cache.bin'), 'w') as f:
+            f.write('x')
+        os.makedirs(os.path.join(old, 'קבלות', '2026-09'))
+        with open(os.path.join(old, 'קבלות', '2026-09', 'r.pdf'), 'wb') as f:
+            f.write(b'%PDF')
+        migrate.remember_previous(os.path.join(old, 'MailBrief.exe'))
+        self.assertEqual(migrate.previous_copy(), old)
+        with mock.patch('mailbrief.features.maintenance.make_backup'):
+            migrate.import_from(old + '\\MailBrief.exe')
+        self.assertEqual(storage.load_json(config.ACCOUNTS_FILE, [])[0]['email'], 'old@gmail.com')
+        self.assertTrue(os.path.isfile(os.path.join(config.RECEIPTS_DIR, '2026-09', 'r.pdf')))
+        self.assertFalse(os.path.exists(os.path.join(config.DATA, 'window')))         # the program's own cache stays behind
+        self.assertEqual(migrate.previous_copy(), '')
+        with self.assertRaises(ValueError):
+            migrate.import_from(tempfile.mkdtemp())
+
+
+def make_pdf(content, cmap=None):
+    """A minimal PDF: one compressed content stream (+ an optional ToUnicode table)."""
+    import zlib
+    objs = []
+    if cmap:
+        objs.append(b'<< /Length %d >>\nstream\n' % len(cmap) + cmap + b'\nendstream')
+    packed = zlib.compress(content)
+    objs.append(b'<< /Length %d /Filter /FlateDecode >>\nstream\n' % len(packed) + packed + b'\nendstream')
+    return b'%PDF-1.4\n' + b''.join(b'%d 0 obj\n' % (n + 1) + o + b'\nendobj\n' for n, o in enumerate(objs)) + b'%%EOF'
+
+
+class PdfTotals(Isolated):
+    def test_plain_text_pdf(self):
+        from mailbrief.money import pdftext
+        pdf = make_pdf(b'BT /F1 12 Tf 72 700 Td (Subtotal ILS 1,000.00) Tj 0 -20 Td (VAT ILS 180.00) Tj 0 -20 Td (Total ILS 1,180.00) Tj ET')
+        self.assertEqual(pdftext.total_from_pdf(pdf), '₪1,180.00')
+
+    def test_glyph_by_glyph_with_tounicode(self):             # Chrome-style: every character placed on its own
+        from mailbrief.money import pdftext
+        cmap = (b'/CIDInit /ProcSet findresource begin begincmap 1 begincodespacerange <0000> <FFFF> endcodespacerange\n'
+                b'3 beginbfchar <0001> <20AA> <0002> <05E1> <0003> <05D4> endbfchar\n'
+                b'1 beginbfrange <0010> <0019> <0030> endbfrange\n'
+                b'2 beginbfchar <0020> <002E> <0021> <002C> endbfchar endcmap')
+        glyphs = {'₪': '0001', '5': '0015', '9': '0019', '.': '0020', '0': '0010', ',': '0021', '2': '0012'}
+        line = ' '.join(f'<{glyphs[c]}> Tj 4.5 0 Td' for c in '₪59.00').encode()
+        date = ' '.join(f'<{glyphs[c]}> Tj 4.5 0 Td' for c in '2,020').encode()
+        pdf = make_pdf(b'BT 1 0 0 -1 540 100 Tm ' + line + b' ET BT 1 0 0 -1 540 130 Tm ' + date + b' ET', cmap)
+        self.assertIn('₪59.00', pdftext.pdf_text(pdf))
+        self.assertEqual(pdftext.total_from_pdf(pdf), '₪59.00')
+
+    def test_hebrew_visual_order_and_dates(self):
+        from mailbrief.money import pdftext
+        pdf = make_pdf('BT 72 700 Td (22-09-2026₪ 20.16) Tj 0 -20 Td (ח"ש 1,960.00:םוכס) Tj ET'.encode('utf-8'))
+        with mock.patch.object(pdftext, '_decode', side_effect=lambda code, table, widths: code.decode('utf-8', 'replace')):
+            self.assertEqual(pdftext.total_from_pdf(pdf), '₪1,960.00')
+        self.assertEqual(pdftext.total_from_pdf(b'not a pdf'), '')
+
+    def test_ledger_backfills_from_saved_pdf(self):
+        from mailbrief.money import ledger as book
+        os.makedirs(os.path.join(config.RECEIPTS_DIR, '2026-09'))
+        with open(os.path.join(config.RECEIPTS_DIR, '2026-09', 'a.pdf'), 'wb') as f:
+            f.write(make_pdf(b'BT 72 700 Td (Total ILS 99.90) Tj ET'))
+        storage.save_json(config.LEDGER_FILE, {'k': {'date': '2026-09-10', 'vendor': 'X', 'email': 'b@x.co.il', 'vendor_key': 'x.co.il',
+                                                     'subject': 'חשבונית', 'amount': None, 'currency': '', 'book': 'אחר',
+                                                     'account': 'me@gmail.com', 'files': ['2026-09/a.pdf']}})
+        rows = book.update_ledger([])
+        self.assertEqual((rows['k']['amount'], rows['k']['currency'], rows['k']['amount_from']), (99.9, '₪', 'pdf'))
+
+
+class Greetings(Isolated):
+    def test_recipients_and_personal_mail(self):
+        from mailbrief.features import greetings, outbox
+        today = dt.date.today().isoformat()
+        history = {f'm{i}': {'date': today, 'cats': ['people'], 'sender': 'dana@client.co.il', 'name': 'דנה כהן', 'answered': True,
+                             'rules': ['לקוח כהן']} for i in range(2)}
+        history['robot'] = {'date': today, 'cats': ['people'], 'sender': 'noreply@shop.co.il', 'name': 'Shop'}
+        history['news'] = {'date': today, 'cats': ['newsletters'], 'sender': 'news@x.co.il', 'name': 'News'}
+        storage.save_json(config.HISTORY_FILE, history)
+        people = greetings.recipients()
+        self.assertEqual([(p['email'], p['first_name'], p['suggested']) for p in people], [('dana@client.co.il', 'דנה', True)])
+        when = dt.datetime(2026, 9, 11, 10, 0, tzinfo=IL)
+        self.assertEqual(greetings.schedule_greetings('me@gmail.com', people, 'שנה טובה', 'שלום {first_name},\nשנה טובה!\n{my_name}', when, 'רחל'), 1)
+        item = outbox.outbox()[0]
+        self.assertEqual((item['to'], item['body']), (['dana@client.co.il'], 'שלום דנה,\nשנה טובה!\nרחל\n'))
+        self.assertEqual(greetings.personal('שלום {first_name},', {'first_name': ''}, ''), 'שלום,\n')
+        with self.assertRaises(ValueError):
+            greetings.schedule_greetings('me@gmail.com', [], 's', 't', when)
+
+
+class SnoozeAndReplies(Isolated):
+    def fake_imap(self):
+        m = mock.Mock()
+        m.uid.side_effect = lambda cmd, *a: ('OK', [b'42']) if cmd == 'SEARCH' else ('OK', [None])
+        m.list.return_value = ('OK', [b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"'])
+        return m
+
+    def test_snooze_and_wake(self):
+        from mailbrief.features import snooze
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
+        m = self.fake_imap()
+        with mock.patch.object(imap, 'connect', return_value=m):
+            snooze.snooze('me@gmail.com', '<a@x>', 'הצעת מחיר', dt.datetime(2026, 9, 30, 8, 0, tzinfo=IL))
+            self.assertIn(mock.call('STORE', b'42', '-X-GM-LABELS', r'(\Inbox)'), m.uid.call_args_list)
+            with mock.patch.object(snooze, 'is_holy_time', return_value=False), mock.patch.object(notify, 'toast') as toast:
+                self.assertEqual(snooze.wake_due(dt.datetime(2026, 9, 29, 8, 0, tzinfo=IL)), 0)       # not yet
+                self.assertEqual(snooze.wake_due(dt.datetime(2026, 9, 30, 9, 0, tzinfo=IL)), 1)
+        self.assertIn(mock.call('STORE', b'42', '+X-GM-LABELS', r'(\Inbox)'), m.uid.call_args_list)
+        self.assertIn(mock.call('STORE', b'42', '-FLAGS', r'(\Seen)'), m.uid.call_args_list)
+        self.assertEqual((snooze.snoozed(), toast.call_count), ([], 1))
+
+    def test_scheduled_reply_keeps_thread_and_files(self):
+        from mailbrief.features import outbox
+        item = outbox.schedule('me@gmail.com', 'dana@client.co.il', 'Re: הצעה', 'תודה!', dt.datetime(2026, 9, 27, 8, 0, tzinfo=IL),
+                               files=[('הצעה.pdf', b'%PDF-1.4 x')], thread={'in_reply_to': '<a@x>', 'references': '<a@x>'})
+        msg = outbox.build(item, {'email': 'me@gmail.com'})
+        self.assertEqual((msg['In-Reply-To'], [p.get_filename() for p in msg.iter_attachments()]), ('<a@x>', ['הצעה.pdf']))
+
+    def test_multipart_form(self):
+        from mailbrief.web.server import parse_multipart
+        body = ('--XX\r\nContent-Disposition: form-data; name="to"\r\n\r\nדנה@x.co.il\r\n'
+                '--XX\r\nContent-Disposition: form-data; name="files"; filename="a.pdf"\r\nContent-Type: application/pdf\r\n\r\n%PDF\r\n'
+                '--XX--\r\n').encode('utf-8')
+        fields, files = parse_multipart('multipart/form-data; boundary=XX', body)
+        self.assertEqual((fields['to'], files), (['דנה@x.co.il'], [('a.pdf', b'%PDF')]))
+
+
+class Mailboxes(Isolated):
+    def test_run_one_mailbox_keeps_the_others(self):
+        from mailbrief.features import alerts
+        storage.save_json(config.SNAPSHOT_FILE, {
+            'waiting': [{'account': 'a@gmail.com', 'subject': 'ישן-א', 'days': 9}, {'account': 'b@gmail.com', 'subject': 'ב', 'days': 2}],
+            'awaiting': [{'account': 'b@gmail.com', 'subject': 'ממתין-ב', 'days': 5}], 'urgent': [], 'due': [], 'invites': []})
+        fresh = sorting.classify(mk('Dana <dana@client.co.il>', 'חדש-א', 'x'), 'a@gmail.com')
+        fresh['answered'], fresh['waiting_days'] = False, 1
+        alerts.save_snapshot([('a@gmail.com', [fresh])], only='a@gmail.com')
+        snap = storage.load_json(config.SNAPSHOT_FILE, {})
+        self.assertEqual(sorted(w['subject'] for w in snap['waiting']), ['ב', 'חדש-א'])        # a's old row replaced, b's kept
+        self.assertEqual([w['subject'] for w in snap['awaiting']], ['ממתין-ב'])                 # not counted twice
+
+    def test_view_one_mailbox(self):
+        from mailbrief import view
+        from mailbrief.features import triage
+        self.assertEqual(view.switcher(), '')                                    # one mailbox: no switcher
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'a@gmail.com'}, {'email': 'b@gmail.com'}])
+        storage.save_json(config.SNAPSHOT_FILE, {'waiting': [{'account': 'a@gmail.com', 'subject': 'א', 'from': 'x', 'days': 1},
+                                                             {'account': 'b@gmail.com', 'subject': 'ב', 'from': 'y', 'days': 2}]})
+        self.assertIn('כל התיבות', view.switcher())
+        self.assertEqual(len(triage.queue()), 2)
+        self.assertEqual(view.set_account('b@gmail.com'), 'b@gmail.com')
+        self.assertEqual([q['subject'] for q in triage.queue()], ['ב'])
+        self.assertNotEqual(view.color('a@gmail.com'), view.color('b@gmail.com'))
+        self.assertEqual(view.set_account('stranger@x.com'), '')                 # unknown: back to all
+        self.assertEqual(len(triage.queue()), 2)
 
 
 class Setup(Isolated):

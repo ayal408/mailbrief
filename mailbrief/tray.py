@@ -2,20 +2,21 @@
 import ctypes
 import sys
 import threading
-import webbrowser
 from ctypes import wintypes
 
 from mailbrief.address import link
 from mailbrief.features.alerts import check_alerts
 from mailbrief.features.calendar import is_holy_time, pause_for, paused_until
 from mailbrief.features.reminders import fire_reminders
+from mailbrief.window import open_window
 
 
 TRAY = {'hwnd': None}
 
 
-def run_tray():
-    """An icon next to the clock with a right-click menu (pure Win32 via ctypes). Blocks until "Exit"."""
+def run_tray(on_exit=None):
+    """An icon next to the clock with a right-click menu (pure Win32 via ctypes). Blocks until "Exit".
+    on_exit: also close the app window (the tray then runs on its own thread)."""
     w = wintypes
     user32, shell32, kernel32 = ctypes.windll.user32, ctypes.windll.shell32, ctypes.windll.kernel32
     WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, w.HWND, w.UINT, w.WPARAM, w.LPARAM)
@@ -60,7 +61,7 @@ def run_tray():
 
     def command(cid, hwnd):
         if cid in (1, 2, 3):
-            webbrowser.open(base + {1: '', 2: 'today', 3: 'automations'}[cid])
+            open_window(base + {1: '', 2: 'today', 3: 'automations'}[cid])
         elif cid == 4:
             threading.Thread(target=background_check, daemon=True).start()
         elif cid in (5, 6, 7):
@@ -68,6 +69,8 @@ def run_tray():
             update_tip()
         elif cid == 9:
             user32.DestroyWindow(hwnd)
+            if on_exit:
+                on_exit()
 
     def update_tip():
         until = paused_until()
