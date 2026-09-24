@@ -1,0 +1,45 @@
+# The website (ayal408.github.io/mailbrief): on every push to main, the feature list is rebuilt from the program's own
+# guide (tools/site_data.py) and the docs/ folder is published. The page itself reads the latest release from GitHub,
+# so the download button and "what's new" follow every release without a change here.
+name: Website
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Feature list from the program's guide
+        run: python tools/site_data.py
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -201,7 +201,7 @@ HTML = """
     ['📎 כל הקבצים המצורפים', '/files'], ['📊 תקציב חודשי', '/?s=money#budget'], ['⚖️ מי זול יותר', '/?s=money#compare'],
     ['🧾 מסמכים להחזר מס', '/?s=money#tax'], ['⚡ קיצורי טקסט', '/?s=auto#snippets'], ['🔓 בדיקת דליפות', '/?s=me#leaks'],
     ['📋 דוח שבועי לשותף', '/?s=clients#share'], ['🖨️ הדפסת היום שלי', '/today?print=1'],
-    ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'],
+    ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'], ['🎓 סיור היכרות', 'javascript:tour'],
     ['📅 Google Calendar', 'https://calendar.google.com/'], ['✅ Google Tasks', 'https://tasks.google.com/']
   ];
   var pal = document.getElementById('mb-pal'), q = document.getElementById('mb-q'), list = document.getElementById('mb-list'), sel = 0, shown = [];
@@ -225,6 +225,7 @@ HTML = """
     var i = shown[n]; if (!i) return; close();
     if (i[1] === 'javascript:a11y') { if (window.MB && MB.a11y) MB.a11y(); return; }
     if (i[1] === 'javascript:keys') { if (window.MB && MB.keys) MB.keys(); return; }
+    if (i[1] === 'javascript:tour') { if (window.MB && MB.tour) MB.tour(); return; }
     if (i[1].indexOf('http') === 0) { window.open(i[1], '_blank'); return; }
     var u = new URL(i[1], location.href);
     if (u.pathname === location.pathname && u.search === location.search && u.hash) { location.hash = u.hash; return; }
@@ -615,6 +616,68 @@ HTML += """
   window.MB.a11y = function(){ toggle(true); };
   window.MB.keys = function(){ keys.classList.add('on'); };
   apply();
+})();
+</script>"""
+
+
+# ---- the first-run tour: five bubbles that point at what matters most ------------------------------------------------
+STYLE += """
+#mb-tour-dim{position:fixed;inset:0;z-index:84;background:rgba(20,12,40,.35);display:none}
+#mb-tour-dim.on{display:block;animation:mbfade .25s ease}
+.mb-tour-spot{position:relative;z-index:85!important;box-shadow:0 0 0 4px var(--accent-2),0 0 0 9999px rgba(20,12,40,.0)!important;border-radius:14px}
+#mb-tour{position:fixed;z-index:86;width:min(330px,calc(100vw - 24px));background:var(--surface);color:var(--ink);border:1px solid var(--line);
+border-radius:18px;padding:16px 18px;box-shadow:0 20px 60px rgba(0,0,0,.3);display:none;animation:mbpop .3s ease}
+#mb-tour.on{display:block}
+#mb-tour h4{margin:0 0 6px;font-size:17px}#mb-tour p{margin:0 0 12px;color:var(--muted);font-size:14.5px;line-height:1.55}
+#mb-tour .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#mb-tour .dots{display:flex;gap:5px}#mb-tour .dots i{width:7px;height:7px;border-radius:50%;background:var(--line)}#mb-tour .dots i.on{background:var(--accent)}
+#mb-tour button{font:inherit;font-size:14px;border-radius:10px;padding:7px 14px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--ink)}
+#mb-tour button.next{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+"""
+
+HTML += """
+<div id="mb-tour-dim"></div>
+<div id="mb-tour" role="dialog" aria-live="polite" aria-label="סיור קצר"><h4 id="mb-tour-t"></h4><p id="mb-tour-p"></p>
+<div class="row"><div class="dots" id="mb-tour-dots"></div><div><button type="button" id="mb-tour-skip">דילוג</button>
+<button type="button" class="next" id="mb-tour-next">הבא ←</button></div></div></div>
+<script>
+(function(){
+  if (window.__mbTour) return; window.__mbTour = true;
+  var STEPS = [
+    ['#mb-tabs a[href="/"]', '📬 מתחילים כאן', 'בהגדרות מחברים את תיבת המייל — כפתור „חיבור עם Google” ואישור. בלי סיסמאות, והמייל נשאר רק במחשב שלך.'],
+    ['#mb-tabs a[href="/today"]', '☀️ היום שלי', 'מה דחוף, מי מחכה לתשובה, מה לתשלום ומה ביומן — בדף אחד. נפתח לבד כשנכנסים למחשב.'],
+    ['#mb-tabs a[href="/today"]', '⚡ מיון מהיר', 'ב„היום שלי” יש כפתור „מיון מהיר”: מייל אחרי מייל — בוצע, תזכורת, תשובה או נודניק — במקש אחד. כמה דקות ביום, ותיבה מסודרת.'],
+    ['.kbtn', '⌨️ מוצאים הכול', 'Ctrl+K (או /) פותח חיפוש מהיר של כל דף ופעולה. ? מציג את כל קיצורי המקלדת.'],
+    ['#mb-a11y-btn', '♿ נגישות', 'טקסט גדול, ניגודיות, הקראה בקול ועוד — מהכפתור בצד המסך, בכל דף. זהו, אפשר להתחיל! 🎉']
+  ];
+  var box = document.getElementById('mb-tour'), dim = document.getElementById('mb-tour-dim'), n = 0, spot = null;
+  function done(){ try { localStorage.setItem('mb-tour', 'done'); } catch(e){} }
+  function clear(){ if (spot) spot.classList.remove('mb-tour-spot'); spot = null; }
+  function close(){ clear(); box.classList.remove('on'); dim.classList.remove('on'); done(); }
+  function place(){
+    var s = STEPS[n], el = document.querySelector(s[0]);
+    clear();
+    document.getElementById('mb-tour-t').textContent = s[1];
+    document.getElementById('mb-tour-p').textContent = s[2];
+    document.getElementById('mb-tour-next').textContent = n === STEPS.length - 1 ? 'יאללה! ✓' : 'הבא ←';
+    document.getElementById('mb-tour-dots').innerHTML = STEPS.map(function(_, i){ return '<i' + (i === n ? ' class="on"' : '') + '></i>'; }).join('');
+    box.classList.add('on'); dim.classList.add('on');
+    if (!el) { box.style.top = '30%'; box.style.left = '50%'; box.style.transform = 'translateX(-50%)'; return; }
+    spot = el; el.classList.add('mb-tour-spot'); el.scrollIntoView({block: 'nearest'});
+    var r = el.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
+    var top = r.bottom + 12 + h < innerHeight ? r.bottom + 12 : Math.max(12, r.top - h - 12);
+    var left = Math.min(Math.max(12, r.left + r.width / 2 - w / 2), innerWidth - w - 12);
+    box.style.transform = ''; box.style.top = top + 'px'; box.style.left = left + 'px';
+  }
+  function start(){ n = 0; place(); document.getElementById('mb-tour-next').focus(); }
+  document.getElementById('mb-tour-next').onclick = function(){ if (n < STEPS.length - 1) { n++; place(); } else close(); };
+  document.getElementById('mb-tour-skip').onclick = close;
+  dim.onclick = close;
+  window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && box.classList.contains('on')) close(); });
+  window.addEventListener('resize', function(){ if (box.classList.contains('on')) place(); });
+  window.MB = window.MB || {}; window.MB.tour = start;
+  var seen = true; try { seen = localStorage.getItem('mb-tour') === 'done'; } catch(e){}
+  if (!seen && document.getElementById('mb-tabs') && !/^[/](welcome|oauth)/.test(location.pathname)) setTimeout(start, 900);
 })();
 </script>"""
 

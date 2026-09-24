@@ -23,11 +23,12 @@
   <p class="lead">עוזר מייל שרץ על המחשב שלך: מה דחוף, מי מחכה לתשובה, קבלות לאקסל ואוטומציות —
   <b>בלי AI, בלי ענן, והמייל לא יוצא מהמחשב.</b></p>
   <div class="cta">
-    <a class="btn main" href="https://github.com/ayal408/mailbrief/releases/latest">⬇️ הורדה ל-Windows</a>
+    <a class="btn main" id="dl" href="https://github.com/ayal408/mailbrief/releases/latest">⬇️ הורדה ל-Windows</a>
     <a class="btn" href="https://github.com/ayal408/mailbrief">קוד פתוח ב-GitHub</a>
   </div>
-  <p class="muted" style="font-size:14px">או בשורת הפקודה: <code dir="ltr">winget install mailbrief</code> · חינם · Windows 10 / 11</p>
-  <div class="chips"><span>🔒 מקומי לגמרי</span><span>🚫 בלי AI</span><span>🕯️ לא פועל בשבת ובחג</span><span>📬 Gmail · Outlook · כל IMAP</span><span>🧾 אקסל לרו״ח</span></div>
+  <p class="muted" style="font-size:14px"><span id="ver"></span>או בשורת הפקודה: <code dir="ltr">winget install mailbrief</code> · חינם · Windows 10 / 11</p>
+  <div class="chips"><span>🔒 מקומי לגמרי</span><span>🚫 בלי AI</span><span>🕯️ לא פועל בשבת ובחג</span><span>📬 Gmail · Outlook · כל IMAP</span>
+  <span>🧾 אקסל ומע״מ לרו״ח</span><span>♿ נגיש</span><span>🔄 מתעדכן לבד</span></div>
 </div>
 
 <div class="shots">
@@ -37,17 +38,21 @@
 
 <section id="features">
   <h2>מה הוא עושה</h2>
-  <div class="grid">
+  <p class="muted" id="count">הרשימה מתעדכנת לבד עם כל גרסה.</p>
+  <div class="grid" id="feature-grid">
     <div class="card"><b>☀️ היום שלי</b><p>נפתח כשנכנסים למחשב: דחוף, מחכים לתשובה, יומן ומשימות, תשלומים קרובים וזמני שבת.</p></div>
-    <div class="card"><b>📬 תדריך שבועי</b><p>כל יום ראשון בבוקר — דוח אחד בעברית על כל מה שקרה בתיבות.</p></div>
     <div class="card"><b>⚡ מיון מהיר</b><p>מייל אחרי מייל: בוצע, תזכורת, טיוטה, משימה, נודניק או תשובה — במקש אחד.</p></div>
-    <div class="card"><b>🧾 קבלות ואקסל</b><p>כל קבלה נשמרת לפי חודש, כולל סכומים מקבצי PDF, עם אקסל חודשי וחבילה לרו״ח.</p></div>
-    <div class="card"><b>📤 מחכה לתשובה מהם</b><p>שיחות ששלחת ואף אחד לא ענה — עם תזכורת בלחיצה.</p></div>
-    <div class="card"><b>✉️ מייל מתוזמן וברכות חג</b><p>כותבים עכשיו, נשלח אחרי שבת או בזמן שבחרת. ברכות אישיות לכל הלקוחות.</p></div>
-    <div class="card"><b>📰 ניוזלטרים</b><p>כל הניוזלטרים במקום אחד, וביטול מנוי בלחיצה.</p></div>
-    <div class="card"><b>🎣 זיהוי פישינג</b><p>התחזות לבנקים ולדואר ישראל, קישורים מטעים וקבצים מסוכנים — עם הסבר למה.</p></div>
+    <div class="card"><b>🧾 קבלות ואקסל</b><p>כל קבלה נשמרת לפי חודש, עם אקסל חודשי, מע״מ, ייצוא לחשבשבת וחבילה לרו״ח.</p></div>
+    <div class="card"><b>💰 מעקב תשלומים</b><p>תזכורת מנומסת ללקוח שלא שילם, ותודה עם קבלה כשהוא משלם.</p></div>
+    <div class="card"><b>🎣 הגנה</b><p>פישינג, קבצים מסוכנים, וזר שמבקש פתאום כסף או פרטי בנק — עם הסבר למה.</p></div>
     <div class="card"><b>🕯️ שבת וחג</b><p>שום אוטומציה לא רצה מהדלקת נרות ועד הבדלה, לפי העיר שלך.</p></div>
   </div>
+</section>
+
+<section id="news" hidden>
+  <h2>🆕 מה חדש בגרסה <span id="news-ver"></span></h2>
+  <div class="panel"><ul id="news-list"></ul>
+  <p class="muted" style="font-size:13px"><a href="https://github.com/ayal408/mailbrief/releases">כל הגרסאות ←</a></p></div>
 </section>
 
 <section>
@@ -79,5 +84,38 @@
   <a href="privacy.html">פרטיות</a><a href="terms.html">תנאי שימוש</a><a href="https://github.com/ayal408/mailbrief/issues">דיווח על בעיה</a>
 </footer>
 </div>
+<script>
+// Everything here updates by itself: the feature list comes from the program's own guide (features.json, rebuilt on
+// every push), and the version / download link / what's new come from the latest GitHub release.
+(function(){
+  function el(tag, cls, text){ var x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; }
+  fetch('features.json', {cache: 'no-cache'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+    if (!d || !d.features || !d.features.length) return;
+    var grid = document.getElementById('feature-grid'); grid.innerHTML = '';
+    d.features.forEach(function(f){ var c = el('div', 'card'); c.appendChild(el('b', '', f.title)); c.appendChild(el('p', '', f.text)); grid.appendChild(c); });
+    document.getElementById('count').textContent = d.features.length + ' יכולות — והרשימה מתעדכנת לבד עם כל גרסה.';
+  }).catch(function(){});
+  fetch('https://api.github.com/repos/ayal408/mailbrief/releases/latest').then(function(r){ return r.ok ? r.json() : null; }).then(function(rel){
+    if (!rel || !rel.tag_name) return;
+    var setup = (rel.assets || []).filter(function(a){ return /Setup\.exe$/i.test(a.name); })[0];
+    if (setup) {
+      var dl = document.getElementById('dl');
+      dl.href = setup.browser_download_url;
+      dl.textContent = '⬇️ הורדה ל-Windows · ' + rel.tag_name + ' · ' + Math.round(setup.size / 1048576) + 'MB';
+    }
+    var when = rel.published_at ? new Date(rel.published_at).toLocaleDateString('he-IL') : '';
+    document.getElementById('ver').textContent = 'גרסה ' + rel.tag_name.replace(/^v/, '') + (when ? ' (' + when + ')' : '') + ' · ';
+    var lines = (rel.body || '').split('\n').map(function(s){ return s.trim(); })
+      .filter(function(s){ return /^[-*•]\s+/.test(s) && !/^[-*•]\s+\*\*Full Changelog/i.test(s); })
+      .map(function(s){ return s.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').replace(/\s+by @\S+ in https?:\S+$/, ''); }).slice(0, 12);
+    if (lines.length) {
+      var list = document.getElementById('news-list');
+      lines.forEach(function(s){ list.appendChild(el('li', '', s)); });
+      document.getElementById('news-ver').textContent = rel.tag_name.replace(/^v/, '');
+      document.getElementById('news').hidden = false;
+    }
+  }).catch(function(){});
+})();
+</script>
 </body>
 </html>
