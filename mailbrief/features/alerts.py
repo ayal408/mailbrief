@@ -35,8 +35,9 @@ def save_snapshot(per_account, awaiting=None, only=None):
                 invites[inv['uid'] or (inv['start'], inv['title'])] = row | inv
             if it.get('answered') is False:
                 waiting.append(row | {'days': it.get('waiting_days', 0)})
-            if it['unusual'] or 'urgent' in it['cats'] or 'phishing' in it['cats']:
-                why = '🎣 חשד לפישינג' if 'phishing' in it['cats'] else 'חריג באבטחה' if it['unusual'] else 'דחוף'
+            if it['unusual'] or 'urgent' in it['cats'] or 'phishing' in it['cats'] or it.get('stranger_money'):
+                why = ('🎣 חשד לפישינג' if 'phishing' in it['cats'] else '🚨 זר מבקש כסף / פרטי בנק' if it.get('stranger_money')
+                       else 'חריג באבטחה' if it['unusual'] else 'דחוף')
                 urgent.append(row | {'why': why, 'date': it['date']})
     data = {'at': dt.datetime.now().strftime('%d/%m %H:%M'),
                               'waiting': sorted(waiting, key=lambda w: -w['days']), 'urgent': urgent, 'due': due,
@@ -78,6 +79,8 @@ def check_alerts(only=None):
     seen = set(state.get('_alerted', []))
     ledger = load_json(config.LEDGER_FILE, {})
     known_vendors = {r['vendor_key'] for r in ledger.values()}
+    from mailbrief.features.security import known_people, stranger_asks_money
+    known = known_people() | {a['email'].lower() for a in accounts}
     now = dt.datetime.now().astimezone()
     alerts = []                                  # (reason, item)
     snapshot, awaiting = [], []
@@ -107,6 +110,11 @@ def check_alerts(only=None):
                     awaiting += awaiting_replies(m, acc, {a['email'].lower() for a in accounts})
                 except Exception:
                     pass                                 # a slow or odd Sent folder must not stop the check
+                try:                                     # "I'll get back to you on Sunday" -> a reminder for Sunday
+                    from mailbrief.features.promises import scan_sent
+                    scan_sent(m, acc, state, {a['email'].lower() for a in accounts})
+                except Exception:
+                    pass
             finally:
                 m.logout()
             if pending:
@@ -116,7 +124,10 @@ def check_alerts(only=None):
             continue
         for it in items:
             fresh = (now - dt.datetime.fromisoformat(it['iso'])).days <= 2
+            if stranger_asks_money(it, known):
+                it['stranger_money'] = True
             reasons = [
+                ('stranger', '🚨 שולח שלא הכרת מבקש כסף או פרטי בנק — לבדוק בטלפון לפני כל תשלום', fresh and it.get('stranger_money', False)),
                 ('phish', '🎣 חשד לפישינג — לא ללחוץ', fresh and 'phishing' in it['cats']),
                 ('unusual', 'חריג באבטחה', fresh and it['unusual']),
                 ('urgent', 'דחוף', fresh and 'urgent' in it['cats']),
@@ -145,8 +156,11 @@ def check_alerts(only=None):
     from mailbrief.money.accountant import maybe_send_monthly, price_change_text, price_changes
     from mailbrief.features.snooze import wake_due
     from mailbrief.features.clientcare import chase_due, greet_due
+    from mailbrief.features.meetings import meeting_followups
+    from mailbrief.features.sharing import maybe_share
     jobs = (chase_due, greet_due,                         # queue first, so the outbox sends them in the same round
-            lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due)
+            lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due,
+            lambda: meeting_followups(state), lambda: maybe_share(state, accounts))
     for job in (jobs if not only else ()):
         try:
             job()
@@ -159,6 +173,32 @@ def check_alerts(only=None):
             seen.add(key)
             alerts.append(('🧾 חשבונית שלא הגיעה', {'subject': f"החשבונית של {gap['vendor']} מגיעה בדרך כלל עד ה-{gap['day']} — והחודש עוד לא",
                                                      'sender_name': gap['vendor'], 'link': ''}))
+    if not only:
+        from mailbrief.features.meetings import holiday_lines, holiday_prep
+        from mailbrief.features.security import check_leaks
+        from mailbrief.money.budget import budget_status
+        try:
+            prep = holiday_prep()
+        except Exception:
+            prep = None
+        if prep and holiday_lines(prep):
+            key = f"holiday|{prep['start']:%Y-%m-%d}"
+            if key not in seen:
+                seen.add(key)
+                alerts.append((f"🕯️ לפני {prep['name'] or 'החג'}", {'subject': ' · '.join(holiday_lines(prep)[:2]), 'sender_name': 'MailBrief', 'link': ''}))
+        for b in budget_status(ledger=ledger):
+            key = f"budget|{b['book']}|{dt.date.today():%Y-%m}"
+            if b['over'] and key not in seen:
+                seen.add(key)
+                alerts.append(('📊 חריגה מהתקציב', {'subject': f"{b['book']}: ₪{b['spent']:,.0f} מתוך ₪{b['budget']:,.0f} החודש",
+                                                   'sender_name': b['book'], 'link': ''}))
+        try:
+            leaks, _ = check_leaks()
+        except Exception:
+            leaks = []
+        for address, breach in leaks:
+            alerts.append(('🔓 הכתובת שלך הופיעה בדליפה', {'subject': f"{address} — {breach['name']} ({breach['date']}). כדאי להחליף סיסמה.",
+                                                        'sender_name': 'Have I Been Pwned', 'link': ''}))
     for change in price_changes(ledger):
         key = f"price|{change['key']}|{change['date']}"
         if key not in seen:

@@ -987,6 +987,127 @@ class Comforts(Isolated):
         self.assertTrue(set(settings.ANCHORS.values()) <= {k for k, _, _ in settings.SECTIONS})
 
 
+class MoreFeatures(Isolated):
+    def test_promises_in_sent_mail(self):
+        from mailbrief.features.promises import find_promises
+        thursday = dt.date(2026, 9, 24)
+        self.assertEqual(find_promises('שלום, קיבלתי. אחזור אליך עד יום ראשון עם הצעה.', thursday)[0][1], dt.date(2026, 9, 27))
+        self.assertEqual(find_promises('אשלח את החשבונית מחר בבוקר', thursday)[0][1], dt.date(2026, 9, 25))
+        self.assertEqual(find_promises('I will send the file by Monday.', thursday)[0][1], dt.date(2026, 9, 28))
+        self.assertEqual(find_promises('אעדכן עד 3/10', thursday)[0][1], dt.date(2026, 10, 3))
+        self.assertEqual(find_promises('אבדוק ואעדכן', thursday)[0][1], dt.date(2026, 9, 26))       # no date: two days
+        self.assertEqual(find_promises('תודה רבה, נדבר', thursday), [])
+        self.assertEqual(find_promises('בסדר\n\nOn Tue, Dana wrote:\nאשלח מחר', thursday), [])        # someone else's promise, quoted
+
+    def test_budget_compare_and_tax(self):
+        from mailbrief.money import budget
+        rows = {
+            'a': {'date': '2026-09-02', 'vendor': 'פרטנר', 'email': 'b@partner.co.il', 'vendor_key': 'partner.co.il', 'subject': 'חשבונית',
+                  'amount': 120.0, 'currency': '₪', 'book': 'תקשורת', 'account': 'me@gmail.com', 'files': []},
+            'b': {'date': '2026-09-03', 'vendor': 'סלקום', 'email': 'b@cellcom.co.il', 'vendor_key': 'cellcom.co.il', 'subject': 'חשבונית',
+                  'amount': 90.0, 'currency': '₪', 'book': 'תקשורת', 'account': 'me@gmail.com', 'files': []},
+            'c': {'date': '2026-03-01', 'vendor': 'מכבי שירותי בריאות', 'email': 'x@maccabi4u.co.il', 'vendor_key': 'maccabi4u.co.il',
+                  'subject': 'קבלה על תשלום', 'amount': 50.0, 'currency': '₪', 'book': 'אחר', 'account': 'me@gmail.com', 'files': ['2026-03/k.pdf']},
+            'd': {'date': '2026-04-01', 'vendor': 'עמותת לתת', 'email': 'x@latet.org.il', 'vendor_key': 'latet.org.il',
+                  'subject': 'קבלה לפי סעיף 46 על תרומתך', 'amount': 180.0, 'currency': '₪', 'book': 'אחר', 'account': 'me@gmail.com', 'files': []}}
+        storage.save_json(config.LEDGER_FILE, rows)
+        storage.save_json(config.SETTINGS_FILE, {'budgets': {'תקשורת': 150}})
+        with mock.patch('mailbrief.money.budget.dt') as fake_dt:
+            fake_dt.date.today.return_value = dt.date(2026, 9, 20)
+            fake_dt.timedelta = dt.timedelta
+            status = budget.budget_status('2026-09')
+            compare = budget.compare_suppliers()
+        self.assertEqual(status, [{'book': 'תקשורת', 'budget': 150.0, 'spent': 210.0, 'pct': 140, 'over': True}])
+        self.assertEqual([r['vendor'] for r in compare['תקשורת']], ['סלקום', 'פרטנר'])           # the cheaper one first
+        self.assertEqual(set(budget.tax_documents(2026)), {'medical', 'donation'})
+        os.makedirs(os.path.join(config.RECEIPTS_DIR, '2026-03'))
+        with open(os.path.join(config.RECEIPTS_DIR, '2026-03', 'k.pdf'), 'wb') as f:
+            f.write(b'%PDF')
+        folder, count = budget.collect_tax_documents(2026)
+        self.assertEqual(count, 1)
+        self.assertTrue(os.path.isfile(os.path.join(folder, 'הוצאות רפואיות', 'k.pdf')))
+        self.assertTrue(os.path.isfile(os.path.join(folder, 'סיכום להחזר מס 2026.xlsx')))
+
+    def test_stranger_asking_for_money(self):
+        from mailbrief.features.security import stranger_asks_money
+        ask = sorting.classify(mk('CFO <cfo@new-supplier.biz>', 'עדכון פרטי חשבון בנק', 'שלום, פרטי הבנק שלנו השתנו. נא להעביר את התשלום לחשבון החדש'), 'me@gmail.com')
+        self.assertTrue(stranger_asks_money(ask, set()))
+        self.assertFalse(stranger_asks_money(ask, {'cfo@new-supplier.biz'}))                    # someone you know
+        self.assertFalse(stranger_asks_money(ask, {'ceo@new-supplier.biz'}))                    # a colleague of someone you know
+        hello = sorting.classify(mk('Stranger <s@x.co>', 'שאלה', 'מתי אתם פתוחים?'), 'me@gmail.com')
+        self.assertFalse(stranger_asks_money(hello, set()))
+
+    def test_risky_attachments(self):
+        import io as _io
+        from mailbrief.features.security import attachment_risks
+        buf = _io.BytesIO()
+        with zipfile.ZipFile(buf, 'w') as z:
+            z.writestr('invoice.pdf.exe', b'MZ')
+        with_exe = mk('A <a@b.co>', 'Invoice', 'x', attach=('invoice.zip', buf.getvalue()))
+        self.assertIn('בתוך invoice.zip יש קובץ מסוכן (invoice.pdf.exe)', attachment_risks(with_exe))
+        macro = mk('A <a@b.co>', 'Invoice', 'x', attach=('report.xlsm', b'PK'))
+        self.assertTrue(attachment_risks(macro)[0].startswith('קובץ Office עם מאקרו'))
+        self.assertIn('phishing', sorting.classify(macro, 'me@gmail.com')['cats'])
+        self.assertEqual(attachment_risks(mk('A <a@b.co>', 'x', 'x', attach=('report.pdf', b'%PDF'))), [])
+
+    def test_meeting_followup_and_holiday(self):
+        from mailbrief.features import meetings
+        events = [{'title': 'פגישה עם דנה', 'time': '10:00', 'link': '', 'attendees': ['dana@client.co.il']},
+                  {'title': 'לבד', 'time': '12:00', 'link': '', 'attendees': []}]
+        state = {}
+        with mock.patch.object(meetings.google_apps, 'gapps_account', return_value={'email': 'me@gmail.com'}), \
+                mock.patch.object(meetings.google_apps, 'events_on', return_value=events):
+            self.assertEqual(meetings.meeting_followups(state, dt.date(2026, 9, 21)), 1)
+            self.assertEqual(meetings.meeting_followups(state, dt.date(2026, 9, 21)), 0)          # once a day
+        self.assertIn('לשלוח סיכום פגישה: פגישה עם דנה', storage.load_json(config.REMINDERS_FILE, [])[0]['subject'])
+        now = dt.datetime(2026, 10, 5, 12, 0, tzinfo=IL)                                          # Monday; a Yom Tov starts Tuesday
+        yomtov = (dt.datetime(2026, 10, 6, 17, 30, tzinfo=IL), dt.datetime(2026, 10, 7, 18, 40, tzinfo=IL))
+        shabbat = (dt.datetime(2026, 10, 9, 17, 30, tzinfo=IL), dt.datetime(2026, 10, 10, 18, 40, tzinfo=IL))
+        with mock.patch.object(meetings, 'holy_windows', return_value=[yomtov, shabbat]):
+            self.assertEqual(meetings.next_holiday(now)[:2], yomtov)
+            self.assertIsNone(meetings.next_holiday(dt.datetime(2026, 10, 8, 12, 0, tzinfo=IL)))  # only a plain Shabbat ahead
+
+    def test_thanks_with_receipt(self):
+        from mailbrief.features import clientcare, outbox
+        d = clientcare.add_debt('me@gmail.com', 'dana@client.co.il', 'דנה כהן', '₪1,200', '1043', '2026-08-01')
+        with mock.patch.object(clientcare, 'out_of_holy', side_effect=lambda w: w):
+            clientcare.send_thanks(d['id'], [('receipt-1043.pdf', b'%PDF')])
+        mail = outbox.outbox()[0]
+        self.assertEqual((mail['to'], mail['files']), (['dana@client.co.il'], ['receipt-1043.pdf']))
+        self.assertIn('תודה רבה על התשלום של חשבונית 1043 על סך ₪1,200', mail['body'])
+
+    def test_partner_report_only_chosen_labels(self):
+        from mailbrief.features import sharing
+        storage.save_json(config.HISTORY_FILE, {
+            'a': {'date': '2026-09-20', 'cats': ['people'], 'rules': ['לקוח כהן'], 'answered': False, 'sender': 'a@cohen.co.il', 'name': 'כהן', 'subject': 'הצעה'},
+            'b': {'date': '2026-09-20', 'cats': ['people'], 'rules': ['פרטי'], 'answered': True, 'sender': 'mom@x.co', 'name': 'אמא', 'subject': 'שבת'}})
+        subject, text, html, count = sharing.build_share({'on': True, 'email': 'p@x.co', 'name': 'יוסי', 'labels': ['לקוח כהן'], 'account': ''},
+                                                         dt.date(2026, 9, 21))
+        self.assertEqual(count, 1)
+        self.assertIn('הצעה', text)
+        self.assertNotIn('שבת', text + html)                                                    # nothing outside the chosen labels
+
+    def test_attachment_names_and_threads(self):
+        from mailbrief.features.files import _names, kind_of
+        structure = (b'1 (UID 7 BODYSTRUCTURE (("text" "plain" ("charset" "utf-8") NIL NIL "7bit" 10 1)'
+                     b'("application" "pdf" ("name" "=?UTF-8?B?15fXqdeR15XXoNeZ16o=?=.pdf") NIL NIL "base64" 900 NIL ("attachment" ("filename*" "utf-8\'\'%D7%A7%D7%91%D7%9C%D7%94.pdf")))'
+                     b'("image" "png" ("name" "image001.png") NIL NIL "base64" 10 NIL) "mixed"))')
+        self.assertEqual(_names(structure), ['חשבונית.pdf', 'קבלה.pdf'])                         # the signature image is skipped
+        self.assertEqual((kind_of('a.XLSX'), kind_of('scan.jpeg'), kind_of('x.bin')), ('excel', 'image', 'other'))
+        from mailbrief.web.today import by_thread
+        rows = [{'account': 'a', 'subject': 'Re: הצעת מחיר', 'from': 'Dana', 'days': 5},
+                {'account': 'a', 'subject': 'הצעת מחיר', 'from': 'Dana', 'days': 3},
+                {'account': 'a', 'subject': 'אחר', 'from': 'Dana', 'days': 1}]
+        grouped = by_thread(rows)
+        self.assertEqual([(r['subject'], r.get('thread', 1)) for r in grouped], [('Re: הצעת מחיר', 2), ('אחר', 1)])
+
+    def test_busy_hours(self):
+        from mailbrief.web.dashboard import answer_tip, heatmap
+        rows = [{'date': '2026-09-20', 'hour': h} for h in ['09'] * 5 + ['14'] * 4 + ['11']]
+        self.assertIn('10:00 וב-15:00', answer_tip(rows))
+        self.assertIn('ראשון 09:00 — 5 מיילים', heatmap(rows))
+
+
 def message_b64(claims):
     import base64
     import json

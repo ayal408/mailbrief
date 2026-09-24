@@ -82,6 +82,12 @@ def phishing_score(msg, sender_name, sender, text):
     if bad:
         score += 3
         why.append(f'קובץ מצורף מסוכן ({bad[0]})')
+    else:
+        from mailbrief.features.security import attachment_risks     # macros, programs inside a ZIP, locked archives
+        risks = attachment_risks(msg)
+        if risks:                                 # a macro or a program inside a ZIP is enough on its own; a locked ZIP is only a hint
+            score += 2 if all('נעול בסיסמה' in r for r in risks) else 4
+            why += risks
     pressure = PRESSURE.findall(f'{decode(msg.get("Subject"))} {text[:3000]}')
     if pressure:
         score += min(2, len(pressure))

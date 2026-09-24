@@ -33,7 +33,9 @@ def weekly_summary(today=None, account=None):
 
 def summary_lines(s):
     """Short lines for the email / the page."""
-    lines = [f"📥 {s['this']['total']} מיילים השבוע" + (f" ({'+' if s['change'] > 0 else ''}{s['change']} משבוע שעבר)" if s['last']['total'] else '')]
+    change = ('' if not s['last']['total'] else ' (כמו בשבוע שעבר)' if not s['change'] else
+              f" ({'+' if s['change'] > 0 else ''}{s['change']} משבוע שעבר)")
+    lines = [f"📥 {s['this']['total']} מיילים השבוע{change}"]
     if s['rate'] is not None:
         lines.append(f"💬 ענית ל-{s['rate']}% מהמיילים האישיים ({s['this']['answered']} מתוך {s['this']['people']})")
     if s['this']['news']:

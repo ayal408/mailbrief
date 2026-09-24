@@ -83,7 +83,10 @@ def events_on(acc, day=None, days=1):
         rows.append({'title': ev.get('summary') or '(בלי כותרת)', 'link': ev.get('htmlLink', ''),
                      'day': (begin.get('dateTime') or begin.get('date') or '')[:10],
                      'time': begin['dateTime'][11:16] if 'dateTime' in begin else 'כל היום',
-                     'end': ev.get('end', {}).get('dateTime', '')[11:16], 'where': ev.get('location', '')})
+                     'end': ev.get('end', {}).get('dateTime', '')[11:16], 'where': ev.get('location', ''),
+                     'end_iso': ev.get('end', {}).get('dateTime') or ev.get('end', {}).get('date', ''),
+                     'attendees': [a['email'] for a in ev.get('attendees', []) if a.get('email') and not a.get('self')
+                                   and a.get('responseStatus') != 'declined' and not a.get('resource')]})
     return rows
 
 

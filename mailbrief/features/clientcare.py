@@ -63,6 +63,21 @@ def set_debt(debt_id, status):
     save_json(_path(DEBTS_FILE), [d for d in rows if d['status'] != 'deleted'])
 
 
+THANKS_DEFAULT = ('שלום {first_name},\n\nתודה רבה על התשלום של חשבונית {invoice}{amount_text} — התקבל. 🙏\n'
+                  'מצורפת הקבלה.\n\nבברכה,\n{my_name}')
+
+
+def send_thanks(debt_id, files=(), text=''):
+    """After "paid": a thank-you with the receipt attached, from your mailbox in two minutes (after Shabbat if it falls in one)."""
+    d = next((x for x in debts() if x['id'] == debt_id), None)
+    if not d:
+        raise ValueError('החשבונית לא נמצאה')
+    body = _fill(text.strip() or THANKS_DEFAULT, first_name=first_name(d['name']) or d['name'], name=d['name'],
+                 invoice=d['invoice'] or '', amount_text=f" על סך {d['amount']}" if d['amount'] else '', my_name=profile().get('name', ''))
+    subject = f'קבלה — חשבונית {d["invoice"]}' if d['invoice'] else 'קבלה על התשלום — תודה!'
+    return schedule(d['account'], d['email'], subject, body, out_of_holy(_now() + dt.timedelta(minutes=2)), files=files)
+
+
 def next_reminder(d):
     """The day the next reminder is due, or None (paid / stopped / all reminders sent)."""
     if d['status'] != 'open' or len(d['reminders']) >= MAX_REMINDERS:

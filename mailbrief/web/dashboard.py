@@ -13,6 +13,35 @@ from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
 
+HE_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
+
+
+def heatmap(rows):
+    """Day of week × hour (Sunday–Friday, 7:00–22:00) — how much mail comes in."""
+    grid = collections.Counter()
+    for h in rows:
+        if h.get('hour'):
+            grid[((dt.date.fromisoformat(h['date']).weekday() + 1) % 7, int(h['hour']))] += 1
+    peak = max(grid.values(), default=1) or 1
+    hours = range(7, 23)
+    head = '<tr><th></th>' + ''.join(f'<th style="font-size:11px;padding:2px">{hr}</th>' for hr in hours) + '</tr>'
+    body = ''.join(
+        f'<tr><td style="font-size:12px;white-space:nowrap">{name}</td>' + ''.join(
+            f'<td title="{name} {hr:02d}:00 — {grid[(d, hr)]} מיילים" style="padding:0;height:22px;min-width:20px;'
+            f'background:color-mix(in srgb,var(--accent) {round(grid[(d, hr)] / peak * 100)}%,transparent);border:1px solid var(--bg)"></td>'
+            for hr in hours) + '</tr>' for d, name in enumerate(HE_DAYS))
+    return f'<table style="width:auto;border-collapse:collapse">{head}{body}</table>'
+
+
+def answer_tip(rows):
+    """Two fixed times to answer mail: the hour after the two busiest hours of the day."""
+    by_hour = collections.Counter(int(h['hour']) for h in rows if h.get('hour') and 7 <= int(h['hour']) <= 20)
+    if len(by_hour) < 3:
+        return ''
+    top = sorted(hr + 1 for hr, _ in by_hour.most_common(2))
+    return f'💡 כדאי לשריין זמן קבוע לענות ב-{top[0]:02d}:00 וב-{top[1]:02d}:00 — אחרי שעות השיא, כשרוב המייל כבר הגיע.'
+
+
 def stats_page():
     cutoff = (dt.date.today() - dt.timedelta(days=30)).isoformat()
     box = current_account()
@@ -47,10 +76,11 @@ def stats_page():
     busiest_day = weekday.most_common(1)[0][0] if weekday else '—'
     busiest_hour = hours.most_common(1)[0][0] if hours else '—'
     accounts = collections.Counter(h['account'] for h in rows)
+    heat = heatmap(rows)
 
     facts = [f'בממוצע מגיעים אלייך <b>{total / 30:.1f}</b> מיילים ביום.',
              f'<b>{len(news) / total:.0%}</b> מהמייל שלך הם ניוזלטרים והתראות אוטומטיות.' if total else '',
-             f'השולח הכי חרוץ: <b dir="auto">{e(top_news[0][0])}</b> — {top_news[0][1]} מיילים בחודש. אפשר לבטל ב-⚡ בדף הראשי.' if top_news else '',
+             f'השולח הכי חרוץ: <b dir="auto">{e(top_news[0][0])}</b> — {top_news[0][1]} מיילים בחודש. אפשר לבטל בלשונית <a href="/reading">📰 ניוזלטרים</a>.' if top_news else '',
              f'היום הכי עמוס: <b>{busiest_day}</b>; השעה הכי עמוסה: <b dir="ltr">{busiest_hour}</b>.',
              f'ענית ל-<b>{answered}</b> מתוך <b>{len(people)}</b> מיילים מאנשים ({answered / len(people):.0%}).' if people else '']
     kpis = ''.join(f'<div class="kpi"><b>{v}</b><span>{k}</span></div>' for k, v in [
@@ -61,6 +91,9 @@ def stats_page():
 <h3>📊 השבוע שלך</h3><div class="item">{"<br>".join(e(line) for line in summary_lines(weekly_summary(account=box)))}</div>
 <div class="item">{"<br>".join(f for f in facts if f)}</div>
 <h3>לפי סוג</h3><div class="scroll"><table><tbody>{bars(cat_counts, top=10)}</tbody></table></div>
+<h3>🔥 מתי מגיע הכי הרבה מייל</h3>
+<p class="muted">כל משבצת = שעה ביום בשבוע. ככל שהצבע חזק יותר — יותר מיילים. {e(answer_tip(rows))}</p>
+<div class="scroll">{heat}</div>
 <h3>לפי יום בשבוע</h3><div class="scroll"><table><tbody>{bars(weekday, labels=['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'])}</tbody></table></div>
 <h3>לפי שעה</h3><div class="scroll"><table><tbody>{bars(hours, labels=[f"{h:02d}:00" for h in range(6, 24)])}</tbody></table></div>
 <h3>10 השולחים הכי פעילים</h3><div class="scroll"><table><tbody>{bars(senders, top=10)}</tbody></table></div>

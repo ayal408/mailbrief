@@ -61,6 +61,16 @@ def build_daily(now=None):
     from mailbrief.features.clientcare import debts
     section('💰 לקוחות שעוד לא שילמו', [(f"{d['name']} — {d['amount']}".strip(' —'), f"חשבונית {d['invoice']} · לתשלום עד {d['due'][8:10]}/{d['due'][5:7]}", '')
                                        for d in debts() if d['status'] == 'open' and d['due'] <= now.date().isoformat()][:5])
+    from mailbrief.features.meetings import holiday_lines, holiday_prep
+    try:
+        prep = holiday_prep(now.astimezone())
+    except Exception:
+        prep = None
+    if prep:
+        section(f"🕯️ לפני {prep['name'] or 'החג'} — מה כדאי לסגור", [(line, '', '') for line in holiday_lines(prep)])
+    from mailbrief.money.budget import budget_status
+    section('📊 תקציב החודש', [(f"{b['book']}: ₪{b['spent']:,.0f} מתוך ₪{b['budget']:,.0f}", f"{b['pct']}%" + (' — חריגה!' if b['over'] else ''), '')
+                              for b in budget_status() if b['pct'] >= 80])
     if now.weekday() == 6:                           # Sunday: the week in numbers
         from mailbrief.features.digest import summary_lines, weekly_summary
         section('📊 השבוע שלך במספרים', [(line, '', '') for line in summary_lines(weekly_summary(now.date()))])

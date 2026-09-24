@@ -62,7 +62,9 @@ from mailbrief.features import greetings, snooze
 from mailbrief.features.replies import reply_details, reply_now
 from mailbrief.features import migrate, outbox, triage
 from mailbrief.features.diag import log_error, problem_report
-from mailbrief.features import cleanup, clientcare, cloud_backup
+from mailbrief.features import cleanup, clientcare, cloud_backup, files, security, sharing
+from mailbrief.money import budget
+from mailbrief.web.files import files_page
 from mailbrief.mail.accounts import DRIVE_SCOPE
 from mailbrief.money import books
 from mailbrief import view
@@ -164,7 +166,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(dashboard_page())
         if url.path == '/today':
             q = parse_qs(url.query)
-            return self._send(today_page(q.get('msg', [''])[0], show_all=q.get('all', [''])[0] == '1'))
+            return self._send(today_page(q.get('msg', [''])[0], show_all=q.get('all', [''])[0] == '1',
+                                         print_now=q.get('print', [''])[0] == '1'))
         if url.path == '/stats':
             return self._send(stats_page())
         if url.path == '/notices':               # the licenses of what is inside MailBrief.exe
@@ -173,6 +176,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read(), 'text/plain; charset=utf-8')
             except OSError:
                 return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
+        if url.path == '/files':
+            return self._send(files_page(parse_qs(url.query).get('msg', [''])[0]))
+        if url.path == '/snippets.json':             # the text shortcuts, for the page script
+            return self._send(json.dumps(load_json(config.SETTINGS_FILE, {}).get('snippets') or [], ensure_ascii=False),
+                              'application/json; charset=utf-8')
         if url.path == '/help':
             return self._send(help_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/clients':
@@ -663,8 +671,15 @@ class Handler(BaseHTTPRequestHandler):
         status = f.get('status', '')
         if status not in ('paid', 'stopped', 'deleted'):
             return 'פעולה לא מוכרת'
+        thanks = ''
+        if status == 'paid' and 'thanks' in f:
+            try:
+                clientcare.send_thanks(f.get('id', ''), f.get('_files', []))
+                thanks = ' · 💌 מייל תודה' + (' עם הקבלה' if f.get('_files') else '') + ' יוצא בעוד שתי דקות'
+            except ValueError as exc:
+                thanks = f' · ⚠️ {exc}'
         clientcare.set_debt(f.get('id', ''), status)
-        return {'paid': '✓ סומן כשולם — לא יישלחו עוד תזכורות 🎉', 'stopped': '⏹ התזכורות הופסקו', 'deleted': 'נמחק'}[status]
+        return {'paid': '✓ סומן כשולם — לא יישלחו עוד תזכורות 🎉', 'stopped': '⏹ התזכורות הופסקו', 'deleted': 'נמחק'}[status] + thanks
 
     def post_date_add(self, f):
         try:
@@ -713,6 +728,83 @@ class Handler(BaseHTTPRequestHandler):
         for _, url in pages[:10]:
             window.open_external(url)
         return f'✂️ {done} מנויים בוטלו' + (f' · {len(pages)} נפתחו בדפדפן לסיום הביטול באתר של השולח' if pages else '')
+
+    # ---- budgets, suppliers, tax -------------------------------------------------------------------------------------
+    def post_budgets(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['budgets'] = {b: float(f[f'b_{i}']) for i, b in enumerate(books.BOOKS)
+                               if re.fullmatch(r'\d{1,7}(\.\d+)?', f.get(f'b_{i}', '').strip()) and float(f[f'b_{i}']) > 0}
+        save_json(config.SETTINGS_FILE, settings)
+        return f'✓ נשמרו {len(settings["budgets"])} תקציבים'
+
+    def post_tax_collect(self, f):
+        year = int(f['year']) if f.get('year', '').isdigit() else dt.date.today().year
+        folder, count = budget.collect_tax_documents(year)
+        os.startfile(folder)
+        return f'📁 נאספו {count} קבצים להחזר מס {year} — עם אקסל מסכם'
+
+    # ---- snippets -----------------------------------------------------------------------------------------------------
+    def post_snippet_add(self, f):
+        key, text = f.get('key', '').strip().lstrip(';')[:20], f.get('text', '').strip()[:3000]
+        if not key or not text or re.search(r'[\s;]', key):
+            return 'צריך קיצור בלי רווחים ונוסח'
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['snippets'] = [s for s in settings.get('snippets') or [] if s['key'] != key] + [{'key': key, 'text': text}]
+        save_json(config.SETTINGS_FILE, settings)
+        return f'✓ הקיצור ;{key} נשמר — כותבים ;{key} ורווח'
+
+    def post_snippet_delete(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['snippets'] = [s for s in settings.get('snippets') or [] if s['key'] != f.get('key')]
+        save_json(config.SETTINGS_FILE, settings)
+        return 'הקיצור נמחק'
+
+    # ---- leaks, sharing -----------------------------------------------------------------------------------------------
+    def post_hibp(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        if f.get('action') == 'off':
+            settings.pop('hibp', None)
+            save_json(config.SETTINGS_FILE, settings)
+            return 'המפתח הוסר'
+        if f.get('key', '').strip():
+            settings['hibp'] = {'key': encrypt(f['key'].strip())}
+            save_json(config.SETTINGS_FILE, settings)
+        if f.get('action') == 'check' or f.get('key', '').strip():
+            fresh, error = security.check_leaks(force=True)
+            if error:
+                return f'⚠️ {error}'
+            found = sum(len(v) for v in (load_json(config.CACHE_FILE, {}).get('leaks') or {}).get('results', {}).values())
+            return f'🔓 נמצאו {found} דליפות ישנות או חדשות — הפרטים למטה. כדאי להחליף סיסמה בשירותים האלה.' if found else '✓ הכתובות שלך לא נמצאו בדליפות ידועות'
+        return 'צריך מפתח'
+
+    def post_share(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        labels = [l for l in f['_lists'].get('label', []) if l]
+        before = (settings.get('share') or {}).get('on', False)
+        settings['share'] = {'on': True if f.get('action') == 'on' else False if f.get('action') == 'off' else before,
+                             'email': f.get('email', '').strip(), 'name': f.get('name', '').strip()[:40], 'labels': labels,
+                             'account': f.get('account', '')}
+        save_json(config.SETTINGS_FILE, settings)
+        if f.get('action') == 'test':
+            try:
+                count = sharing.send_share(load_json(config.ACCOUNTS_FILE, []))
+            except RuntimeError as exc:
+                return f'⚠️ {exc}'
+            return f'📨 נשלח לניסיון ל-{settings["share"]["email"]} ({count} מיילים בשבוע האחרון)'
+        return ('✓ הדוח השבועי פעיל — כל יום ראשון בבוקר' if settings['share']['on'] else 'הדוח השבועי כבוי')
+
+    # ---- attachments --------------------------------------------------------------------------------------------------
+    def post_files_scan(self, f):
+        rows, errors = files.scan_files()
+        return ('/files?msg=' + quote(f'📎 {len(rows)} קבצים ב-30 הימים האחרונים' + (' · ' + ' | '.join(errors) if errors else '')), None)
+
+    def post_file_get(self, f):
+        try:
+            folder = files.save_message_files(f.get('account', ''), f.get('message_id', ''))
+        except RuntimeError as exc:
+            return ('/files?msg=' + quote(f'⚠️ {exc}'), None)
+        os.startfile(folder)
+        return ('/files?msg=' + quote(f'⬇️ נשמר בתיקייה „{os.path.basename(folder)}” (בתוך „הורדות”)'), None)
 
     # ---- Google Drive backup ------------------------------------------------------------------------------------------
     def post_drive_connect(self, f):

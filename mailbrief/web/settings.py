@@ -18,6 +18,10 @@ from mailbrief.mail.classify import TAG_PREFIX
 from mailbrief.mail.oauth import PROVIDERS, bundled_client
 from mailbrief.money.accountant import accountant_cfg, previous_month
 from mailbrief.money.books import BOOKS, VAT_RATE, export_cfg, missing_invoices, vat_summary, vendors
+from mailbrief.money.budget import TAX_KINDS, budget_status, budgets, compare_suppliers, tax_documents
+from mailbrief.features.clientcare import THANKS_DEFAULT
+from mailbrief.features.security import hibp_key
+from mailbrief.features.sharing import share_cfg
 from mailbrief.profile import FORMS, g, GOALS, goals, profile
 from mailbrief.storage import load_json
 from mailbrief.util import e, money
@@ -34,7 +38,8 @@ SECTIONS = [('boxes', '📬', 'תיבות'), ('me', '👤', 'אישי והתרא
 # old links (#daily, #migrate ...) -> the sub-tab that holds them now
 ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'accountant': 'money', 'vendors': 'money', 'vat': 'money',
            'export': 'money', 'debts': 'clients', 'dates': 'clients', 'rules': 'auto', 'vacation': 'auto', 'templates': 'auto',
-           'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect'}
+           'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect',
+           'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money'}
 
 FIELD = 'font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
 
@@ -110,6 +115,10 @@ def me_section():
     daily = daily_cfg()
     hour_opts = ''.join(f'<option value="{h}"{" selected" if h == daily["hour"] else ""}>{h:02d}:00</option>' for h in range(5, 23))
     quiet = load_json(config.SETTINGS_FILE, {}).get('quiet') or {}
+    leaks = load_json(config.CACHE_FILE, {}).get('leaks') or {}
+    leak_rows = ''.join(f'<li><span dir="ltr">{e(a)}</span> — ' + (', '.join(f'<b>{e(b["name"])}</b> ({e(b["date"][:4])})' for b in found) if found else '✓ לא נמצא')
+                        + '</li>' for a, found in (leaks.get('results') or {}).items())
+    leaks_html = f'<p class="muted" style="margin-bottom:0">בדיקה אחרונה: {e(leaks.get("at", ""))}</p><ul>{leak_rows}</ul>' if leak_rows else ''
     hours = lambda chosen: ''.join(f'<option value="{h}"{" selected" if h == chosen else ""}>{h:02d}:00</option>' for h in range(24))
     return f'''
 {_h('profile', '👤 הפרופיל שלי')}
@@ -142,6 +151,16 @@ def me_section():
 <textarea name="vip" rows="3" dir="ltr" style="width:100%;{FIELD}">{e(chr(10).join(quiet.get('vip', [])))}</textarea></label>
 <div><button name="action" value="on" style="margin:0">{'שמירה' if quiet.get('on') else '✅ הפעלה'}</button>
 {'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if quiet.get('on') else ''}</div></form>
+
+{_h('leaks', '🔓 בדיקת דליפות סיסמה')}
+<p class="muted">פעם בשבוע בודק אם הכתובות שלך הופיעו בדליפת מידע ידועה (Have I Been Pwned) — ואם כן, מתריע להחליף סיסמה.
+נשלחת רק הכתובת. השירות דורש מפתח (בתשלום, כ-4$ לחודש) מ-<a href="https://haveibeenpwned.com/API/Key" target="_blank">haveibeenpwned.com/API/Key</a>.
+בלי מפתח — אפשר לבדוק ידנית ב-<a href="https://haveibeenpwned.com/" target="_blank">haveibeenpwned.com</a>.</p>
+<form method="post" action="/hibp" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">{_t()}
+<input type="password" name="key" placeholder="{'••••••• (שמור)' if hibp_key() else 'מפתח API'}" dir="ltr" style="min-width:220px;{FIELD}">
+<button name="action" value="save" style="margin:0">שמירה</button>
+{'<button name="action" value="check" class="ghost" style="margin:0">🔍 בדיקה עכשיו</button><button name="action" value="off" class="ghost" style="margin:0">הסרה</button>' if hibp_key() else ''}</form>
+{leaks_html}
 
 {_h('notify', '🔔 התראות Windows ותזמונים')}
 <p class="muted">בדיקה קצרה כל שעה בין 7:00 ל-23:00 (לא בשבת ובחג). קופצת התראה על מייל דחוף, אירוע אבטחה חריג, כלל עם 🔔, או חשבונית שלא הגיעה — פעם אחת לכל דבר.
@@ -176,6 +195,24 @@ def money_section(month=''):
     gap_rows = ''.join(f'<div class="item"><div class="t">🧾 {e(m["vendor"])}</div><div class="m">מגיעה בדרך כלל עד ה-{m["day"]} לחודש · '
                        f'האחרונה {e(m["last"][8:10])}/{e(m["last"][5:7])}{" · " + e(m["currency"]) + str(m["amount"]) if m.get("amount") is not None else ""}</div></div>'
                        for m in gaps) or '<p class="muted">✓ כל החשבוניות הקבועות של החודש הגיעו (או שעוד לא הגיע זמנן)</p>'
+    status = budget_status()
+    budget_html = ''.join(
+        f'<div class="item"><div class="t">{e(b["book"])} <span class="muted">— ₪{b["spent"]:,.0f} מתוך ₪{b["budget"]:,.0f}</span></div>'
+        f'<div style="height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px"><div style="height:100%;width:{min(b["pct"], 100)}%;'
+        f'background:{"var(--bad)" if b["over"] else "var(--warn)" if b["pct"] >= 80 else "var(--good)"}"></div></div></div>' for b in status) \
+        or '<p class="muted">עוד לא הוגדרו תקציבים.</p>'
+    current = budgets()
+    budget_inputs = ''.join(f'<label style="margin:0;font-weight:400">{e(b)}<input type="number" min="0" step="10" name="b_{i}" '
+                            f'value="{int(current[b]) if b in current else ""}" placeholder="₪" style="width:100%;{FIELD}"></label>'
+                            for i, b in enumerate(BOOKS))
+    compare_html = ''.join(
+        f'<h3 style="margin:14px 0 4px">{e(book)}</h3><div class="scroll"><table><tbody>' + ''.join(
+            f'<tr><td dir="auto">{"🏆 " if n == 0 else ""}{e(v["vendor"])}</td><td>₪{v["monthly"]:,.0f} לחודש</td><td class="muted">{v["months"]} חודשים</td></tr>'
+            for n, v in enumerate(rows)) + '</tbody></table></div>' for book, rows in compare_suppliers().items())
+    docs = tax_documents(this_year)
+    tax_html = ''.join(f'<span class="pill">{TAX_KINDS[k][0]} {e(TAX_KINDS[k][1])}: {len(v)} קבלות · {money(sum((r.get("amount_ils") or r.get("amount") or 0) for r in v))}</span> '
+                       for k, v in docs.items())
+    tax_html = f'<p>השנה עד עכשיו: {tax_html}</p>' if tax_html else ''
     account_inputs = ''.join(f'<label style="margin:0;font-weight:400">{e(b)}<input type="text" name="acc_{i}" value="{e(exp["accounts"].get(b, ""))}" dir="ltr" style="width:100%;{FIELD}"></label>'
                              for i, b in enumerate(BOOKS))
     return f'''
@@ -200,6 +237,25 @@ def money_section(month=''):
 {_h('vendors', '🏷️ סיווג קבוע לכל ספק')}
 <p class="muted">בוחרים פעם אחת את סוג ההוצאה של כל ספק — וכל קבלה ממנו (גם הישנות) מקבלת אותו באקסל, בחבילה לרו״ח ובייצוא.</p>
 <div class="scroll"><table><thead><tr><th>ספק</th><th>קבלות</th><th>סה״כ</th><th colspan="3">סיווג · מע״מ · כרטיס בהנה״ח</th></tr></thead><tbody>{vendor_rows}</tbody></table></div>
+
+{_h('budget', '📊 תקציב חודשי לפי סיווג')}
+<p class="muted">מגדירים כמה מותר להוציא בחודש על כל סוג — ומקבלים התראה כשעוברים (ובסיכום היומי מ-80%).</p>
+{budget_html}
+<details style="margin-top:8px"><summary><b>⚙️ הגדרת תקציבים</b></summary>
+<form method="post" action="/budgets" style="display:grid;gap:8px;margin-top:8px">{_t()}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">{budget_inputs}</div>
+<div><button style="margin:0">שמירה</button></div></form></details>
+
+{_h('compare', '⚖️ מי זול יותר — ספקים מאותו סוג')}
+<p class="muted">עלות חודשית ממוצעת בחצי השנה האחרונה, לכל ספק בסיווג שיש בו כמה ספקים. הזול — ראשון.</p>
+{compare_html or '<p class="muted">עוד אין סיווג עם שני ספקים או יותר.</p>'}
+
+{_h('tax', '🧾 מסמכים להחזר מס')}
+<p class="muted">קבלות על הוצאות רפואיות, תרומות (סעיף 46) וביטוח חיים / פנסיה — נאספות לתיקייה אחת עם אקסל מסכם, מוכן להגשה או לרו״ח.</p>
+<form method="post" action="/tax_collect" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">{_t()}
+<select name="year" style="{FIELD}">{''.join(f'<option>{y}</option>' for y in range(this_year, this_year - 4, -1))}</select>
+<button style="margin:0">📁 איסוף המסמכים</button></form>
+{tax_html}
 
 {_h('accountant', '📦 לרואה החשבון')}
 <p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if acct['on'] else ''}בכל חודש, ביום שבוחרים: ZIP עם האקסל של החודש הקודם
@@ -243,9 +299,15 @@ def clients_section():
         f'<td{" style=color:var(--bad)" if d["status"] == "open" and d["due"] < today else ""}>{e(d["due"][8:10])}/{e(d["due"][5:7])}</td>'
         f'<td>{"✓ שולם" if d["status"] == "paid" else "⏹ הופסק" if d["status"] == "stopped" else f"{len(d["reminders"])}/3" + (f" · הבאה {next_reminder(d):%d/%m}" if next_reminder(d) else "")}</td>'
         f'<td><form method="post" action="/debt_set" style="display:flex;gap:4px;margin:0">{_t()}<input type="hidden" name="id" value="{e(d["id"])}">'
-        + ('<button name="status" value="paid" style="margin:0">✓ שולם</button><button name="status" value="stopped" class="ghost" style="margin:0">⏹ עצירה</button>'
-           if d['status'] == 'open' else '')
-        + '<button name="status" value="deleted" class="ghost" style="margin:0">🗑️</button></form></td></tr>'
+        + ('<button name="status" value="stopped" class="ghost" style="margin:0">⏹ עצירה</button>' if d['status'] == 'open' else '')
+        + '<button name="status" value="deleted" class="ghost" style="margin:0">🗑️</button></form>'
+        + (f'<details style="margin-top:4px"><summary style="font-size:13px;cursor:pointer"><b>✓ שולם</b></summary>'
+           f'<form method="post" action="/debt_set" enctype="multipart/form-data" style="display:grid;gap:6px;margin-top:6px;min-width:230px">{_t()}'
+           f'<input type="hidden" name="id" value="{e(d["id"])}"><input type="hidden" name="status" value="paid">'
+           f'<label style="margin:0;font-weight:400;display:flex;gap:6px;align-items:center"><input type="checkbox" name="thanks" checked> 💌 לשלוח תודה</label>'
+           f'<input type="file" name="files" multiple accept=".pdf,image/*" style="font-size:13px" title="הקבלה (לא חובה)">'
+           f'<button style="margin:0">✓ שולם</button></form></details>' if d['status'] == 'open' else '')
+        + '</td></tr>'
         for d in sorted(debts(), key=lambda d: (d['status'] != 'open', d['due']))) or '<tr><td class="muted">אין חשבוניות פתוחות למעקב</td></tr>'
     sugg = ''.join(
         f'<form method="post" action="/debt_add" class="item" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 6px">{_t()}'
@@ -262,6 +324,11 @@ def clients_section():
         f'<button class="ghost" style="margin:0">🗑️</button></form></td></tr>' for d in client_dates()) or '<tr><td class="muted">עוד אין תאריכים</td></tr>'
     soon = ''.join(f'<span class="pill">{DATE_KINDS[d["kind"]][0]} {e(d["name"])} · {d["date"]:%d/%m}</span>' for d in upcoming_dates())
     kinds = ''.join(f'<option value="{k}">{icon} {title}</option>' for k, (icon, title, _) in DATE_KINDS.items())
+    share = share_cfg()
+    labels = sorted({r['label'] for r in load_json(config.RULES_FILE, []) if r.get('label')})
+    label_boxes = ''.join(f'<label style="margin:0;font-weight:400;display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line);'
+                          f'border-radius:999px;padding:4px 10px"><input type="checkbox" name="label" value="{e(l)}"{" checked" if l in share["labels"] else ""}> 🏷️ {e(l)}</label>'
+                          for l in labels)
     return f'''
 <p class="muted">לוח הלקוחות המלא (מיילים, קבלות, זמני תגובה): <a href="/clients">👥 לשונית לקוחות ←</a> · ברכות חג לכולם: <a href="/greetings">🗓️ ברכות חג ←</a></p>
 
@@ -284,6 +351,22 @@ def clients_section():
 <label style="margin:0">נוסח התזכורת <span class="muted">({{first_name}} {{invoice}} {{amount}} {{date}} {{my_name}})</span>
 <textarea name="text" rows="5" style="width:100%;{FIELD}">{e(REMINDER_DEFAULT)}</textarea></label>
 <div><button style="margin:0">💰 הוספה למעקב</button></div></form></details>
+
+<p class="muted" style="font-size:13px">💌 „✓ שולם” עם תודה: יוצא ללקוח מייל תודה (עם הקבלה, אם צירפת) בנוסח:
+<span style="white-space:pre-line">{e(THANKS_DEFAULT)}</span></p>
+
+{_h('share', '📋 דוח שבועי לשותף / עובד')}
+<p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if share['on'] else ''}כל יום ראשון בבוקר: מה קרה בשבוע עם התוויות שבוחרים (למשל הלקוחות שהם מטפלים בהם) —
+מי כתב, על מה, ומה עוד ממתין. רק התוויות שנבחרו נשלחות, שום דבר אחר.</p>
+<form method="post" action="/share" style="display:grid;gap:8px">{_t()}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
+<label style="margin:0">למייל<input type="email" name="email" value="{e(share['email'])}" dir="ltr" style="width:100%;{FIELD}"></label>
+<label style="margin:0">שם<input type="text" name="name" value="{e(share['name'])}" style="width:100%;{FIELD}"></label>
+<label style="margin:0">מהתיבה<select name="account" style="width:100%;{FIELD}">{_account_options(share['account'])}</select></label></div>
+<div style="display:flex;gap:6px;flex-wrap:wrap">{label_boxes or '<span class="muted">עוד אין תוויות — יוצרים כלל בלשונית 🏷️ כללים</span>'}</div>
+<div><button name="action" value="on" style="margin:0">{'שמירה' if share['on'] else '✅ הפעלה'}</button>
+{'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if share['on'] else ''}
+<button name="action" value="test" class="ghost" style="margin:0">📨 לשלוח עכשיו לניסיון</button></div></form>
 
 {_h('dates', '🎂 ימי הולדת ותאריכים של לקוחות')}
 <p class="muted">ביום עצמו, ב-9:00, יוצאת ברכה אישית מהתיבה שלך (תאריך שנופל בשבת או בחג — יוצא במוצאי שבת/חג). {('בקרוב: ' + soon) if soon else ''}</p>
@@ -325,6 +408,11 @@ def auto_section():
         f'<td><form method="post" action="/template_delete" style="margin:0">{_t()}'
         f'<input type="hidden" name="id" value="{e(t["id"])}"><button class="ghost" style="margin:0">מחיקה</button></form></td></tr>'
         for t in reply_templates())
+    snippet_rows = ''.join(
+        f'<tr><td dir="ltr" style="text-align:right;white-space:nowrap"><b>;{e(s["key"])}</b></td><td style="white-space:pre-line">{e(s["text"])}</td>'
+        f'<td><form method="post" action="/snippet_delete" style="margin:0">{_t()}<input type="hidden" name="key" value="{e(s["key"])}">'
+        f'<button class="ghost" style="margin:0">מחיקה</button></form></td></tr>'
+        for s in load_json(config.SETTINGS_FILE, {}).get('snippets') or []) or '<tr><td class="muted">עוד אין קיצורים</td></tr>'
     chips = ''.join(f'<button type="button" class="ghost chip" data-field="{{{f}}}" style="margin:0;padding:3px 10px;font-size:13px">{{{f}}}</button>'
                     for f in TEMPLATE_FIELDS)
     return f'''
@@ -355,6 +443,14 @@ def auto_section():
 <div><button style="margin:0">➕ הוספת תבנית</button></div></form>
 <script>document.querySelectorAll('.chip').forEach(function(b){{b.onclick=function(){{var t=document.getElementById('tmpl-text'),s=t.selectionStart||t.value.length;
 t.value=t.value.slice(0,s)+b.dataset.field+t.value.slice(t.selectionEnd||s);t.focus();t.selectionStart=t.selectionEnd=s+b.dataset.field.length;}};}});</script>
+
+{_h('snippets', '⚡ קיצורי טקסט')}
+<p class="muted">כותבים <b dir="ltr">;קיצור</b> ורווח בכל תיבת טקסט ב-MailBrief (תשובה במיון המהיר, מייל מתוזמן, ברכות) — והוא הופך לפסקה המלאה.</p>
+<div class="scroll"><table><tbody>{snippet_rows}</tbody></table></div>
+<form method="post" action="/snippet_add" class="box" style="display:grid;gap:8px;margin-top:10px">{_t()}
+<input type="text" name="key" required maxlength="20" pattern="[^ ;]+" placeholder="קיצור (בלי רווחים), למשל: תודה" style="{FIELD}">
+<textarea name="text" rows="3" required placeholder="תודה רבה על הפנייה! אחזור אליך עד סוף היום." style="{FIELD}"></textarea>
+<div><button style="margin:0">➕ הוספת קיצור</button></div></form>
 
 {_h('vacation', '🏖️ מצב חופשה')}
 <p class="muted">{'<b style="color:var(--good)">פעיל עכשיו</b> — ' if vacation_active() else ''}בין התאריכים, מי שכותב לך אישית מקבל מענה אוטומטי — פעם אחת לכל אדם בכל החופשה.

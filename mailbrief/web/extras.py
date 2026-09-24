@@ -198,6 +198,9 @@ HTML = """
     ['☁️ גיבוי ל-Google Drive', '/?s=data#cloud'], ['📦 העברת נתונים', '/?s=data#migrate'], ['📅 חיבור יומן ומשימות', '/?s=connect#gapps'],
     ['📊 לוח בקרה', '/dashboard'], ['📈 המייל במספרים', '/stats'], ['⚡ אוטומציות', '/automations'], ['👥 לקוחות', '/clients'],
     ['📰 ניוזלטרים ורשימת קריאה', '/reading'], ['🔍 חיפוש', '/search'], ['❓ מדריך ובדיקת תקינות', '/help'], ['📋 דוח תקלה', '/help#report'],
+    ['📎 כל הקבצים המצורפים', '/files'], ['📊 תקציב חודשי', '/?s=money#budget'], ['⚖️ מי זול יותר', '/?s=money#compare'],
+    ['🧾 מסמכים להחזר מס', '/?s=money#tax'], ['⚡ קיצורי טקסט', '/?s=auto#snippets'], ['🔓 בדיקת דליפות', '/?s=me#leaks'],
+    ['📋 דוח שבועי לשותף', '/?s=clients#share'], ['🖨️ הדפסת היום שלי', '/today?print=1'],
     ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'],
     ['📅 Google Calendar', 'https://calendar.google.com/'], ['✅ Google Tasks', 'https://tasks.google.com/']
   ];
@@ -589,6 +592,24 @@ HTML += """
       pending = 0; ev.preventDefault();
       var a = document.createElement('a'); a.href = GO[k]; document.body.appendChild(a); a.click(); a.remove();   // the page-swap navigation
     }
+  });
+
+  // text shortcuts: ";thanks" + space in any text box becomes the full paragraph (Settings -> rules and templates)
+  var SNIPS = null;
+  function snips(){ if (SNIPS) return Promise.resolve(SNIPS);
+    return fetch('/snippets.json').then(function(r){ return r.json(); }).then(function(s){ SNIPS = s; return s; }).catch(function(){ return []; }); }
+  document.addEventListener('input', function(ev){
+    var el = ev.target;
+    if (!el || !(el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text'))) return;
+    var pos = el.selectionStart, before = el.value.slice(0, pos), hit = before.match(/(^|\\s);([^\\s;]{1,20})([ \\n])$/);
+    if (!hit) return;
+    snips().then(function(list){
+      var s = list.filter(function(x){ return x.key === hit[2]; })[0]; if (!s) return;
+      var start = pos - hit[2].length - 2;
+      el.value = el.value.slice(0, start) + s.text + hit[3] + el.value.slice(pos);
+      el.selectionStart = el.selectionEnd = start + s.text.length + 1;
+      el.dispatchEvent(new Event('change'));
+    });
   });
   window.MB = window.MB || {};
   window.MB.a11y = function(){ toggle(true); };
