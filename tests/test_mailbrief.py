@@ -798,8 +798,9 @@ class Diagnostics(Isolated):
         storage.save_json(config.ACCOUNTS_FILE, [])
         with mock.patch.object(net, 'cached_json', return_value=None):
             html = settings.settings_page()
-        self.assertIn('מפתח Google משלך (לא חובה)', html)
-        self.assertNotIn('disabled title="קודם הגדרה חד-פעמית">🔵', html)
+            keys = settings.settings_page(sec='connect')
+        self.assertIn('value="google" >🔵', html)                                            # the button is enabled
+        self.assertIn('מפתח Google משלך (לא חובה)', keys)
 
     def test_external_pages_open_in_the_open_browser(self):
         from mailbrief import window
@@ -822,6 +823,168 @@ class Diagnostics(Isolated):
             text = f.read()
         for name in ('pywebview', 'pythonnet', 'clr_loader', 'bottle', 'cffi', 'pycparser', 'typing_extensions', 'PyInstaller'):
             self.assertIn(name, text)
+
+
+class Books(Isolated):
+    def ledger(self):
+        rows = {}
+        for n, (month, day) in enumerate((('2026-06', 4), ('2026-07', 5), ('2026-08', 6))):
+            rows[f'e{n}'] = {'date': f'{month}-{day:02d}', 'vendor': 'חברת החשמל', 'email': 'bill@iec.co.il', 'vendor_key': 'iec.co.il',
+                             'subject': 'חשבון חשמל', 'amount': 118.0, 'currency': '₪', 'book': 'אחר', 'account': 'me@gmail.com', 'files': []}
+        rows['x'] = {'date': '2026-08-10', 'vendor': 'Figma', 'email': 'b@figma.com', 'vendor_key': 'figma.com', 'subject': 'Receipt',
+                     'amount': 15.0, 'currency': '$', 'amount_ils': 55.0, 'book': 'תוכנה ומנויים', 'account': 'me@gmail.com', 'files': []}
+        storage.save_json(config.LEDGER_FILE, rows)
+        return rows
+
+    def test_vat_and_vendor_category(self):
+        from mailbrief.money import books
+        self.ledger()
+        s = books.vat_summary('2026-08')
+        self.assertEqual((s['total'], s['vat'], s['foreign']), (173.0, 18.0, 55.0))       # 118 incl. 18% VAT; foreign has none
+        books.set_vendor('iec.co.il', book='חשמל ומים')
+        self.assertEqual(storage.load_json(config.LEDGER_FILE, {})['e2']['book'], 'חשמל ומים')    # old rows follow
+        self.assertTrue(os.path.isfile(os.path.join(config.RECEIPTS_DIR, '2026-08', 'קבלות 2026-08.xlsx')))
+        books.set_vendor('iec.co.il', no_vat=True)
+        self.assertEqual(books.vat_summary('2026-08')['vat'], 0.0)
+
+    def test_missing_invoice(self):
+        from mailbrief.money import books
+        self.ledger()
+        self.assertEqual([m['key'] for m in books.missing_invoices(today=dt.date(2026, 9, 12))], ['iec.co.il'])
+        self.assertEqual(books.missing_invoices(today=dt.date(2026, 9, 6)), [])             # not late yet (usually by the 5th + 3)
+
+    def test_export_for_hashavshevet(self):
+        from mailbrief.money import books
+        self.ledger()
+        storage.save_json(config.SETTINGS_FILE, {'export': {'vat_account': '18000', 'supplier_account': '40000', 'accounts': {'אחר': '70000'}}})
+        path, count = books.export_month('2026-08')
+        with open(path, encoding='cp1255') as f:
+            lines = f.read().splitlines()
+        self.assertEqual(count, 2)
+        self.assertIn('חשבון הוצאה', lines[0])
+        self.assertIn('06/08/2026,202608001,חשבון חשמל,חברת החשמל,אחר,70000,40000,18000,118.00,18.00,100.00,₪,118.00', lines)
+        self.assertIn('10/08/2026,202608002,Receipt,Figma,תוכנה ומנויים,,40000,,55.00,0.00,55.00,$,15.00', lines)   # abroad: no VAT
+
+
+class ClientCare(Isolated):
+    def test_payment_reminders(self):
+        from mailbrief.features import clientcare, outbox
+        d = clientcare.add_debt('me@gmail.com', 'dana@client.co.il', 'דנה כהן', '₪1,200', '1043', '2026-08-01', 30, 7)
+        with mock.patch.object(clientcare, 'out_of_holy', side_effect=lambda w: w), mock.patch.object(clientcare, 'profile', return_value={'name': 'רחל'}):
+            self.assertEqual(clientcare.chase_due(dt.date(2026, 8, 20)), 0)            # not due yet
+            self.assertEqual(clientcare.chase_due(dt.date(2026, 9, 1)), 1)
+            self.assertEqual(clientcare.chase_due(dt.date(2026, 9, 2)), 0)             # next one only a week later
+            self.assertEqual(clientcare.chase_due(dt.date(2026, 9, 8)), 1)
+        mail = outbox.outbox()[0]
+        self.assertEqual(mail['to'], ['dana@client.co.il'])
+        self.assertIn('חשבונית 1043 על סך ₪1,200', mail['body'])
+        self.assertIn('שלום דנה', mail['body'])
+        clientcare.set_debt(d['id'], 'paid')
+        self.assertEqual(clientcare.chase_due(dt.date(2026, 10, 1)), 0)
+
+    def test_birthday_greeting_once(self):
+        from mailbrief.features import clientcare, outbox
+        clientcare.add_date('me@gmail.com', 'yossi@x.co.il', 'יוסי לוי', '1990-10-05', 'birthday')
+        with mock.patch.object(clientcare, 'out_of_holy', side_effect=lambda w: w):
+            self.assertEqual(clientcare.greet_due(dt.date(2026, 10, 1)), 0)
+            self.assertEqual(clientcare.greet_due(dt.date(2026, 10, 4)), 1)            # the day before: queued for 09:00 on the day
+            self.assertEqual(clientcare.greet_due(dt.date(2026, 10, 5)), 0)            # never twice a year
+        mail = outbox.outbox()[0]
+        self.assertTrue(mail['send_at'].startswith('2026-10-05T09:00'))
+        self.assertIn('מזל טוב יוסי', mail['body'])
+
+
+class Comforts(Isolated):
+    def test_template_fields_in_hebrew(self):
+        from mailbrief.features.automations import fill, wf_context
+        it = sorting.classify(mk('דנה כהן <dana@client.co.il>', 'חשבונית מס 20391', 'סה"כ ₪590.00'), 'me@gmail.com')
+        with mock.patch('mailbrief.profile.profile', return_value={'name': 'רחל'}):
+            ctx = wf_context({'email': 'me@gmail.com'}, it)
+        self.assertEqual(fill('שלום {שם_פרטי}, קיבלנו את חשבונית {מספר_חשבונית} על {סכום}. {השם_שלי}', ctx),
+                         'שלום דנה, קיבלנו את חשבונית 20391 על ₪590.00. רחל')
+
+    def test_vip_breaks_quiet_hours_only(self):
+        with mock.patch.object(notify, 'is_holy_time', return_value=False), mock.patch.object(notify, 'paused_until', return_value=None), \
+                mock.patch.object(notify, 'quiet_now', return_value=True), mock.patch.object(notify.subprocess, 'run') as run:
+            notify.toast('x', ['y'])
+            self.assertFalse(run.called)
+            notify.toast('x', ['y'], vip=True)
+            self.assertTrue(run.called)
+        with mock.patch.object(notify, 'is_holy_time', return_value=True), mock.patch.object(notify.subprocess, 'run') as run:
+            notify.toast('x', ['y'], vip=True)
+            self.assertFalse(run.called)                                               # never on Shabbat, VIP or not
+        storage.save_json(config.SETTINGS_FILE, {'quiet': {'vip': ['Boss@Corp.co.il', '@client.co.il']}})
+        self.assertEqual(notify.vip_list(), {'boss@corp.co.il', 'client.co.il'})
+
+    def test_encrypted_cloud_backup(self):
+        from mailbrief.features import cloud_backup
+        blob = cloud_backup.seal(b'secret settings' * 1000, 'long password 1')
+        self.assertNotIn(b'secret settings', blob)
+        self.assertEqual(cloud_backup.unseal(blob, 'long password 1'), b'secret settings' * 1000)
+        with self.assertRaises(ValueError):
+            cloud_backup.unseal(blob, 'wrong password!')
+        with self.assertRaises(ValueError):
+            cloud_backup.unseal(blob[:-1] + bytes([blob[-1] ^ 1]), 'long password 1')    # tampered
+        self.assertFalse(cloud_backup.maybe_weekly({}))                                 # off by default
+
+    def test_clean_inbox_keeps_starred_and_waiting(self):
+        from mailbrief.features import cleanup
+
+        class FakeImap:
+            capabilities = ('IMAP4REV1',)
+
+            def __init__(self):
+                self.stored = []
+
+            def select(self, *a, **k):
+                return 'OK', [b'3']
+
+            def uid(self, cmd, *args):
+                if cmd == 'SEARCH':
+                    self.search = args
+                    return 'OK', [b'11 12 13']
+                if cmd == 'FETCH':
+                    return 'OK', [(b'1 (UID 12 BODY[HEADER.FIELDS (MESSAGE-ID)] {20}', b'Message-ID: <wait@x>\r\n\r\n'), b')']
+                if cmd == 'STORE':
+                    self.stored.append(args)
+                    return 'OK', []
+                return 'NO', []
+
+            def logout(self):
+                pass
+        fake = FakeImap()
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
+        storage.save_json(config.SNAPSHOT_FILE, {'waiting': [{'message_id': '<wait@x>'}]})
+        with mock.patch.object(cleanup.imap, 'connect', return_value=fake):
+            moved, errors = cleanup.clean_inbox(30)
+        self.assertEqual((moved, errors), (2, []))
+        self.assertIn('UNFLAGGED', fake.search)                                        # starred mail is never picked
+        self.assertEqual(fake.stored, [(b'11,13', '-X-GM-LABELS', r'(\Inbox)')])       # the waiting one stays
+
+    def test_weekly_summary(self):
+        from mailbrief.features.digest import summary_lines, weekly_summary
+        today = dt.date(2026, 9, 20)
+        storage.save_json(config.HISTORY_FILE, {
+            'a': {'date': '2026-09-15', 'cats': ['people'], 'answered': True, 'sender': 'a@x.co', 'name': 'Avi', 'account': 'me@gmail.com'},
+            'b': {'date': '2026-09-16', 'cats': ['people'], 'answered': False, 'sender': 'b@x.co', 'name': 'Bat', 'account': 'me@gmail.com'},
+            'c': {'date': '2026-09-08', 'cats': ['newsletters'], 'sender': 'n@x.co', 'name': 'News', 'account': 'me@gmail.com'}})
+        s = weekly_summary(today)
+        self.assertEqual((s['this']['total'], s['last']['total'], s['rate'], s['change']), (2, 1, 50, 1))
+        self.assertIn('💬 ענית ל-50% מהמיילים האישיים (1 מתוך 2)', summary_lines(s))
+
+    def test_settings_sections_and_accessibility(self):
+        from mailbrief.web import settings
+        storage.save_json(config.ACCOUNTS_FILE, [{'id': 'a1', 'email': 'me@gmail.com', 'host': 'imap.gmail.com', 'auth': 'google'}])
+        with mock.patch.object(net, 'cached_json', return_value=None):
+            for key, _, title in settings.SECTIONS:
+                html = settings.settings_page(sec=key)
+                self.assertIn(f'href="/?s={key}" aria-current=page', html)
+                self.assertIn('mb-a11y-btn', html)                                     # the accessibility button on every page
+            self.assertIn('id="debts"', settings.settings_page(sec='clients'))
+            self.assertIn('id="unopened"', settings.settings_page(sec='tidy'))
+            self.assertIn('id="cloud"', settings.settings_page(sec='data'))
+            self.assertIn('id="vat"', settings.settings_page(sec='money', month='2026-08'))
+        self.assertTrue(set(settings.ANCHORS.values()) <= {k for k, _, _ in settings.SECTIONS})
 
 
 def message_b64(claims):

@@ -1,9 +1,11 @@
-"""Client cards."""
+"""Client cards and the clients dashboard: reply rate, last contact, who waits, who owes."""
+import datetime as dt
 from urllib.parse import quote
 
+from mailbrief.features.clientcare import debts
 from mailbrief.features.history import client_groups
 from mailbrief.mail.classify import CATS
-from mailbrief.money.ledger import ils
+from mailbrief.money.ledger import ils, vendor_key
 from mailbrief.util import e, money
 from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
@@ -11,16 +13,40 @@ from mailbrief.web.token import TOKEN
 
 def clients_page():
     groups = client_groups()
-    cards = ''.join(
-        f'<a href="/client?key={quote(k)}" style="text-decoration:none;color:inherit"><div class="item">'
-        f'<div class="t" dir="auto">{e(g["name"])}</div>'
-        f'<div class="m">{len(g["emails"])} מיילים ב-90 יום · קשר אחרון {e(g["last"][8:10])}/{e(g["last"][5:7])}'
-        f'{f" · 🧾 {len(g["invoices"])} קבלות ({money(sum(ils(r) or 0 for r in g["invoices"]))})" if g["invoices"] else ""}'
-        f'{f" · <b style=color:var(--warn)>⏳ {g["waiting"]} ממתינים</b>" if g["waiting"] else ""}</div></div></a>'
-        for k, g in groups.items() if g['emails'] or g['invoices'])
+    today = dt.date.today()
+    owed = {}
+    for d in debts():
+        if d['status'] == 'open':
+            owed[vendor_key(d['email'])] = owed.get(vendor_key(d['email']), 0) + 1
+    rows = []
+    for k, g in groups.items():
+        if not (g['emails'] or g['invoices']):
+            continue
+        people = [h for h in g['emails'] if 'people' in h['cats'] and h.get('answered') is not None]
+        rate = round(100 * sum(1 for h in people if h['answered']) / len(people)) if people else None
+        since = (today - dt.date.fromisoformat(g['last'])).days if g['last'] else None
+        keys = {vendor_key(h['sender']) for h in g['emails']}
+        debt = sum(n for key, n in owed.items() if key in keys)
+        spent = sum(ils(r) or 0 for r in g['invoices'])
+        rows.append((k, g, rate, since, debt, spent))
+    table = ''.join(
+        f'<tr><td dir="auto"><a href="/client?key={quote(k)}">{e(g["name"])}</a></td><td>{len(g["emails"])}</td>'
+        f'<td>{"—" if rate is None else f"{rate}%"}</td>'
+        f'<td{" style=color:var(--warn)" if since is not None and since > 30 else ""}>{"—" if since is None else "היום" if since == 0 else f"לפני {since} ימים"}</td>'
+        f'<td>{f"<b style=color:var(--warn)>⏳ {g["waiting"]}</b>" if g["waiting"] else "✓"}</td>'
+        f'<td>{f"<b style=color:var(--bad)>💰 {debt}</b>" if debt else ""}</td>'
+        f'<td>{money(spent) if spent else ""}</td></tr>'
+        for k, g, rate, since, debt, spent in rows)
+    active = len([r for r in rows if r[3] is not None and r[3] <= 30])
+    kpis = ''.join(f'<div class="kpi"><b>{v}</b><span>{label}</span></div>' for label, v in [
+        ('לקוחות ואנשי קשר', len(rows)), ('פעילים בחודש האחרון', active),
+        ('ממתינים לתשובה ממך', sum(g['waiting'] for _, g, *_ in rows)), ('חשבוניות פתוחות', sum(owed.values()))])
     return page('לקוחות', f'''{heading('👥', 'לקוחות ואנשי קשר')}
-<p class="muted">מהתוויות שלך (הכללים) ומהאנשים שיש לך קשר איתם בפועל ב-90 הימים האחרונים. להוספת לקוח: כלל חדש בדף הראשי.</p>
-{cards or '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה בדף „📈 במספרים”.</p>'}''')
+<p class="muted">מהתוויות שלך (הכללים) ומהאנשים שיש לך קשר איתם בפועל ב-90 הימים האחרונים. לקוח חדש: כלל ב<a href="/?s=auto#rules">⚙️ הגדרות ← כללים</a>.
+מעקב תשלומים וימי הולדת: <a href="/?s=clients">⚙️ הגדרות ← לקוחות</a>.</p>
+<div class="kpis">{kpis}</div>
+{f'<div class="scroll"><table><thead><tr><th>לקוח</th><th>מיילים</th><th>ענית</th><th>קשר אחרון</th><th>ממתינים</th><th>לא שילמו</th><th>קבלות</th></tr></thead><tbody>{table}</tbody></table></div>' if table else
+ '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה בדף „📈 במספרים”.</p>'}''')
 
 
 def client_page(key):

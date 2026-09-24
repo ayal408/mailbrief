@@ -11,6 +11,7 @@ from mailbrief.storage import encrypt, load_json, save_json
 
 
 APPS_SCOPES = ('https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks')
+DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'      # only files MailBrief itself creates (the encrypted backup)
 
 
 def finish_oauth(query):
@@ -36,11 +37,15 @@ def finish_oauth(query):
         acc.pop('last')                           # the old sign-in error no longer applies
     granted = set(data.get('scope', '').split())
     acc['gapps'] = provider == 'google' and all(s in granted for s in APPS_SCOPES)
+    acc['drive'] = provider == 'google' and DRIVE_SCOPE in granted
     try:
         imap.connect(acc).logout()
     except Exception as exc:
         return f'{address}: ההתחברות אושרה אבל IMAP נכשל — {friendly_error(exc, acc)}'
     save_json(config.ACCOUNTS_FILE, [a for a in accounts if a['email'].lower() != address.lower()] + [acc])
+    if DRIVE_SCOPE in extra_scope:
+        return (f'✓ Google Drive של {address} מחובר — אפשר לשמור גיבוי מוצפן' if acc['drive'] else
+                f'{address}: בלי גישה ל-Google Drive — צריך לסמן את תיבת הסימון בחלון של Google')
     if extra_scope and not acc['gapps']:
         return f'{address} חוברה, אבל בלי גישה ליומן ולמשימות — צריך לסמן את שתי תיבות הסימון בחלון של Google'
     if extra_scope:

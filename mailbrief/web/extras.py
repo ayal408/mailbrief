@@ -189,11 +189,16 @@ HTML = """
 
   var ITEMS = [
     ['☀️ היום שלי', '/today'], ['⚡ מיון מהיר', '/triage'], ['✉️ מייל מתוזמן', '/compose'], ['🗓️ ברכות חג ללקוחות', '/greetings'], ['🔎 30 הימים שלי במבט אחד', '/insights'],
-    ['🧾 לרואה החשבון', '/#accountant'], ['🔕 שעות שקטות', '/#quiet'], ['📦 העברת נתונים', '/#migrate'], ['⚙️ הגדרות ותיבות', '/'], ['📊 לוח בקרה', '/dashboard'], ['📈 המייל במספרים', '/stats'],
-    ['⚡ אוטומציות', '/automations'], ['👥 לקוחות', '/clients'], ['📰 ניוזלטרים ורשימת קריאה', '/reading'], ['🔍 חיפוש', '/search'],
-    ['❓ מדריך ובדיקת תקינות', '/help'], ['📅 חיבור יומן ומשימות', '/#gapps'], ['🏖️ מצב חופשה', '/#vacation'],
-    ['📝 תבניות תשובה', '/#templates'], ['🏷️ הכללים שלי', '/#rules'], ['✂️ ביטול מנויים', '/reading'],
-    ['✉️ סיכום יומי במייל', '/#daily'], ['👤 הפרופיל שלי', '/#profile'],
+    ['⚙️ הגדרות ותיבות', '/?s=boxes'], ['👤 הפרופיל שלי', '/?s=me#profile'], ['✉️ סיכום יומי במייל', '/?s=me#daily'], ['🔕 שעות שקטות ו-VIP', '/?s=me#quiet'],
+    ['🧾 חשבוניות שלא הגיעו', '/?s=money#missing'], ['🧮 מע״מ החודש', '/?s=money#vat'], ['🏷️ סיווג ספקים', '/?s=money#vendors'],
+    ['📦 לרואה החשבון', '/?s=money#accountant'], ['📤 ייצוא לחשבשבת', '/?s=money#export'],
+    ['💰 מעקב תשלומים מלקוחות', '/?s=clients#debts'], ['🎂 ימי הולדת של לקוחות', '/?s=clients#dates'],
+    ['🏷️ הכללים שלי', '/?s=auto#rules'], ['📝 תבניות תשובה', '/?s=auto#templates'], ['🏖️ מצב חופשה', '/?s=auto#vacation'],
+    ['🧹 ניקוי הדואר הנכנס', '/?s=tidy#clean'], ['✂️ ניוזלטרים שלא נפתחו', '/?s=tidy#unopened'],
+    ['☁️ גיבוי ל-Google Drive', '/?s=data#cloud'], ['📦 העברת נתונים', '/?s=data#migrate'], ['📅 חיבור יומן ומשימות', '/?s=connect#gapps'],
+    ['📊 לוח בקרה', '/dashboard'], ['📈 המייל במספרים', '/stats'], ['⚡ אוטומציות', '/automations'], ['👥 לקוחות', '/clients'],
+    ['📰 ניוזלטרים ורשימת קריאה', '/reading'], ['🔍 חיפוש', '/search'], ['❓ מדריך ובדיקת תקינות', '/help'], ['📋 דוח תקלה', '/help#report'],
+    ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'],
     ['📅 Google Calendar', 'https://calendar.google.com/'], ['✅ Google Tasks', 'https://tasks.google.com/']
   ];
   var pal = document.getElementById('mb-pal'), q = document.getElementById('mb-q'), list = document.getElementById('mb-list'), sel = 0, shown = [];
@@ -215,9 +220,11 @@ HTML = """
   function mark(){ Array.prototype.forEach.call(list.children, function(li, n){ li.className = n === sel ? 'sel' : ''; }); }
   function go(n){
     var i = shown[n]; if (!i) return; close();
+    if (i[1] === 'javascript:a11y') { if (window.MB && MB.a11y) MB.a11y(); return; }
+    if (i[1] === 'javascript:keys') { if (window.MB && MB.keys) MB.keys(); return; }
     if (i[1].indexOf('http') === 0) { window.open(i[1], '_blank'); return; }
     var u = new URL(i[1], location.href);
-    if (u.pathname === location.pathname && u.hash) { location.hash = u.hash; return; }
+    if (u.pathname === location.pathname && u.search === location.search && u.hash) { location.hash = u.hash; return; }
     if (swappable(u)) navigate(u.href, true); else { show(u.pathname); location.href = i[1]; }
   }
   function open(){ pal.classList.add('on'); q.value = ''; sel = 0; render(); setTimeout(function(){ q.focus(); }, 0); }
@@ -434,5 +441,163 @@ HTML += """
 </script>"""
 
 
-BOOT = ("<script>try{var t=localStorage.getItem('mb-theme');if(t==='light'||t==='dark')"
-        "document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>")
+# ---- accessibility (a button on the side of every page) and keyboard shortcuts ----------------------------------------
+STYLE += """
+#mb-a11y-btn{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:70;border:1px solid var(--line);border-left:0;
+border-radius:0 14px 14px 0;background:var(--accent);color:#fff;font-size:22px;width:44px;height:52px;cursor:pointer;
+box-shadow:var(--shadow);display:grid;place-items:center;padding:0}
+#mb-a11y-btn:hover,#mb-a11y-btn:focus-visible{width:50px;outline:3px solid var(--accent-2);outline-offset:2px}
+#mb-a11y{position:fixed;left:0;top:50%;transform:translate(-110%,-50%);z-index:71;width:min(310px,calc(100vw - 20px));
+background:var(--surface);color:var(--ink);border:1px solid var(--line);border-left:0;border-radius:0 20px 20px 0;
+box-shadow:0 20px 60px rgba(0,0,0,.25);padding:16px 18px;transition:transform .25s ease;max-height:92vh;overflow:auto}
+#mb-a11y.on{transform:translate(0,-50%)}
+#mb-a11y h3{margin:0 0 10px;font-size:18px;display:flex;justify-content:space-between;align-items:center}
+#mb-a11y .row{display:flex;gap:6px;align-items:center;justify-content:space-between;margin:8px 0}
+#mb-a11y button{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:7px 10px;cursor:pointer}
+#mb-a11y button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+#mb-a11y .sizes{flex-direction:column;align-items:stretch}#mb-a11y .sizes span:last-child{display:flex;gap:4px}#mb-a11y .sizes button{flex:1;font-weight:700;padding:7px 4px}
+#mb-a11y .note{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+html[data-fs="-1"] body{zoom:.92}html[data-fs="1"] body{zoom:1.12}html[data-fs="2"] body{zoom:1.25}html[data-fs="3"] body{zoom:1.4}
+html[data-contrast]{--ink:#000;--muted:#1f1f1f;--line:#4a4a4a;--bg:#fff;--surface:#fff;--accent:#4c1d95;--accent-2:#9a3412;--oval:transparent}
+@media (prefers-color-scheme:dark){html[data-contrast]:not([data-theme=light]){--ink:#fff;--muted:#e5e5e5;--line:#bdbdbd;--bg:#000;--surface:#000;--accent:#c4b5fd;--accent-2:#fdba74}}
+html[data-contrast][data-theme=dark]{--ink:#fff;--muted:#e5e5e5;--line:#bdbdbd;--bg:#000;--surface:#000;--accent:#c4b5fd;--accent-2:#fdba74}
+html[data-contrast] a,html[data-links] a{text-decoration:underline!important;text-underline-offset:3px}
+html[data-contrast] .g,html[data-contrast] h1.name{background:none!important;-webkit-text-fill-color:currentColor;color:var(--ink)!important}
+html[data-contrast] *:focus-visible,html[data-focus] *:focus-visible{outline:3px solid var(--accent-2)!important;outline-offset:2px}
+html[data-still] *,html[data-still] *::before,html[data-still] *::after{animation:none!important;transition:none!important}
+html[data-spacing] body{letter-spacing:.03em;word-spacing:.14em;line-height:1.85}
+html[data-links] a{font-weight:600}
+html[data-cursor],html[data-cursor] *{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M4 2l28 16-12 3-6 12z' fill='black' stroke='white' stroke-width='2'/%3E%3C/svg%3E") 4 2,auto!important}
+.mb-reading{background:color-mix(in srgb,var(--accent-2) 22%,transparent)!important;border-radius:6px}
+#mb-keys{position:fixed;inset:0;z-index:80;display:none;place-items:center;background:rgba(0,0,0,.35)}
+#mb-keys.on{display:grid}
+#mb-keys .card{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:20px;padding:20px 24px;width:min(460px,calc(100vw - 32px));box-shadow:var(--shadow)}
+#mb-keys table{width:100%;box-shadow:none}#mb-keys td{padding:5px 8px;font-size:14px}
+kbd{font-family:inherit;font-size:12px;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;background:var(--bg)}
+"""
+
+HTML += """
+<button id="mb-a11y-btn" type="button" aria-label="נגישות" title="נגישות (Alt+A)" aria-expanded="false" aria-controls="mb-a11y">♿</button>
+<div id="mb-a11y" role="dialog" aria-label="התאמות נגישות">
+<h3>♿ נגישות <button type="button" data-close aria-label="סגירה">✕</button></h3>
+<div class="row sizes"><span>גודל טקסט</span><span><button type="button" data-fs="-1" aria-label="קטן">א-</button>
+<button type="button" data-fs="0" aria-label="רגיל">א</button><button type="button" data-fs="1" aria-label="גדול">א+</button>
+<button type="button" data-fs="2" aria-label="גדול מאוד">א++</button><button type="button" data-fs="3" aria-label="ענק">א+++</button></span></div>
+<div class="row"><span>ניגודיות גבוהה</span><button type="button" data-flag="contrast" aria-pressed="false">כבוי</button></div>
+<div class="row"><span>עצירת אנימציות</span><button type="button" data-flag="still" aria-pressed="false">כבוי</button></div>
+<div class="row"><span>ריווח טקסט לקריאה נוחה</span><button type="button" data-flag="spacing" aria-pressed="false">כבוי</button></div>
+<div class="row"><span>הדגשת קישורים</span><button type="button" data-flag="links" aria-pressed="false">כבוי</button></div>
+<div class="row"><span>סמן עכבר גדול</span><button type="button" data-flag="cursor" aria-pressed="false">כבוי</button></div>
+<div class="row"><span>מסגרת בולטת במקלדת</span><button type="button" data-flag="focus" aria-pressed="false">כבוי</button></div>
+<div class="row"><span>🔊 הקראה</span><span><button type="button" id="mb-read">▶ הקראת הדף</button> <button type="button" id="mb-stop">⏹</button></span></div>
+<div class="row"><span>קצב הקראה</span><span><button type="button" data-rate="0.8">איטי</button><button type="button" data-rate="1">רגיל</button><button type="button" data-rate="1.25">מהיר</button></span></div>
+<p class="note" id="mb-voice-note">טקסט מסומן? ההקראה מתחילה ממנו. הקול — מ-Windows.</p>
+<div class="row"><button type="button" id="mb-a11y-reset">↺ איפוס הכול</button><button type="button" id="mb-keys-open">⌨️ קיצורי מקלדת</button></div>
+</div>
+<div id="mb-keys" role="dialog" aria-label="קיצורי מקלדת"><div class="card"><h3 style="margin-top:0">⌨️ קיצורי מקלדת</h3>
+<table><tbody>
+<tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd> או <kbd>/</kbd></td><td>חיפוש מהיר של כל דבר</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>T</kbd></td><td>☀️ היום שלי</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>Q</kbd></td><td>⚡ מיון מהיר</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>M</kbd></td><td>✉️ מייל מתוזמן</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>S</kbd></td><td>⚙️ הגדרות</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>D</kbd></td><td>📊 לוח בקרה</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>N</kbd></td><td>📈 במספרים</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>C</kbd></td><td>👥 לקוחות</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>R</kbd></td><td>📰 ניוזלטרים</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>A</kbd></td><td>⚡ אוטומציות</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>H</kbd></td><td>❓ מדריך</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>A</kbd></td><td>♿ נגישות</td></tr>
+<tr><td><kbd>?</kbd></td><td>החלון הזה</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>סגירה</td></tr>
+</tbody></table><p class="note" style="color:var(--muted);font-size:13px">במיון המהיר יש קיצורים משלו: 1–5, R, O, ←, Z.</p></div></div>
+<script>
+(function(){
+  if (window.__mbA11y) return; window.__mbA11y = true;
+  var root = document.documentElement, panel = document.getElementById('mb-a11y'), btn = document.getElementById('mb-a11y-btn');
+  var FLAGS = ['contrast', 'still', 'spacing', 'links', 'cursor', 'focus'];
+  function get(){ try { return JSON.parse(localStorage.getItem('mb-a11y') || '{}'); } catch(e){ return {}; } }
+  function put(s){ try { localStorage.setItem('mb-a11y', JSON.stringify(s)); } catch(e){} }
+  function apply(){
+    var s = get();
+    if (s.fs) root.setAttribute('data-fs', s.fs); else root.removeAttribute('data-fs');
+    FLAGS.forEach(function(f){ if (s[f]) root.setAttribute('data-' + f, ''); else root.removeAttribute('data-' + f); });
+    panel.querySelectorAll('[data-fs]').forEach(function(b){ b.setAttribute('aria-pressed', String((s.fs || 0) == b.dataset.fs)); });
+    panel.querySelectorAll('[data-flag]').forEach(function(b){ var on = !!s[b.dataset.flag]; b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'פעיל' : 'כבוי'; });
+    panel.querySelectorAll('[data-rate]').forEach(function(b){ b.setAttribute('aria-pressed', String((s.rate || 1) == b.dataset.rate)); });
+  }
+  function toggle(open){
+    var on = open === undefined ? !panel.classList.contains('on') : open;
+    panel.classList.toggle('on', on); btn.setAttribute('aria-expanded', String(on));
+    if (on) { var first = panel.querySelector('[data-fs="1"]'); if (first) first.focus(); } else btn.focus();
+  }
+  btn.onclick = function(){ toggle(); };
+  panel.querySelector('[data-close]').onclick = function(){ toggle(false); };
+  panel.querySelectorAll('[data-fs]').forEach(function(b){ b.onclick = function(){ var s = get(); s.fs = +b.dataset.fs; put(s); apply(); }; });
+  panel.querySelectorAll('[data-flag]').forEach(function(b){ b.onclick = function(){ var s = get(); s[b.dataset.flag] = !s[b.dataset.flag]; put(s); apply(); }; });
+  panel.querySelectorAll('[data-rate]').forEach(function(b){ b.onclick = function(){ var s = get(); s.rate = +b.dataset.rate; put(s); apply(); }; });
+  document.getElementById('mb-a11y-reset').onclick = function(){ put({}); apply(); stop(); };
+
+  // read aloud with the voices Windows has (Hebrew when installed)
+  var synth = window.speechSynthesis, marked = [];
+  function voice(){
+    var list = synth ? synth.getVoices() : [];
+    return list.filter(function(v){ return /^he|^iw/i.test(v.lang); })[0] || null;
+  }
+  function stop(){ if (synth) synth.cancel(); marked.forEach(function(el){ el.classList.remove('mb-reading'); }); marked = []; }
+  function blocks(){
+    var main = document.querySelector('main'); if (!main) return [];
+    return Array.prototype.filter.call(main.querySelectorAll('h1,h2,h3,p,li,.item,td,label,summary'), function(el){
+      return el.offsetParent !== null && el.innerText.trim() && !el.querySelector('h1,h2,h3,p,li,.item,td');
+    });
+  }
+  function read(){
+    stop();
+    if (!synth) { note('הדפדפן הזה לא תומך בהקראה'); return; }
+    var sel = String(window.getSelection() || '').trim(), parts = sel ? [{text: sel}] : blocks().map(function(el){ return {el: el, text: el.innerText.trim()}; });
+    var v = voice(), rate = get().rate || 1;
+    if (!v) note('לא נמצא קול עברי ב-Windows. להוספה: הגדרות ← זמן ושפה ← דיבור ← הוספת קולות ← עברית');
+    parts.slice(0, 400).forEach(function(p){
+      var u = new SpeechSynthesisUtterance(p.text.slice(0, 1200)); u.lang = 'he-IL'; u.rate = rate; if (v) u.voice = v;
+      if (p.el) { u.onstart = function(){ marked.forEach(function(x){ x.classList.remove('mb-reading'); }); p.el.classList.add('mb-reading'); marked.push(p.el);
+        p.el.scrollIntoView({block: 'center', behavior: 'smooth'}); }; }
+      synth.speak(u);
+    });
+    var last = parts.length; if (!last) note('אין מה להקריא בדף הזה');
+  }
+  function note(text){ var n = document.getElementById('mb-voice-note'); if (n) n.textContent = text; }
+  document.getElementById('mb-read').onclick = read;
+  document.getElementById('mb-stop').onclick = stop;
+  if (synth) synth.onvoiceschanged = function(){};
+
+  // keyboard shortcuts: G then a letter jumps to a page, ? shows them, Alt+A opens accessibility
+  var keys = document.getElementById('mb-keys'), pending = 0;
+  var GO = {t: '/today', q: '/triage', m: '/compose', s: '/?s=boxes', d: '/dashboard', n: '/stats', c: '/clients', r: '/reading', a: '/automations', h: '/help'};
+  var HE = {'א': 't', 'ק': 'r', 'ר': 'r', 'ם': 'o', 'פ': 'p', 'ש': 'a', 'ד': 's', 'ג': 'd', 'כ': 'f', 'ע': 'g', 'י': 'h', 'ח': 'j', 'ל': 'k', 'ך': 'l',
+            'ז': 'z', 'ס': 'x', 'ב': 'c', 'ה': 'v', 'נ': 'b', 'מ': 'n', 'צ': 'm', '/': 'q', 'ט': 'y', 'ו': 'u', 'ן': 'i', 'ת': ','};
+  document.getElementById('mb-keys-open').onclick = function(){ toggle(false); keys.classList.add('on'); };
+  keys.onclick = function(ev){ if (ev.target === keys) keys.classList.remove('on'); };
+  window.addEventListener('keydown', function(ev){
+    var typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
+    var k = (ev.code && ev.code.indexOf('Key') === 0) ? ev.code.slice(3).toLowerCase() : (HE[ev.key] || ev.key.toLowerCase());
+    if (ev.altKey && k === 'a') { ev.preventDefault(); toggle(); return; }
+    if (ev.key === 'Escape') { keys.classList.remove('on'); if (panel.classList.contains('on')) toggle(false); stop(); return; }
+    if (typing || ev.ctrlKey || ev.metaKey || ev.altKey || document.getElementById('tri-acts')) return;   // quick sort has its own keys
+    if (ev.key === '?') { keys.classList.toggle('on'); return; }
+    if (k === 'g') { pending = Date.now(); return; }
+    if (pending && Date.now() - pending < 1500 && GO[k]) {
+      pending = 0; ev.preventDefault();
+      var a = document.createElement('a'); a.href = GO[k]; document.body.appendChild(a); a.click(); a.remove();   // the page-swap navigation
+    }
+  });
+  window.MB = window.MB || {};
+  window.MB.a11y = function(){ toggle(true); };
+  window.MB.keys = function(){ keys.classList.add('on'); };
+  apply();
+})();
+</script>"""
+
+
+BOOT = ("<script>try{var d=document.documentElement,t=localStorage.getItem('mb-theme');if(t==='light'||t==='dark')"
+        "d.setAttribute('data-theme',t);var a=JSON.parse(localStorage.getItem('mb-a11y')||'{}');if(a.fs)d.setAttribute('data-fs',a.fs);"
+        "['contrast','still','spacing','links','cursor','focus'].forEach(function(f){if(a[f])d.setAttribute('data-'+f,'')})}catch(e){}</script>")

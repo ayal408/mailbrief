@@ -57,6 +57,7 @@ def item_key(account, it):
 
 def update_ledger(results):
     ledger = load_json(config.LEDGER_FILE, {})
+    chosen = load_json(config.SETTINGS_FILE, {}).get('vendors') or {}      # the category picked for a supplier wins
     months = set()
     for res in results:
         for it in res['items']:
@@ -66,7 +67,8 @@ def update_ledger(results):
             ledger[item_key(res['email'], it)] = {
                 'date': it['iso'][:10], 'vendor': it['sender_name'], 'email': it['sender'],
                 'vendor_key': vendor_key(it['sender']), 'subject': it['subject'], 'amount': amount,
-                'currency': currency, 'book': it.get('book', 'אחר'), 'account': res['email'],
+                'currency': currency, 'book': (chosen.get(vendor_key(it['sender'])) or {}).get('book') or it.get('book', 'אחר'),
+                'account': res['email'],
                 'files': it.get('files', []), 'link': it.get('link', ''), 'rules': it.get('rules', []),
                 'recurring': bool(RECURRING_HINT.search(f"{it['subject']} {it['snippet']}")), 'due': it.get('due', '')}
             months.add(it['iso'][:7])

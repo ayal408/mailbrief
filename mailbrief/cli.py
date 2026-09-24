@@ -27,6 +27,14 @@ def weekly_run():
         text = f'{dt.datetime.now():%Y-%m-%d %H:%M} OK {path}\n' + '\n'.join(lines)
     except Exception:
         text = f'{dt.datetime.now():%Y-%m-%d %H:%M} FAILED\n{traceback.format_exc()}'
+    try:                                          # the encrypted copy in Google Drive, when turned on
+        from mailbrief.features.cloud_backup import maybe_weekly
+        state = load_json(config.STATE_FILE, {})
+        if maybe_weekly(state):
+            save_json(config.STATE_FILE, state)
+            text += '\ncloud backup: uploaded'
+    except Exception as exc:
+        text += f'\ncloud backup failed: {exc}'
     with open(log, 'w', encoding='utf-8') as f:
         f.write(text + '\n')
 

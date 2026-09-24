@@ -144,12 +144,21 @@ def check_alerts(only=None):
     from mailbrief.features.outbox import send_due
     from mailbrief.money.accountant import maybe_send_monthly, price_change_text, price_changes
     from mailbrief.features.snooze import wake_due
-    jobs = (lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due)
+    from mailbrief.features.clientcare import chase_due, greet_due
+    jobs = (chase_due, greet_due,                         # queue first, so the outbox sends them in the same round
+            lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due)
     for job in (jobs if not only else ()):
         try:
             job()
         except Exception:
             pass                                 # try again next hour
+    from mailbrief.money.books import missing_invoices
+    for gap in (missing_invoices(ledger) if not only else []):
+        key = f"missing|{gap['key']}|{dt.date.today():%Y-%m}"
+        if key not in seen:
+            seen.add(key)
+            alerts.append(('🧾 חשבונית שלא הגיעה', {'subject': f"החשבונית של {gap['vendor']} מגיעה בדרך כלל עד ה-{gap['day']} — והחודש עוד לא",
+                                                     'sender_name': gap['vendor'], 'link': ''}))
     for change in price_changes(ledger):
         key = f"price|{change['key']}|{change['date']}"
         if key not in seen:
@@ -162,6 +171,8 @@ def check_alerts(only=None):
         return 0
     why, first = alerts[0]
     title = f'📬 MailBrief — {why}' if len(alerts) == 1 else f'📬 MailBrief — {len(alerts)} הודעות דורשות תשומת לב'
+    vip = notify.vip_list()
+    important = any((a.get('sender') or '').lower() in vip or (a.get('sender') or '').rsplit('@', 1)[-1].lower() in vip for _, a in alerts)
     notify.toast(title, [f'{first["subject"]} ({first["sender_name"]})'] + [f'{t}: {a["subject"]}' for t, a in alerts[1:2]],
-          first.get('link') or link())
+          first.get('link') or link(), vip=important)
     return len(alerts)

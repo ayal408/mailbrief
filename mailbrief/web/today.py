@@ -1,6 +1,8 @@
 """The "My day" page."""
 import datetime as dt
 
+from mailbrief.features.clientcare import DATE_KINDS, debts, upcoming_dates
+from mailbrief.money.books import missing_invoices
 from mailbrief import config
 from mailbrief import net
 from mailbrief.features.alerts import upcoming_payments
@@ -217,6 +219,9 @@ def today_page(msg='', show_all=False):
         or '<li class="muted">כולם ענו לך ✨</li>'
 
     expected = [f'<li dir="auto" style="color:var(--bad)">📈 {e(price_change_text(c))}</li>' for c in price_changes(load_json(config.LEDGER_FILE, {}))[:3]]
+    gaps = missing_invoices()
+    owed = [d for d in debts() if d['status'] == 'open' and d['due'] <= dt.date.today().isoformat()]
+    soon_dates = upcoming_dates(days=7)
     for s in find_subscriptions(load_json(config.LEDGER_FILE, {})):
         nxt = dt.date.fromisoformat(s['last']) + dt.timedelta(days=30)
         if -3 <= (nxt - now.date()).days <= 10:
@@ -249,6 +254,9 @@ def today_page(msg='', show_all=False):
 {card("📤 מחכה לתשובה מהם" + SORTER.format(list='list-awaiting'), f'<ul id="list-awaiting" class="sortable">{awaiting}</ul>') if want('replies') else ''}{invites_card if want('calendar') else ''}
 {card("💸 תשלומים קרובים", f'<ul style="margin:0;padding-inline-start:18px">{payments}</ul>') if want('money') else ''}
 {card("⏰ תזכורות", f'<ul style="margin:0;padding-inline-start:18px">{reminders}</ul>') if want('focus', 'replies') else ''}
+{card("🧾 חשבוניות שלא הגיעו", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{e(m["vendor"])} <span class="muted">— בדרך כלל עד ה-{m["day"]}</span></li>' for m in gaps[:4]) + '</ul><a href="/?s=money#missing" style="font-size:13px">הכול ←</a>') if want('money') and gaps else ''}
+{card("💰 לקוחות שלא שילמו", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{e(d["name"])} {e(d["amount"])} <span class="muted">— מ-{e(d["due"][8:10])}/{e(d["due"][5:7])}, {len(d["reminders"])} תזכורות</span></li>' for d in owed[:4]) + '</ul><a href="/?s=clients#debts" style="font-size:13px">מעקב תשלומים ←</a>') if want('money') and owed else ''}
+{card("🎂 ימים מיוחדים של לקוחות", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{DATE_KINDS[d["kind"]][0]} {e(d["name"])} <span class="muted">— {"היום! הברכה יוצאת לבד" if d["date"] == dt.date.today() else f"{d["date"]:%d/%m}"}</span></li>' for d in soon_dates[:4]) + '</ul>') if soon_dates else ''}
 {card("💳 חיובים צפויים", f'<ul style="margin:0;padding-inline-start:18px">{"".join(expected) or "<li class=muted>אין חיובים קבועים בעשרת הימים הקרובים</li>"}</ul>') if want('money') else ''}
 {card("⏱️ טיימר ריכוז", FOCUS) if want('focus') else ''}
 {card("🗒️ פתקים", f'<textarea class="notes" id="mb-notes" placeholder="מה צריך לזכור היום? נשמר לבד…">{e(notes)}</textarea>'

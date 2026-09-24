@@ -55,6 +55,15 @@ def build_daily(now=None):
     section('📤 מחכה לתשובה מהם', [(w['subject'], f"אל {w['to']} · {w['days']} ימים", w.get('link', '')) for w in snap.get('awaiting', [])[:4]])
     reminders = [r for r in load_json(config.REMINDERS_FILE, []) if r['due'][:10] <= now.date().isoformat()]
     section('⏰ תזכורות', [(r['subject'], r['from'], r.get('link', '')) for r in reminders[:5]])
+    from mailbrief.money.books import missing_invoices
+    section('🧾 חשבונית שעוד לא הגיעה', [(f"{m['vendor']}", f"מגיעה בדרך כלל עד ה-{m['day']} לחודש · אחרונה {m['last'][8:10]}/{m['last'][5:7]}", '')
+                                        for m in missing_invoices(today=now.date())[:5]])
+    from mailbrief.features.clientcare import debts
+    section('💰 לקוחות שעוד לא שילמו', [(f"{d['name']} — {d['amount']}".strip(' —'), f"חשבונית {d['invoice']} · לתשלום עד {d['due'][8:10]}/{d['due'][5:7]}", '')
+                                       for d in debts() if d['status'] == 'open' and d['due'] <= now.date().isoformat()][:5])
+    if now.weekday() == 6:                           # Sunday: the week in numbers
+        from mailbrief.features.digest import summary_lines, weekly_summary
+        section('📊 השבוע שלך במספרים', [(line, '', '') for line in summary_lines(weekly_summary(now.date()))])
 
     name = profile().get('name', '')
     greet = 'בוקר טוב' if now.hour < 12 else 'צהריים טובים' if now.hour < 17 else 'ערב טוב'

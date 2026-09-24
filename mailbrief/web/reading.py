@@ -41,6 +41,7 @@ def reading_page(msg=''):
     auto = load_json(config.SETTINGS_FILE, {}).get('auto_archive_news', False)
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
     return page('ניוזלטרים', f'''{heading('📰', 'ניוזלטרים')}{note}
+<p class="muted">✂️ ניוזלטרים שאף פעם לא נפתחו — לביטול כולם יחד: <a href="/?s=tidy#unopened">⚙️ הגדרות ← ניקיון ←</a></p>
 <div class="kpis"><div class="kpi"><b>{len(news)}</b><span>ניוזלטרים השבוע</span></div>
 <div class="kpi"><b>{len(by)}</b><span>שולחים</span></div>
 <div class="kpi"><b>{len(open_ones)}</b><span>אפשר לבטל</span></div>

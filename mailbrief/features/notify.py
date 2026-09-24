@@ -29,8 +29,14 @@ def quiet_now(now=None):
     return start <= hour < end if start < end else hour >= start or hour < end
 
 
-def toast(title, lines, link=''):
-    if is_holy_time() or paused_until() or quiet_now():
+def vip_list():
+    """Addresses / domains that may break through the quiet hours (never Shabbat, Yom Tov or a pause)."""
+    cfg = load_json(config.SETTINGS_FILE, {}).get('quiet') or {}
+    return {v.strip().lower().lstrip('@') for v in cfg.get('vip', []) if v.strip()}
+
+
+def toast(title, lines, link='', vip=False):
+    if is_holy_time() or paused_until() or (quiet_now() and not vip):
         return
     body = ''.join(f'<text>{xml_escape(line[:180])}</text>' for line in lines[:2])
     launch = f' activationType="protocol" launch={quoteattr(link)}' if link else ''

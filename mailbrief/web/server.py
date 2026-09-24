@@ -62,6 +62,9 @@ from mailbrief.features import greetings, snooze
 from mailbrief.features.replies import reply_details, reply_now
 from mailbrief.features import migrate, outbox, triage
 from mailbrief.features.diag import log_error, problem_report
+from mailbrief.features import cleanup, clientcare, cloud_backup
+from mailbrief.mail.accounts import DRIVE_SCOPE
+from mailbrief.money import books
 from mailbrief import view
 from mailbrief.money import accountant
 from mailbrief.util import money
@@ -123,7 +126,10 @@ class Handler(BaseHTTPRequestHandler):
         if not has_profile() and url.path in ('/', '/today', '/dashboard', '/stats', '/automations', '/clients', '/reading', '/search', '/help', '/insights', '/triage', '/compose', '/greetings'):
             return self._redirect('/welcome')                     # first run: name and form of address first
         if url.path == '/':
-            return self._send(settings_page(parse_qs(url.query).get('msg', [''])[0]))
+            q = parse_qs(url.query)
+            month = q.get('month', [''])[0]
+            return self._send(settings_page(q.get('msg', [''])[0], q.get('s', ['boxes'])[0],
+                                            month if re.fullmatch(r'\d{4}-\d{2}', month) else ''))
         if url.path == '/oauth/callback':
             try:
                 msg = finish_oauth(parse_qs(url.query))
@@ -233,7 +239,9 @@ class Handler(BaseHTTPRequestHandler):
                         else '↗ נפתח בדפדפן')
                 return self._redirect(back + ('&' if '?' in back else '?') + 'msg=' + quote(note))
             return self._redirect(target)
-        self._redirect('/?msg=' + quote(msg))
+        ref = urlparse(self.headers.get('Referer', ''))
+        sec = parse_qs(ref.query).get('s', [''])[0] if ref.path == '/' else ''
+        self._redirect(('/?s=' + quote(sec) + '&' if re.fullmatch(r'[a-z]{2,10}', sec) else '/?') + 'msg=' + quote(msg))
 
     def post_add(self, f):
         address = f.get('email', '').strip()
@@ -579,7 +587,8 @@ class Handler(BaseHTTPRequestHandler):
         settings = load_json(config.SETTINGS_FILE, {})
         start = int(f['from']) if f.get('from', '').isdigit() and int(f['from']) < 24 else 22
         end = int(f['to']) if f.get('to', '').isdigit() and int(f['to']) < 24 else 7
-        settings['quiet'] = {'on': f.get('action') != 'off', 'from': start, 'to': end}
+        vip = [v.strip() for v in re.split(r'[\s,;]+', f.get('vip', '')) if '.' in v.strip()][:100]
+        settings['quiet'] = {'on': f.get('action') != 'off', 'from': start, 'to': end, 'vip': vip}
         save_json(config.SETTINGS_FILE, settings)
         return f'🔕 שעות שקטות: {start:02d}:00–{end:02d}:00 — בלי התראות קופצות (הכול עדיין מופיע ב„היום שלי”)' if settings['quiet']['on'] else '🔔 שעות שקטות כבויות'
 
@@ -612,6 +621,131 @@ class Handler(BaseHTTPRequestHandler):
     def post_health(self, f):
         self._send(health_page())
         return None
+
+    # ---- money --------------------------------------------------------------------------------------------------------
+    def post_vendor_set(self, f):
+        key = f.get('key', '')
+        if not key:
+            return 'ספק לא מוכר'
+        book = f.get('book', '') if f.get('book', '') in books.BOOKS else None
+        months = books.set_vendor(key, book=book, no_vat='no_vat' in f, account=f.get('account', '').strip()[:20])
+        return f'✓ נשמר — {key}: {book or ""}' + (f' (עודכנו {months} חודשים באקסל)' if months else '')
+
+    def post_export_cfg(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['export'] = {'vat_account': f.get('vat_account', '').strip()[:20], 'supplier_account': f.get('supplier_account', '').strip()[:20],
+                              'accounts': {b: f.get(f'acc_{i}', '').strip()[:20] for i, b in enumerate(books.BOOKS) if f.get(f'acc_{i}', '').strip()}}
+        save_json(config.SETTINGS_FILE, settings)
+        return '✓ מספרי החשבונות נשמרו'
+
+    def post_export_month(self, f):
+        month = f.get('month', '')
+        if not re.fullmatch(r'\d{4}-\d{2}', month):
+            return 'חודש לא תקין'
+        path, count = books.export_month(month)
+        subprocess.Popen(['explorer', '/select,', path])
+        return f'✓ נוצר „{os.path.basename(path)}” עם {count} שורות (בתיקיית הקבלות של החודש)'
+
+    # ---- clients ------------------------------------------------------------------------------------------------------
+    def _first_account(self, f):
+        return f.get('account', '') or next((a['email'] for a in load_json(config.ACCOUNTS_FILE, [])), '')
+
+    def post_debt_add(self, f):
+        try:
+            d = clientcare.add_debt(self._first_account(f), f.get('email', ''), f.get('name', ''), f.get('amount', ''),
+                                    f.get('invoice', ''), f.get('sent', ''), int(f.get('due_days') or 30), int(f.get('every') or 7),
+                                    f.get('text', ''))
+        except ValueError as exc:
+            return f'⚠️ {exc}'
+        return f'✓ {d["name"]} במעקב — תזכורת ראשונה ב-{d["due"][8:10]}/{d["due"][5:7]} אם לא יסומן „שולם”'
+
+    def post_debt_set(self, f):
+        status = f.get('status', '')
+        if status not in ('paid', 'stopped', 'deleted'):
+            return 'פעולה לא מוכרת'
+        clientcare.set_debt(f.get('id', ''), status)
+        return {'paid': '✓ סומן כשולם — לא יישלחו עוד תזכורות 🎉', 'stopped': '⏹ התזכורות הופסקו', 'deleted': 'נמחק'}[status]
+
+    def post_date_add(self, f):
+        try:
+            d = clientcare.add_date(self._first_account(f), f.get('email', ''), f.get('name', ''), f.get('day', ''),
+                                    f.get('kind', 'birthday'), f.get('text', ''))
+        except ValueError as exc:
+            return f'⚠️ {exc}'
+        return f'✓ נשמר — ב-{d["day"]:02d}/{d["month"]:02d} תצא ברכה ל{d["name"]}'
+
+    def post_date_remove(self, f):
+        clientcare.remove_date(f.get('id', ''))
+        return 'נמחק'
+
+    # ---- tidy ---------------------------------------------------------------------------------------------------------
+    def _days(self, f):
+        return int(f['days']) if f.get('days', '').isdigit() and int(f['days']) >= 7 else 30
+
+    def post_clean_preview(self, f):
+        days = self._days(f)
+        rows = cleanup.inbox_preview(days, view.current_account() or None)
+        cache = load_json(config.CACHE_FILE, {})
+        cache['clean_preview'] = {'at': dt.datetime.now().strftime('%d/%m %H:%M'), 'days': days, 'rows': rows}
+        save_json(config.CACHE_FILE, cache)
+        return f'🔍 יועברו לארכיון {sum(n for _, n, _ in rows)} מיילים (ישנים מ-{days} ימים, בלי מסומנים ובלי ממתינים). שום דבר לא זז עדיין.'
+
+    def post_clean_inbox(self, f):
+        days = self._days(f)
+        moved, errors = cleanup.clean_inbox(days, view.current_account() or None)
+        cache = load_json(config.CACHE_FILE, {})
+        cache.pop('clean_preview', None)
+        save_json(config.CACHE_FILE, cache)
+        return f'🧹 {moved} מיילים עברו לארכיון — תיבת הדואר הנכנס נקייה יותר ✨' + (' · ' + ' | '.join(errors) if errors else '')
+
+    def post_never_opened(self, f):
+        rows = cleanup.never_opened()
+        return f'🔍 נמצאו {len(rows)} ניוזלטרים שאף פעם לא נפתחו' if rows else '✓ לא נמצאו ניוזלטרים שלא נפתחו'
+
+    def post_unsub_many(self, f):
+        ids = f['_lists'].get('ids', [])
+        done, pages = cleanup.unsubscribe_many(ids)
+        cache = load_json(config.CACHE_FILE, {})
+        if cache.get('never_opened'):
+            unsubs = load_json(config.UNSUBS_FILE, {})
+            cache['never_opened']['rows'] = [r for r in cache['never_opened']['rows'] if not (unsubs.get(r['id']) or {}).get('done')]
+            save_json(config.CACHE_FILE, cache)
+        for _, url in pages[:10]:
+            window.open_external(url)
+        return f'✂️ {done} מנויים בוטלו' + (f' · {len(pages)} נפתחו בדפדפן לסיום הביטול באתר של השולח' if pages else '')
+
+    # ---- Google Drive backup ------------------------------------------------------------------------------------------
+    def post_drive_connect(self, f):
+        accounts = load_json(config.ACCOUNTS_FILE, [])
+        acc = next((a for a in accounts if a['id'] == f.get('id') and a.get('auth') == 'google'), None)
+        return (start_oauth('google', DRIVE_SCOPE, acc['email'] if acc else ''), None)
+
+    def post_cloud_upload(self, f):
+        password = f.get('password', '')
+        try:
+            name = cloud_backup.upload(password)
+        except RuntimeError as exc:
+            return f'⚠️ {exc}'
+        cloud_backup.save_cfg('auto' in f, password if 'auto' in f else '')
+        return f'☁️ הגיבוי המוצפן נשמר ב-Google Drive ({name})' + (' · מעכשיו גם אוטומטית כל שבוע' if 'auto' in f else '')
+
+    def post_cloud_list(self, f):
+        acc = cloud_backup.drive_account()
+        if not acc:
+            return 'קודם צריך לחבר את Google Drive'
+        files = cloud_backup.remote_backups(acc)
+        cache = load_json(config.CACHE_FILE, {})
+        cache['cloud_files'] = files
+        save_json(config.CACHE_FILE, cache)
+        return f'☁️ {len(files)} גיבויים ב-Drive' if files else 'עוד אין גיבויים ב-Drive'
+
+    def post_cloud_restore(self, f):
+        try:
+            name = cloud_backup.download(f.get('id', ''), f.get('password', ''))
+        except (RuntimeError, ValueError) as exc:
+            return f'⚠️ {exc}'
+        count = restore_backup(name)
+        return f'✓ שוחזרו {count} קבצים מהגיבוי ב-Drive. אם זה מחשב חדש — צריך להתחבר מחדש לתיבות (בלשונית 📬 תיבות).'
 
     def post_problem_report(self, f):
         path = problem_report()

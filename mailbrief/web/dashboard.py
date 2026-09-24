@@ -3,6 +3,7 @@ import collections
 import datetime as dt
 
 from mailbrief import config
+from mailbrief.features.digest import summary_lines, weekly_summary
 from mailbrief.mail.classify import CATS
 from mailbrief.money.ledger import find_subscriptions, ils
 from mailbrief.storage import load_json
@@ -57,6 +58,7 @@ def stats_page():
         ('מאנשים', cats.get('people', 0)), ('ניוזלטרים', cats.get('newsletters', 0))])
     return page('המייל שלי במספרים', f'''{heading('📈', 'המייל שלי במספרים')}<p class="muted">30 הימים האחרונים · {len(accounts)} תיבות</p>
 <div class="kpis">{kpis}</div>
+<h3>📊 השבוע שלך</h3><div class="item">{"<br>".join(e(line) for line in summary_lines(weekly_summary(account=box)))}</div>
 <div class="item">{"<br>".join(f for f in facts if f)}</div>
 <h3>לפי סוג</h3><div class="scroll"><table><tbody>{bars(cat_counts, top=10)}</tbody></table></div>
 <h3>לפי יום בשבוע</h3><div class="scroll"><table><tbody>{bars(weekday, labels=['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'])}</tbody></table></div>

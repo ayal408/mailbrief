@@ -89,11 +89,30 @@ def fill(template, ctx):
     return re.sub(r'\{(\w+)\}', lambda m: str(ctx.get(m.group(1), m.group(0))), template or '')
 
 
+NUMBERS = {'invoice': re.compile(r'(?:חשבונית(?:\s*מס)?|קבלה|invoice|receipt)\D{0,12}?(\d[\d-]{2,15}\d)', re.I),
+           'order': re.compile(r'(?:הזמנה|order|ticket|פנייה|קריאה)\D{0,12}?(\d[\d-]{2,15}\d)', re.I)}
+
+# Hebrew names for the same fields — what people type in a template: {שם}, {מספר_חשבונית} ...
+HEBREW_FIELDS = {'שם': 'from_name', 'שם_פרטי': 'first_name', 'נושא': 'subject', 'סכום': 'amount', 'תאריך': 'date',
+                 'מספר_חשבונית': 'invoice', 'מספר_הזמנה': 'order', 'תאריך_תשלום': 'due', 'השם_שלי': 'my_name', 'היום': 'today',
+                 'ימי_המתנה': 'waiting_days', 'מייל': 'from'}
+
+
 def wf_context(acc, it):
-    return {'from': it['sender'], 'from_name': it['sender_name'], 'subject': it['subject'], 'date': it['date'],
-            'account': acc['email'], 'amount': it.get('amount', ''), 'snippet': it['snippet'], 'link': it.get('link', ''),
-            'waiting_days': it.get('waiting_days', 0), 'due': it.get('due', ''),
-            'category': ', '.join([CATS[c][1] for c in it['cats'] if c in CATS] + it.get('rules', []))}
+    from mailbrief.features.greetings import first_name
+    from mailbrief.profile import profile
+    text = f"{it['subject']} {it.get('snippet', '')}"
+    ctx = {'from': it['sender'], 'from_name': it['sender_name'], 'subject': it['subject'], 'date': it['date'],
+           'account': acc['email'], 'amount': it.get('amount', ''), 'snippet': it['snippet'], 'link': it.get('link', ''),
+           'waiting_days': it.get('waiting_days', 0), 'due': it.get('due', ''),
+           'category': ', '.join([CATS[c][1] for c in it['cats'] if c in CATS] + it.get('rules', [])),
+           'first_name': first_name(it['sender_name']) or it['sender_name'], 'my_name': profile().get('name', ''),
+           'today': dt.date.today().strftime('%d/%m/%Y')}
+    for field, rx in NUMBERS.items():
+        found = rx.search(text)
+        ctx[field] = found.group(1) if found else ''
+    ctx.update({he: ctx[en] for he, en in HEBREW_FIELDS.items()})
+    return ctx
 
 
 def cond_ok(c, acc, it):
