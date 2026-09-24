@@ -52,6 +52,11 @@ def run_app(url, on_hidden=None):
     """Runs on the main thread and returns when the user picks "Exit" (tray menu or the page's ⏻ button)."""
     import webview
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True       # Gmail and websites open in the user's browser
+    try:                                                             # ... the one already open, not always Edge
+        from webview.platforms import edgechromium
+        edgechromium.webbrowser = type('OpenBrowser', (), {'open': staticmethod(lambda u, *a, **k: open_browser_tab(u))})
+    except Exception:
+        pass
     width, height, x, y = _place()
     win = webview.create_window('MailBrief', url, width=width, height=height, x=x, y=y, min_size=(820, 560),
                                 text_select=True, background_color='#FBF7F2')
@@ -141,6 +146,48 @@ def open_window(url):
         webbrowser.open(url)
 
 
+# browsers by their process name: the one already open gets the page (as a new tab), not whatever Windows defaults to
+BROWSERS = ('chrome.exe', 'firefox.exe', 'brave.exe', 'opera.exe', 'vivaldi.exe', 'msedge.exe')
+
+
+def _running():
+    try:
+        out = subprocess.run(['tasklist', '/FO', 'CSV', '/NH'], capture_output=True, text=True, timeout=5,
+                             creationflags=0x08000000).stdout.lower()                     # CREATE_NO_WINDOW
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {name for name in BROWSERS if f'"{name}"' in out}
+
+
+def _exe_path(name):
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(root, rf'Software\Microsoft\Windows\CurrentVersion\App Paths\{name}') as k:
+                path = winreg.QueryValueEx(k, '')[0].strip('"')
+                if os.path.isfile(path):
+                    return path
+        except OSError:
+            pass
+    return next((p for p in _candidates().get(name.split('.')[0], []) if os.path.isfile(p)), None)
+
+
+def open_browser_tab(url):
+    """Opens url in the browser that is already open. Edge runs in the background on most computers (and is often the
+    Windows default without anyone choosing it), so it counts only when no other browser is open.
+    Nothing open: the Windows default browser."""
+    running = _running()
+    order = [b for b in BROWSERS if b in running]                    # BROWSERS lists Edge last
+    for name in order:
+        exe = _exe_path(name)
+        if exe:
+            try:
+                subprocess.Popen([exe, url], creationflags=0x00000008 | 0x00000200)
+                return
+            except OSError:
+                pass
+    webbrowser.open(url)
+
+
 def open_external(url):
     """Pages that must not open inside the app window (Google / Microsoft sign-in, a sender's unsubscribe page)."""
-    webbrowser.open(url)
+    open_browser_tab(url)

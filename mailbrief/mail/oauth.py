@@ -39,7 +39,10 @@ def bundled_client(provider):
         return '', ''
     cfg = load_json(config.BUNDLED_GOOGLE, {})
     cfg = cfg.get('installed', cfg)           # the file Google offers for download, or just {client_id, client_secret}
-    return cfg.get('client_id', ''), cfg.get('client_secret', '')
+    if cfg.get('client_id'):                  # a build that carries a different key (google_client.json)
+        return cfg['client_id'], cfg.get('client_secret', '')
+    from mailbrief.mail import builtin_key
+    return builtin_key.google()
 
 
 def client_for(provider):

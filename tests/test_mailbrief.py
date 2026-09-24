@@ -784,7 +784,10 @@ class Diagnostics(Isolated):
 
     def test_built_in_google_key(self):
         from mailbrief.mail import oauth
-        self.assertEqual(oauth.client_for('google'), ('', ''))
+        from mailbrief.mail import builtin_key
+        built_in = oauth.client_for('google')                                                  # the key inside the code
+        self.assertEqual(built_in, builtin_key.google())
+        self.assertTrue(built_in[0].endswith('.apps.googleusercontent.com') and built_in[1])
         storage.save_json(config.BUNDLED_GOOGLE, {'installed': {'client_id': 'built-in.apps.googleusercontent.com', 'client_secret': 's1'}})
         self.assertEqual(oauth.client_for('google'), ('built-in.apps.googleusercontent.com', 's1'))
         self.assertEqual(oauth.client_for('microsoft'), ('', ''))
@@ -797,6 +800,15 @@ class Diagnostics(Isolated):
             html = settings.settings_page()
         self.assertIn('מפתח Google משלך (לא חובה)', html)
         self.assertNotIn('disabled title="קודם הגדרה חד-פעמית">🔵', html)
+
+    def test_external_pages_open_in_the_open_browser(self):
+        from mailbrief import window
+        with mock.patch.object(window, '_running', return_value={'msedge.exe', 'chrome.exe'}),                 mock.patch.object(window, '_exe_path', side_effect=lambda n: 'C:/b/' + n),                 mock.patch.object(window.subprocess, 'Popen') as popen:
+            window.open_browser_tab('https://accounts.google.com/x')
+        self.assertEqual(popen.call_args[0][0], ['C:/b/chrome.exe', 'https://accounts.google.com/x'])   # not Edge
+        with mock.patch.object(window, '_running', return_value=set()), mock.patch.object(window.webbrowser, 'open') as default:
+            window.open_browser_tab('https://example.com')
+        default.assert_called_once_with('https://example.com')
 
     def test_help_has_report_privacy_about(self):
         from mailbrief.web import help as wh
