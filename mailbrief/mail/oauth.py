@@ -7,6 +7,7 @@ import urllib.request
 from urllib.parse import urlencode
 
 from mailbrief import config
+from mailbrief.net import TLS
 from mailbrief.storage import decrypt, encrypt, load_json
 
 
@@ -62,7 +63,7 @@ def token_request(provider, fields):
     req = urllib.request.Request(PROVIDERS[provider]['token'], data=urlencode(fields).encode(),
                                  headers={'Content-Type': 'application/x-www-form-urlencoded'})
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=TLS) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode('utf-8', 'replace')

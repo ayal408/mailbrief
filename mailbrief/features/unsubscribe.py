@@ -4,7 +4,7 @@ import hashlib
 import urllib.request
 
 from mailbrief import config
-from mailbrief.net import _NoRedirect, safe_public_https
+from mailbrief.net import TLS, _NoRedirect, safe_public_https
 from mailbrief.storage import load_json, save_json
 
 
@@ -32,7 +32,7 @@ def unsubscribe(entry):
         req = urllib.request.Request(url, data=b'List-Unsubscribe=One-Click', method='POST', headers={
             'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'MailBrief/1.0'})
         try:
-            with urllib.request.build_opener(_NoRedirect).open(req, timeout=20) as resp:
+            with urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=TLS)).open(req, timeout=20) as resp:
                 ok = 200 <= resp.status < 300
         except urllib.error.HTTPError as exc:
             ok = 200 <= exc.code < 400

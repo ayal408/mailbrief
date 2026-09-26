@@ -9,6 +9,7 @@ from email.utils import parseaddr
 
 from mailbrief.mail.message import _part_text, body_text, decode
 from mailbrief.mail.oauth import access_token, PROVIDERS
+from mailbrief.net import TLS
 from mailbrief.storage import decrypt
 from mailbrief.util import e
 
@@ -38,10 +39,10 @@ def send_mail(acc, message):
     auth = acc.get('auth')
     if auth == 'microsoft':
         server = smtplib.SMTP('smtp.office365.com', 587, timeout=60)
-        server.starttls()
+        server.starttls(context=TLS)
     else:
         host = 'smtp.gmail.com' if auth == 'google' else (acc.get('smtp_host') or re.sub(r'^imap\.', 'smtp.', acc['host']))
-        server = smtplib.SMTP_SSL(host, 465, timeout=60)
+        server = smtplib.SMTP_SSL(host, 465, timeout=60, context=TLS)
     try:
         server.ehlo()
         if auth in PROVIDERS:

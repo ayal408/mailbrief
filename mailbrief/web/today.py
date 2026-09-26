@@ -2,6 +2,9 @@
 import datetime as dt
 import re
 
+from mailbrief.features.away import away
+from mailbrief.features.notify import vip_list
+from mailbrief.features.streak import update_streak
 from mailbrief.features.meetings import holiday_lines, holiday_prep
 from mailbrief.money.budget import budget_status
 from mailbrief.features.clientcare import DATE_KINDS, debts, upcoming_dates
@@ -237,8 +240,15 @@ def today_page(msg='', show_all=False, print_now=False):
                 + hidden('title', 'להזכיר ל-' + r['to'] + ': ' + r['subject'][:120]) + hidden('from', r['to'])
                 + hidden('link', r.get('link', '')) + f'<button style="{SMALL}">✅ משימה</button></form>') if gapps else ''
         thread = f' <span class="pill" title="הודעות בשיחה">💬 {r["thread"]}</span>' if r.get('thread', 1) > 1 else ''
+        back = away(r.get('to_email', ''))
+        away_note = f' <span class="pill" title="קיבלת מהם מענה אוטומטי">🏖️ בחופש עד {back:%d/%m}</span>' if back else ''
+        nudge = (f'<form method="post" action="/nudge" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                 + hidden('account', r['account']) + hidden('to', r.get('to_email', '')) + hidden('name', r['to'])
+                 + hidden('subject', r['subject']) + hidden('message_id', r.get('message_id', ''))
+                 + f'<button style="{SMALL}" title="תזכורת מנומסת באותה שיחה — יוצאת מהתיבה שלך (לא בשבת)">📨 להזכיר</button></form>'
+                 ) if r.get('message_id') and r.get('to_email') and not back else ''
         return (f'<li dir="auto" data-days="{r["days"]}" data-name="{e(r["to"])}" data-account="{e(r.get("account", ""))}">'
-                f'{dot(r.get("account", ""))}{title}{thread} <span class="muted">— אל {e(r["to"])} · 📤 {r["days"]} ימים</span>{remind}{task}</li>')
+                f'{dot(r.get("account", ""))}{title}{thread}{away_note} <span class="muted">— אל {e(r["to"])} · 📤 {r["days"]} ימים</span>{nudge}{remind}{task}</li>')
     awaiting = ''.join(awaiting_row(r) for r in by_thread([r for r in snap.get('awaiting', []) if triage_key(r) not in handled], 'to')[:20]) \
         or '<li class="muted">כולם ענו לך ✨</li>'
 
@@ -251,6 +261,10 @@ def today_page(msg='', show_all=False, print_now=False):
     except Exception:
         prep = None
     over = [b for b in budget_status() if b['pct'] >= 80]
+    vips = vip_list()
+    important = [r for r in snap.get('urgent', []) + snap.get('waiting', [])
+                 if vips and ((r.get('sender') or '').lower() in vips or (r.get('sender') or '').rsplit('@', 1)[-1].lower() in vips)]
+    streak = update_streak(not [r for r in snap.get('waiting', []) if triage_key(r) not in handled])
     for s in find_subscriptions(load_json(config.LEDGER_FILE, {})):
         nxt = dt.date.fromisoformat(s['last']) + dt.timedelta(days=30)
         if -3 <= (nxt - now.date()).days <= 10:
@@ -276,6 +290,7 @@ a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;b
 {printing}<h1>היום שלי <span class="floaty">☀️</span></h1>
 <p style="font-size:19px;margin:4px 0">יום {days[now.weekday()]}, {now:%d/%m/%Y}{f" · {e(heb)}" if heb else ""}{f" · פרשת {e(parasha.replace('פרשת ', ''))}" if parasha else ""}</p>
 <p class="muted" style="font-style:italic">🥠 {e(fortune)}</p>{update_banner()}{vacation_note}{f'<div class="item urgent">{e(msg)}</div>' if msg else ''}
+{f'<p class="pill" style="display:inline-block;font-size:14px;margin:8px 0 0">🔥 {streak} ימים ברצף בלי אף אחד שמחכה לתשובה ממך</p>' if streak >= 2 else ''}
 {quick_bar}
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px">
 {card(f"🌤️ מזג האוויר ב{e(city)}", f'<div>{weather}</div><form method="post" action="/set_city" style="margin-top:8px"><input type="hidden" name="t" value="{TOKEN}"><select name="city" onchange="this.form.submit()" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{options}</select></form>')}
@@ -287,6 +302,7 @@ a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;b
 {card("📤 מחכה לתשובה מהם" + SORTER.format(list='list-awaiting'), f'<ul id="list-awaiting" class="sortable">{awaiting}</ul>') if want('replies') else ''}{invites_card if want('calendar') else ''}
 {card("💸 תשלומים קרובים", f'<ul style="margin:0;padding-inline-start:18px">{payments}</ul>') if want('money') else ''}
 {card("⏰ תזכורות", f'<ul style="margin:0;padding-inline-start:18px">{reminders}</ul>') if want('focus', 'replies') else ''}
+{card("⭐ מאנשים חשובים", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">' + (f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:60])}</a>' if r.get('link') else e(r['subject'][:60])) + f' <span class="muted">— {e(r["from"])}</span></li>' for r in important[:6]) + '</ul>') if important else ''}
 {card(f"🕯️ לפני {e(prep['name'] or 'החג')} — מה לסגור", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{e(line)}</li>' for line in holiday_lines(prep)) + '</ul>') if prep and holiday_lines(prep) else ''}
 {card("📊 תקציב החודש", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto" style="{"color:var(--bad)" if b["over"] else ""}">{e(b["book"])}: ₪{b["spent"]:,.0f} מתוך ₪{b["budget"]:,.0f} ({b["pct"]}%)</li>' for b in over) + '</ul>') if want('money') and over else ''}
 {card("🧾 חשבוניות שלא הגיעו", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{e(m["vendor"])} <span class="muted">— בדרך כלל עד ה-{m["day"]}</span></li>' for m in gaps[:4]) + '</ul><a href="/?s=money#missing" style="font-size:13px">הכול ←</a>') if want('money') and gaps else ''}

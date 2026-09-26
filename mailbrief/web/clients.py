@@ -1,8 +1,11 @@
 """Client cards and the clients dashboard: reply rate, last contact, who waits, who owes."""
 import datetime as dt
+import os
 from urllib.parse import quote
 
+from mailbrief import config
 from mailbrief.features.clientcare import debts
+from mailbrief.storage import load_json
 from mailbrief.features.history import client_groups
 from mailbrief.mail.classify import CATS
 from mailbrief.money.ledger import ils, vendor_key
@@ -71,5 +74,9 @@ def client_page(key):
 <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/search?q={quote(g["query"])}"><button type="button">🔍 כל המיילים</button></a>
 <form method="post" action="/search_download" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="q" value="{e(g["query"])}">
 <button>📥 הורדת כל הקבצים</button></form></div>
+<h3>📝 הערות</h3>
+<form method="post" action="/client_note"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="key" value="{e(key)}">
+<textarea name="note" rows="4" placeholder="מה חשוב לזכור על הלקוח: מחירים שסוכמו, איש קשר, העדפות…" style="width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{e(load_json(os.path.join(config.DATA, 'client-notes.json'), {}).get(key, ''))}</textarea>
+<button style="margin-top:6px;padding:8px 18px">💾 שמירה</button></form>
 <h3>🧾 קבלות וחשבוניות</h3>{f'<div class="scroll"><table><tbody>{invoices}</tbody></table></div>' if invoices else '<p class="muted">אין</p>'}
 <h3>📨 ציר זמן</h3><div class="scroll"><table><tbody>{timeline or '<tr><td class="muted">אין</td></tr>'}</tbody></table></div>''', '/clients')

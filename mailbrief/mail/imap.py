@@ -7,6 +7,7 @@ import re
 from email.policy import default as default_policy
 
 from mailbrief import config
+from mailbrief.net import TLS
 from mailbrief.mail.oauth import access_token, PROVIDERS
 from mailbrief.storage import decrypt
 
@@ -31,7 +32,7 @@ def utf7(name: str) -> str:
 
 
 def connect(acc):
-    m = imaplib.IMAP4_SSL(acc['host'], int(acc.get('port', 993)), timeout=60)
+    m = imaplib.IMAP4_SSL(acc['host'], int(acc.get('port', 993)), ssl_context=TLS, timeout=60)
     if acc.get('auth') in PROVIDERS:
         token = access_token(acc)
         m.authenticate('XOAUTH2', lambda _: f"user={acc['user']}\x01auth=Bearer {token}\x01\x01".encode())

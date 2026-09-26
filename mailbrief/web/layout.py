@@ -78,9 +78,20 @@ TITLE_TAB = {'היום שלי': '/today', 'לוח בקרה': '/dashboard', 'המ
              'בדיקת תקינות': '/help', '30 הימים שלך': '/today', 'מיון מהיר': '/today', 'מייל מתוזמן': '/today', 'ברכות חג': '/today'}
 
 
+SIMPLE_TABS = ('/today', '/', '/search', '/help')
+
+
+def simple_mode():
+    """🌱 Only the essentials: My day, settings, search and the guide (everything else is still in Ctrl+K)."""
+    from mailbrief.storage import load_json
+    from mailbrief import config
+    return bool(load_json(config.SETTINGS_FILE, {}).get('simple'))
+
+
 def top_bar(active=''):
     """Like the surprise box: a hero (wobbling envelope, gradient name, typed line), then centered pill tabs."""
-    tabs = ''.join(f'<a href="{path}"{" class=on" if path == active else ""}>{icon} {label}</a>' for path, icon, label in TABS)
+    shown = [t for t in TABS if t[0] in SIMPLE_TABS] if simple_mode() else TABS
+    tabs = ''.join(f'<a href="{path}"{" class=on" if path == active else ""}>{icon} {label}</a>' for path, icon, label in shown)
     me = profile()
     return (f'<style>{extras.STYLE}</style><header class="hero"><div class="corner">'
             '<button class="tbtn" id="mb-theme" type="button" onclick="MB.theme()">🌗</button>'
@@ -110,6 +121,21 @@ def update_banner():
             f'<a href="{e(rel["page"])}" target="_blank" class="muted" style="font-size:13px">מה חדש?</a></div>')
 
 
+def undo_banner():
+    """„↩️ ביטול” for the last action, while it can still be taken back (a few minutes)."""
+    from mailbrief.features.undo import last, seconds_left
+    from mailbrief.web.token import TOKEN
+    item = last()
+    if not item:
+        return ''
+    return (f'<div class="item" id="mb-undo" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-color:var(--accent-2)">'
+            f'<span>✓ {e(item["label"])}</span><form method="post" action="/undo" style="margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+            f'<input type="hidden" name="id" value="{e(item["id"])}"><button class="ghost" style="margin:0;padding:6px 14px">↩️ ביטול</button></form>'
+            f'<span class="muted" style="font-size:12px" data-left="{seconds_left(item)}"></span></div>'
+            '<script>(function(){var s=document.querySelector("#mb-undo [data-left]");if(!s)return;var n=+s.dataset.left;'
+            'function t(){s.textContent="אפשר לבטל עוד "+Math.floor(n/60)+":"+String(n%60).padStart(2,"0");if(n--<=0){var b=document.getElementById("mb-undo");if(b)b.remove();}else setTimeout(t,1000);}t();})();</script>')
+
+
 def heading(icon, text):
     """Page title: the emoji stays in color, the words get the purple→orange gradient."""
     return f'<h1>{icon} <span class="g">{e(text)}</span></h1>'
@@ -121,4 +147,4 @@ def page(title, body, active=''):
             f'<style>{STYLE}.bar{{height:20px;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:6px;min-width:3px}}'
             'input[type=search]{width:100%;font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}'
             'button{font:inherit;border:0;background:var(--accent);color:#fff;padding:12px 22px;border-radius:12px;cursor:pointer;font-weight:500}</style>'
-            f'</head><body>{top_bar(active or TITLE_TAB.get(title, ""))}<main>{body}</main>{extras.HTML}</body></html>')
+            f'</head><body>{top_bar(active or TITLE_TAB.get(title, ""))}<main>{undo_banner()}{body}</main>{extras.HTML}</body></html>')

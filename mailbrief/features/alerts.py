@@ -26,7 +26,7 @@ def save_snapshot(per_account, awaiting=None, only=None):
     waiting, urgent, due, invites = [], [], [], {}
     for address, items in per_account:
         for it in items:
-            row = {'account': address, 'from': it['sender_name'], 'subject': it['subject'], 'link': it.get('link', ''),
+            row = {'account': address, 'from': it['sender_name'], 'sender': it.get('sender', ''), 'subject': it['subject'], 'link': it.get('link', ''),
                    'message_id': it.get('message_id', '')}
             if it.get('due'):
                 due.append(row | {'due': it['due'], 'amount': it.get('amount', '')})
@@ -106,6 +106,12 @@ def check_alerts(only=None):
                 mark_unanswered(m, items)
                 run_workflows(m, acc, pairs, state, ledger, budget)
                 vacation_replies(acc, pairs, state)
+                from mailbrief.features.away import note as note_away
+                for it, msg in pairs:
+                    try:
+                        note_away(msg, it['sender'], dt.date.fromisoformat(it['iso'][:10]))
+                    except Exception:
+                        pass
                 try:
                     awaiting += awaiting_replies(m, acc, {a['email'].lower() for a in accounts})
                 except Exception:

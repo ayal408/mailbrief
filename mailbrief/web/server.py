@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 from mailbrief import config
 from mailbrief.address import base_url, link, remember
-from mailbrief.profile import FORMS, g, has_profile, save_profile
+from mailbrief.profile import FORMS, g, has_profile, profile, save_profile
 from mailbrief.features import notify
 from mailbrief.mail import imap
 from mailbrief.mail import smtp
@@ -62,7 +62,7 @@ from mailbrief.features import greetings, snooze
 from mailbrief.features.replies import reply_details, reply_now
 from mailbrief.features import migrate, outbox, triage
 from mailbrief.features.diag import log_error, problem_report
-from mailbrief.features import cleanup, clientcare, cloud_backup, files, security, sharing
+from mailbrief.features import cleanup, clientcare, cloud_backup, files, security, sharing, undo
 from mailbrief.money import budget
 from mailbrief.web.files import files_page
 from mailbrief.mail.accounts import DRIVE_SCOPE
@@ -346,8 +346,68 @@ class Handler(BaseHTTPRequestHandler):
         return ' · '.join(results)
 
     def post_rule_delete(self, f):
-        save_json(config.RULES_FILE, [r for r in load_json(config.RULES_FILE, []) if r['id'] != f.get('id')])
+        rules = load_json(config.RULES_FILE, [])
+        gone = next((r for r in rules if r['id'] == f.get('id')), None)
+        save_json(config.RULES_FILE, [r for r in rules if r['id'] != f.get('id')])
+        if gone:
+            undo.record('rule', f'הכלל „{gone["contains"]}” נמחק', gone)
         return 'הכלל נמחק (תוויות קיימות ב-Gmail נשארות)'
+
+    def post_nudge(self, f):
+        """A polite reminder in the same conversation, from the user's mailbox, in a minute (after Shabbat / Yom Tov)."""
+        from mailbrief.features.greetings import first_name
+        name = first_name(f.get('name', '')) or f.get('name', '')
+        body = g(f'שלום {name},\n\nרק מקפיצה את ההודעה הקודמת — אשמח לתשובה כשיתאפשר 🙂\n\nתודה,\n{profile().get("name", "")}',
+                 f'שלום {name},\n\nרק מקפיץ את ההודעה הקודמת — אשמח לתשובה כשיתאפשר 🙂\n\nתודה,\n{profile().get("name", "")}',
+                 f'שלום {name},\n\nרק להזכיר את ההודעה הקודמת — נשמח לתשובה כשיתאפשר 🙂\n\nתודה')
+        subject = f.get('subject', '')
+        subject = subject if subject.lower().startswith('re:') else f'Re: {subject}'
+        mid = f.get('message_id', '')
+        try:
+            item = outbox.schedule(f.get('account', ''), f.get('to', ''), subject, body,
+                                   outbox.out_of_holy(dt.datetime.now().astimezone() + dt.timedelta(minutes=1)),
+                                   thread={'in_reply_to': mid, 'references': mid})
+        except ValueError as exc:
+            return (('/today?msg=' + quote(f'⚠️ {exc}')), None)
+        return ('/today?msg=' + quote(f'📨 תזכורת מנומסת ל{f.get("name", "")} תצא בעוד דקה ({dt.datetime.fromisoformat(item["send_at"]):%d/%m %H:%M}). '
+                                      'אפשר לבטל ב„מייל מתוזמן”.'), None)
+
+    def post_search_save(self, f):
+        q = f.get('q', '').strip()[:200]
+        settings = load_json(config.SETTINGS_FILE, {})
+        saved = [s for s in settings.get('saved_searches') or [] if s != q]
+        settings['saved_searches'] = ([q] + saved)[:12] if q else saved
+        save_json(config.SETTINGS_FILE, settings)
+        return ('/search?q=' + quote(q), None)
+
+    def post_search_forget(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['saved_searches'] = [s for s in settings.get('saved_searches') or [] if s != f.get('q')]
+        save_json(config.SETTINGS_FILE, settings)
+        return ('/search', None)
+
+    def post_client_note(self, f):
+        path = os.path.join(config.DATA, 'client-notes.json')
+        notes = load_json(path, {})
+        key = f.get('key', '')[:200]
+        if f.get('note', '').strip():
+            notes[key] = f['note'].strip()[:5000]
+        else:
+            notes.pop(key, None)
+        save_json(path, notes)
+        return ('/client?key=' + quote(key), None)
+
+    def post_simple(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['simple'] = f.get('on') == '1'
+        save_json(config.SETTINGS_FILE, settings)
+        return ('🌱 מצב פשוט פעיל — רק מה שצריך. הכול עדיין זמין ב-Ctrl+K.' if settings['simple'] else '✓ כל הלשוניות מוצגות')
+
+    def post_undo(self, f):
+        try:
+            return undo.undo(f.get('id', ''))
+        except RuntimeError as exc:
+            return f'⚠️ {exc}'
 
     def post_unsubscribe(self, f):
         unsubs = load_json(config.UNSUBS_FILE, {})
@@ -671,14 +731,19 @@ class Handler(BaseHTTPRequestHandler):
         status = f.get('status', '')
         if status not in ('paid', 'stopped', 'deleted'):
             return 'פעולה לא מוכרת'
-        thanks = ''
+        thanks, mail_id = '', ''
+        before = next((d for d in clientcare.debts() if d['id'] == f.get('id')), None)
         if status == 'paid' and 'thanks' in f:
             try:
-                clientcare.send_thanks(f.get('id', ''), f.get('_files', []))
+                mail_id = clientcare.send_thanks(f.get('id', ''), f.get('_files', []))['id']
                 thanks = ' · 💌 מייל תודה' + (' עם הקבלה' if f.get('_files') else '') + ' יוצא בעוד שתי דקות'
             except ValueError as exc:
                 thanks = f' · ⚠️ {exc}'
         clientcare.set_debt(f.get('id', ''), status)
+        if before and status == 'paid':
+            undo.record('debt_paid', f'{before["name"]} סומן כשולם', {'id': before['id'], 'outbox': mail_id})
+        elif before and status == 'deleted':
+            undo.record('debt', f'המעקב אחרי {before["name"]} נמחק', before)
         return {'paid': '✓ סומן כשולם — לא יישלחו עוד תזכורות 🎉', 'stopped': '⏹ התזכורות הופסקו', 'deleted': 'נמחק'}[status] + thanks
 
     def post_date_add(self, f):
@@ -690,7 +755,10 @@ class Handler(BaseHTTPRequestHandler):
         return f'✓ נשמר — ב-{d["day"]:02d}/{d["month"]:02d} תצא ברכה ל{d["name"]}'
 
     def post_date_remove(self, f):
+        gone = next((d for d in clientcare.client_dates() if d['id'] == f.get('id')), None)
         clientcare.remove_date(f.get('id', ''))
+        if gone:
+            undo.record('date', f'התאריך של {gone["name"]} נמחק', gone)
         return 'נמחק'
 
     # ---- tidy ---------------------------------------------------------------------------------------------------------
@@ -707,7 +775,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_clean_inbox(self, f):
         days = self._days(f)
-        moved, errors = cleanup.clean_inbox(days, view.current_account() or None)
+        steps = []
+        moved, errors = cleanup.clean_inbox(days, view.current_account() or None, undo_log=steps)
+        if moved:
+            undo.record('clean_inbox', f'{moved} מיילים עברו לארכיון', {'accounts': steps})
         cache = load_json(config.CACHE_FILE, {})
         cache.pop('clean_preview', None)
         save_json(config.CACHE_FILE, cache)
@@ -755,6 +826,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_snippet_delete(self, f):
         settings = load_json(config.SETTINGS_FILE, {})
+        gone = next((s for s in settings.get('snippets') or [] if s['key'] == f.get('key')), None)
+        if gone:
+            undo.record('snippet', f'הקיצור ;{gone["key"]} נמחק', gone)
         settings['snippets'] = [s for s in settings.get('snippets') or [] if s['key'] != f.get('key')]
         save_json(config.SETTINGS_FILE, settings)
         return 'הקיצור נמחק'
@@ -934,6 +1008,9 @@ class Handler(BaseHTTPRequestHandler):
         return f'✓ התבנית „{name}” נוספה'
 
     def post_template_delete(self, f):
+        gone = next((t for t in reply_templates() if t['id'] == f.get('id')), None)
+        if gone:
+            undo.record('template', f'התבנית „{gone["name"]}” נמחקה', gone)
         settings = load_json(config.SETTINGS_FILE, {})
         settings['templates'] = [t for t in reply_templates() if t['id'] != f.get('id')]
         save_json(config.SETTINGS_FILE, settings)

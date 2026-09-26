@@ -959,7 +959,9 @@ class Comforts(Isolated):
             moved, errors = cleanup.clean_inbox(30)
         self.assertEqual((moved, errors), (2, []))
         self.assertIn('UNFLAGGED', fake.search)                                        # starred mail is never picked
-        self.assertEqual(fake.stored, [(b'11,13', '-X-GM-LABELS', r'(\Inbox)')])       # the waiting one stays
+        self.assertEqual([s[1:] for s in fake.stored][1], ('-X-GM-LABELS', r'(\Inbox)'))
+        self.assertEqual({s[0] for s in fake.stored}, {b'11,13'})                                  # the waiting one stays
+        self.assertTrue(fake.stored[0][2].startswith('("MailBrief cleanup '))                     # marked, so it can be undone
 
     def test_weekly_summary(self):
         from mailbrief.features.digest import summary_lines, weekly_summary
@@ -1106,6 +1108,111 @@ class MoreFeatures(Isolated):
         rows = [{'date': '2026-09-20', 'hour': h} for h in ['09'] * 5 + ['14'] * 4 + ['11']]
         self.assertIn('10:00 וב-15:00', answer_tip(rows))
         self.assertIn('ראשון 09:00 — 5 מיילים', heatmap(rows))
+
+
+class Undo(Isolated):
+    def test_undo_rule_and_paid(self):
+        from mailbrief.features import clientcare, outbox, undo
+        rule = {'id': 'r1', 'field': 'from', 'contains': 'client.co.il', 'label': 'לקוח'}
+        undo.record('rule', 'הכלל נמחק', rule)
+        item = undo.last()
+        self.assertEqual(undo.undo(item['id']), '↩️ הכלל חזר')
+        self.assertEqual(storage.load_json(config.RULES_FILE, []), [rule])
+        self.assertIsNone(undo.last())                                                            # once only
+        d = clientcare.add_debt('me@gmail.com', 'dana@client.co.il', 'דנה', '₪100', '7', '2026-08-01')
+        with mock.patch.object(clientcare, 'out_of_holy', side_effect=lambda w: w):
+            mail = clientcare.send_thanks(d['id'])
+        clientcare.set_debt(d['id'], 'paid')
+        undo.record('debt_paid', 'דנה סומנה כשולם', {'id': d['id'], 'outbox': mail['id']})
+        self.assertIn('ומייל התודה בוטל', undo.undo(undo.last()['id']))
+        self.assertEqual(clientcare.debts()[0]['status'], 'open')
+        self.assertEqual(outbox.outbox()[0]['status'], 'cancelled')
+
+    def test_undo_expires(self):
+        from mailbrief.features import undo
+        undo.record('rule', 'x', {'id': 'r'})
+        self.assertIsNone(undo.last(dt.datetime.now() + dt.timedelta(minutes=6)))
+        self.assertIn('↩️ ביטול', __import__('mailbrief.web.layout', fromlist=['undo_banner']).undo_banner())
+
+    def test_undo_cleanup_puts_mail_back(self):
+        from mailbrief.features import cleanup
+
+        class FakeImap:
+            def __init__(self):
+                self.calls = []
+
+            def select(self, box, *a):
+                self.calls.append(('select', box))
+                return 'OK', [b'2']
+
+            def uid(self, cmd, *args):
+                self.calls.append((cmd,) + args)
+                return ('OK', [b'5 6']) if cmd == 'SEARCH' else ('OK', [])
+
+            def close(self):
+                pass
+
+            def delete(self, box):
+                self.calls.append(('delete', box))
+
+            def logout(self):
+                pass
+        fake = FakeImap()
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
+        with mock.patch.object(cleanup.imap, 'connect', return_value=fake):
+            back = cleanup.restore_cleaned({'accounts': [{'email': 'me@gmail.com', 'gmail': True, 'label': 'MailBrief cleanup X',
+                                                          'folder': '', 'uids': ''}]})
+        self.assertEqual(back, 2)
+        self.assertIn(('STORE', b'5,6', '+X-GM-LABELS', r'(\Inbox)'), fake.calls)
+        self.assertIn(('delete', '"MailBrief cleanup X"'), fake.calls)
+
+
+class Batch3(Isolated):
+    def test_out_of_office(self):
+        from mailbrief.features import away
+        msg = mk('Dana <dana@client.co.il>', 'Automatic reply: הצעת מחיר', 'שלום, אני בחופשה עד 12/10 ואחזור לענות אז.',
+                 headers={'Auto-Submitted': 'auto-replied'})
+        self.assertEqual(away.note(msg, 'Dana@Client.co.il', dt.date(2026, 10, 1)), dt.date(2026, 10, 12))
+        self.assertEqual(away.away('dana@client.co.il', dt.date(2026, 10, 5)), dt.date(2026, 10, 12))
+        self.assertIsNone(away.away('dana@client.co.il', dt.date(2026, 10, 13)))                  # back already
+        self.assertIsNone(away.note(mk('A <a@b.co>', 'שאלה', 'מתי נפגשים?'), 'a@b.co'))           # a normal mail
+        self.assertEqual(away.away_until('Out of office', dt.date(2026, 10, 1)), dt.date(2026, 10, 8))   # no date: a week
+
+    def test_streak(self):
+        from mailbrief.features.streak import update_streak
+        d = dt.date(2026, 10, 1)
+        self.assertEqual(update_streak(True, d), 1)
+        self.assertEqual(update_streak(True, d), 1)                                               # same day
+        self.assertEqual(update_streak(True, d + dt.timedelta(days=1)), 2)
+        self.assertEqual(update_streak(False, d + dt.timedelta(days=2)), 2)                       # today isn't over yet
+        self.assertEqual(update_streak(False, d + dt.timedelta(days=4)), 0)                       # a day was missed
+
+    def test_simple_mode_and_new_pages(self):
+        from mailbrief.web import compose, layout, search, settings
+        storage.save_json(config.SETTINGS_FILE, {'simple': True, 'saved_searches': ['חשבונית']})
+        bar = layout.top_bar('/today')
+        self.assertIn('href="/search"', bar)
+        self.assertNotIn('href="/automations"', bar)
+        with mock.patch.object(net, 'cached_json', return_value=None):
+            html = settings.settings_page(sec='me')
+        self.assertIn('להציג הכול', html)
+        self.assertNotIn('href="/?s=money"', html)
+        self.assertIn('🔖 חשבונית', search.search_page(''))
+        self.assertIn('c-tmpl', compose.compose_page())
+
+
+class Tls(unittest.TestCase):
+    def test_filtered_networks_still_verified(self):
+        import inspect
+        import ssl
+        from mailbrief import net
+        from mailbrief.features import unsubscribe
+        from mailbrief.mail import imap, oauth, smtp
+        self.assertEqual(net.TLS.verify_mode, ssl.CERT_REQUIRED)                     # certificates are still checked
+        self.assertTrue(net.TLS.check_hostname)
+        self.assertFalse(net.TLS.verify_flags & ssl.VERIFY_X509_STRICT)              # NetFree's certificate is accepted
+        for module in (imap, oauth, smtp, unsubscribe):                               # every connection uses it
+            self.assertIn('TLS', inspect.getsource(module))
 
 
 def message_b64(claims):

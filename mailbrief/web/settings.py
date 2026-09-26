@@ -26,7 +26,7 @@ from mailbrief.profile import FORMS, g, GOALS, goals, profile
 from mailbrief.storage import load_json
 from mailbrief.util import e, money
 from mailbrief.web import extras
-from mailbrief.web.layout import FONT, STYLE, top_bar, update_banner
+from mailbrief.web.layout import FONT, STYLE, simple_mode, top_bar, undo_banner, update_banner
 from mailbrief.web.token import TOKEN
 
 
@@ -39,7 +39,7 @@ SECTIONS = [('boxes', '📬', 'תיבות'), ('me', '👤', 'אישי והתרא
 ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'accountant': 'money', 'vendors': 'money', 'vat': 'money',
            'export': 'money', 'debts': 'clients', 'dates': 'clients', 'rules': 'auto', 'vacation': 'auto', 'templates': 'auto',
            'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect',
-           'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money'}
+           'simple': 'me', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money'}
 
 FIELD = 'font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
 
@@ -130,6 +130,12 @@ def me_section():
 {''.join(f'<label style="font-weight:400;margin:0;display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 10px">'
          f'<input type="checkbox" name="goal" value="{k}"{" checked" if k in goals() else ""}> {icon} {e(title)}</label>' for k, (icon, title, _) in GOALS.items())}
 </div></form>
+
+{_h('simple', '🌱 מצב פשוט')}
+<p class="muted">רק מה שצריך: „היום שלי”, תיבות, חיפוש ומדריך. הכלים המתקדמים (תקציב, ייצוא לחשבשבת, אוטומציות, לקוחות ועוד)
+מוסתרים מהתפריט — וזמינים תמיד דרך Ctrl+K. אפשר לחזור לתצוגה המלאה בכל רגע.</p>
+<form method="post" action="/simple">{_t()}{'<button name="on" value="0" class="ghost" style="margin:0">להציג את הכול</button>' if simple_mode() else
+ '<button name="on" value="1" style="margin:0">🌱 להפעיל מצב פשוט</button>'}</form>
 
 {_h('daily', '✉️ סיכום יומי במייל')}
 <p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if daily['on'] else ''}כל בוקר מגיע לתיבה שלך מייל קצר: מה דחוף, מה ביומן, מה לתשלום, חשבוניות שלא הגיעו ומי מחכה לתשובה.
@@ -619,9 +625,17 @@ def connect_section():
 
 # ---- the page ---------------------------------------------------------------------------------------------------------
 
+SIMPLE_SECTIONS = ('boxes', 'me', 'auto', 'data')
+
+
 def subnav(active):
+    simple = simple_mode()
+    shown = [s for s in SECTIONS if s[0] in SIMPLE_SECTIONS or s[0] == active] if simple else SECTIONS
     return ('<nav class="subtabs">' + ''.join(
-        f'<a href="/?s={k}"{" aria-current=page" if k == active else ""}>{icon} {e(title)}</a>' for k, icon, title in SECTIONS) + '</nav>')
+        f'<a href="/?s={k}"{" aria-current=page" if k == active else ""}>{icon} {e(title)}</a>' for k, icon, title in shown)
+        + (f'<form method="post" action="/simple" style="margin:0;display:inline"><input type="hidden" name="t" value="{TOKEN}">'
+           '<button name="on" value="0" class="ghost" style="margin:0;padding:6px 12px;font-size:13px">🌱 מצב פשוט · להציג הכול</button></form>'
+           if simple else '') + '</nav>')
 
 
 def settings_page(msg='', sec='boxes', month=''):
@@ -641,7 +655,7 @@ nav.subtabs{{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 14px;padding-botto
 nav.subtabs a{{text-decoration:none;color:var(--ink);font-size:14px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);transition:background .15s}}
 nav.subtabs a:hover{{border-color:var(--accent)}} nav.subtabs a[aria-current]{{background:var(--accent);border-color:var(--accent);color:#fff}}
 </style></head><body>{top_bar('/')}<main>
-<h1>⚙️ <span class="g">הגדרות</span></h1><p class="muted" style="margin-top:0">{e(holy_status())}</p>{note}
+<h1>⚙️ <span class="g">הגדרות</span></h1><p class="muted" style="margin-top:0">{e(holy_status())}</p>{note}{undo_banner()}
 {update_banner()}
 {'<div class="item urgent">📦 נמצאו נתונים של MailBrief קודם — <a href="/?s=data#migrate">להעביר אותם לכאן</a></div>' if migrate.previous_copy() and sec != 'data' else ''}
 {subnav(sec)}

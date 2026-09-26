@@ -72,10 +72,12 @@ def _archive_folder(m):
     return 'Archive'
 
 
-def clean_inbox(days=30, only=None):
-    """Archives old inbox mail. Gmail: removes the Inbox label (the mail stays in "All mail"). Other servers: moves
-    it to the Archive folder. Starred mail and mail waiting for your answer stay. Returns (moved, errors)."""
+def clean_inbox(days=30, only=None, undo_log=None):
+    """Archives old inbox mail. Gmail: removes the Inbox label (the mail stays in "All mail") and marks it with a
+    "MailBrief cleanup" label, so it can be put back. Other servers: moves it to the Archive folder. Starred mail and
+    mail waiting for your answer stay. undo_log (a list) collects what is needed to put it back. Returns (moved, errors)."""
     accounts, keep, moved, errors = load_json(config.ACCOUNTS_FILE, []), _keep_ids(), 0, []
+    stamp = dt.datetime.now().strftime('%Y-%m-%d %H-%M')
     for acc in accounts:
         if only and acc['email'].lower() != only.lower():
             continue
@@ -87,24 +89,64 @@ def clean_inbox(days=30, only=None):
                     continue
                 gmail = is_gmail(acc)
                 target = None if gmail else _archive_folder(m)
+                label = f'MailBrief cleanup {stamp}'
+                done_uids = []
                 m.select('INBOX')
                 for i in range(0, len(uids), 200):
                     chunk = b','.join(uids[i:i + 200])
                     if gmail:
+                        m.uid('STORE', chunk, '+X-GM-LABELS', f'("{label}")')
                         ok = m.uid('STORE', chunk, '-X-GM-LABELS', r'(\Inbox)')[0] == 'OK'
                     else:
                         ok = m.uid('MOVE', chunk, f'"{target}"')[0] == 'OK'
-                        if not ok and m.uid('COPY', chunk, f'"{target}"')[0] == 'OK':
+                        if ok:
+                            code = m.response('COPYUID')[1]      # [COPYUID validity old-uids new-uids] — where they went
+                            if code and code[-1]:
+                                done_uids.append(code[-1].decode().split()[-1])
+                        elif m.uid('COPY', chunk, f'"{target}"')[0] == 'OK':
                             m.uid('STORE', chunk, '+FLAGS', r'(\Deleted)')
                             ok = 'UIDPLUS' in m.capabilities and m.uid('EXPUNGE', chunk)[0] == 'OK'
                     if ok:
                         moved += len(uids[i:i + 200])
+                if undo_log is not None:
+                    undo_log.append({'email': acc['email'], 'gmail': gmail, 'label': label if gmail else '',
+                                     'folder': target or '', 'uids': ','.join(done_uids)})
             finally:
                 m.logout()
         except Exception as exc:
             errors.append(f"{acc['email']}: {friendly_error(exc, acc)}")
     save_json(config.ACCOUNTS_FILE, accounts)
     return moved, errors
+
+
+def restore_cleaned(payload):
+    """Undo of a cleanup: the mail goes back to the inbox. Returns how many."""
+    accounts, back = load_json(config.ACCOUNTS_FILE, []), 0
+    for step in payload.get('accounts', []):
+        acc = next((a for a in accounts if a['email'] == step['email']), None)
+        if not acc:
+            continue
+        m = imap.connect(acc)
+        try:
+            if step['gmail'] and step['label']:
+                m.select(f'"{step["label"]}"')
+                typ, data = m.uid('SEARCH', None, 'ALL')
+                uids = data[0].split() if typ == 'OK' and data and data[0] else []
+                for i in range(0, len(uids), 200):
+                    chunk = b','.join(uids[i:i + 200])
+                    if m.uid('STORE', chunk, '+X-GM-LABELS', r'(\Inbox)')[0] == 'OK':
+                        back += len(uids[i:i + 200])
+                m.close()
+                m.delete(f'"{step["label"]}"')                  # the helper label goes away
+            elif step['folder'] and step['uids']:
+                m.select(f'"{step["folder"]}"')
+                if m.uid('MOVE', step['uids'], 'INBOX')[0] == 'OK':
+                    back += sum(int(b) - int(a) + 1 if b else 1
+                                for a, _, b in (part.partition(':') for part in step['uids'].split(',') if part))
+        finally:
+            m.logout()
+    save_json(config.ACCOUNTS_FILE, accounts)
+    return back
 
 
 # ---- newsletters nobody reads -----------------------------------------------------------------------------------------

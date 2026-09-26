@@ -1,9 +1,12 @@
 """Scheduled mail: write now, send later — never on Shabbat / Yom Tov."""
 import datetime as dt
+import json
 
 from mailbrief import config
 from mailbrief.features.calendar import holy_status
 from mailbrief.features.outbox import outbox, when_for
+from mailbrief.features.replies import reply_templates
+from mailbrief.profile import profile
 from mailbrief.storage import load_json
 from mailbrief.util import e
 from mailbrief.web.layout import heading, page
@@ -40,7 +43,13 @@ def compose_page(msg=''):
 <label style="margin:0">מהתיבה<select name="account" style="{field}">{options or '<option value="">(צריך לחבר תיבה)</option>'}</select></label>
 <label style="margin:0">אל <span class="muted">(כמה כתובות — מופרדות בפסיק)</span><input type="text" name="to" dir="ltr" required style="{field}"></label>
 <label style="margin:0">נושא<input type="text" name="subject" maxlength="300" style="{field}"></label>
-<label style="margin:0">תוכן<textarea name="body" rows="8" style="{field}"></textarea></label>
+<label style="margin:0">תוכן <select id="c-tmpl" style="font:inherit;font-size:13px;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+<option value="">📝 מתבנית…</option>{''.join(f'<option value="{e(t["text"])}">{e(t["name"])}</option>' for t in reply_templates())}</select>
+<textarea name="body" id="c-body" rows="8" style="{field}"></textarea></label>
+<script>(function(){{var s=document.getElementById('c-tmpl'),b=document.getElementById('c-body');if(!s)return;
+s.onchange=function(){{if(!s.value)return;var me={json.dumps(profile().get('name', ''))},d=new Date().toLocaleDateString('he-IL');
+var v=s.value;[['{{השם_שלי}}',me],['{{my_name}}',me],['{{היום}}',d],['{{today}}',d]].forEach(function(p){{v=v.split(p[0]).join(p[1]);}});
+b.value=v;s.value='';b.focus();}};}})();</script>
 <label style="margin:0">📎 קבצים מצורפים <span class="muted">(לא חובה · עד 20MB ביחד)</span><input type="file" name="files" multiple style="{field}"></label>
 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
 <label style="margin:0;display:flex;gap:6px;align-items:center;font-weight:400"><input type="radio" name="when" value="after_holy" checked> 🕯️ אחרי שבת/חג <span class="muted">({_preview('after_holy')})</span></label>
