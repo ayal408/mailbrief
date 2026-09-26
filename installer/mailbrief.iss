@@ -44,6 +44,7 @@ Name: "hebrew"; MessagesFile: "compiler:Languages\Hebrew.isl"
 [CustomMessages]
 hebrew.DesktopIcon=קיצור דרך בשולחן העבודה
 hebrew.LaunchNow=להפעיל את MailBrief עכשיו
+hebrew.InstallingWebView2=מתקין את רכיב החלון של Windows (WebView2)... זה לוקח כדקה
 hebrew.DeleteData=למחוק גם את הנתונים של MailBrief?%n%nהתיבות המחוברות, הקבלות, הארכיון והגיבויים נמצאים ב:%n%1%n%nלחיצה על „לא” משאירה אותם — אם יתקינו שוב, הכול יחזור.
 
 [Tasks]
@@ -53,12 +54,16 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 Source: "..\dist\MailBrief.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+; Microsoft's WebView2 installer (downloaded at build time) — only unpacked on a computer that doesn't have WebView2 yet
+Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: NeedsWebView2
 
 [Icons]
 Name: "{autoprograms}\MailBrief"; Filename: "{app}\MailBrief.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\MailBrief"; Filename: "{app}\MailBrief.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+; the engine of MailBrief's own window. Part of Windows 11 on most computers; without it MailBrief opens in the browser.
+Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "{cm:InstallingWebView2}"; Flags: waituntilterminated; Check: NeedsWebView2
 ; after a normal install: offer to start it
 Filename: "{app}\MailBrief.exe"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
 ; after an update from inside MailBrief (silent install with /RELAUNCH=1): start it again by itself
@@ -69,6 +74,21 @@ Filename: "{app}\MailBrief.exe"; Flags: nowait; Check: Relaunch
 Filename: "{app}\MailBrief.exe"; Parameters: "--uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveSchedule"
 
 [Code]
+function HasWebView2(Root: Integer; Key: String): Boolean;
+var
+  Version: String;
+begin
+  Result := RegQueryStringValue(Root, Key, 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0');
+end;
+
+function NeedsWebView2(): Boolean;
+begin
+  { per machine (both registry views) or per user — see Microsoft's WebView2 "detect if installed" guidance }
+  Result := not (HasWebView2(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')
+              or HasWebView2(HKLM, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')
+              or HasWebView2(HKCU, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'));
+end;
+
 function Relaunch(): Boolean;
 begin
   Result := ExpandConstant('{param:RELAUNCH|0}') = '1';

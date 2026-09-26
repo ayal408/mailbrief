@@ -22,6 +22,8 @@ Write-Host "Built: $(Resolve-Path dist\MailBrief.exe)"
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") |
     Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($iscc) {
+    $wv2 = 'installer\MicrosoftEdgeWebview2Setup.exe'     # Microsoft's small WebView2 installer, for computers without it
+    if (-not (Test-Path $wv2)) { Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $wv2 -UseBasicParsing }
     $version = .\.venv\Scripts\python.exe -c "import mailbrief; print(mailbrief.__version__)"
     & $iscc /Q "/DAppVersion=$version" installer\mailbrief.iss
     if ($LASTEXITCODE) { throw 'Inno Setup failed' }

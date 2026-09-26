@@ -18,9 +18,28 @@ APP = {'window': None, 'quitting': False, 'hint_shown': False}
 
 # ---- the real window --------------------------------------------------------------------------------------------------
 
+WEBVIEW2 = r'Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+
+
+def webview2_installed():
+    """The engine of the real window. Missing on some computers (Windows 10, or where its download was blocked) —
+    and then pywebview quietly falls back to Internet Explorer's engine, which can't show MailBrief."""
+    for root, key in ((winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\WOW6432Node\\' + WEBVIEW2), (winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\' + WEBVIEW2),
+                      (winreg.HKEY_CURRENT_USER, 'Software\\' + WEBVIEW2)):
+        try:
+            with winreg.OpenKey(root, key) as k:
+                version = winreg.QueryValueEx(k, 'pv')[0]
+                if version and version != '0.0.0.0':
+                    return True
+        except OSError:
+            pass
+    return False
+
+
 def available():
+    """The real window needs pywebview (inside MailBrief.exe) and WebView2; otherwise an Edge app window is used."""
     try:
-        return importlib.util.find_spec('webview') is not None
+        return importlib.util.find_spec('webview') is not None and webview2_installed()
     except Exception:
         return False
 
@@ -141,7 +160,8 @@ def open_window(url):
         return
     width, height = _size()
     try:
-        subprocess.Popen([exe, f'--app={url}', f'--window-size={width},{height}'], creationflags=0x00000008 | 0x00000200)
+        subprocess.Popen([exe, f'--app={url}', f'--window-size={width},{height}', '--no-first-run', '--no-default-browser-check'],
+                         creationflags=0x00000008 | 0x00000200)
     except OSError:
         webbrowser.open(url)
 

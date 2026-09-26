@@ -68,6 +68,9 @@ jobs:
             choco install innosetup -y --no-progress | Out-Null
             $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           }
+          # Microsoft's small WebView2 installer: the setup runs it only on a computer without WebView2
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile installer\MicrosoftEdgeWebview2Setup.exe -UseBasicParsing
+          if ((Get-AuthenticodeSignature installer\MicrosoftEdgeWebview2Setup.exe).SignerCertificate.Subject -notmatch 'Microsoft') { throw 'WebView2 installer is not signed by Microsoft' }
           & $iscc /Q "/DAppVersion=$env:VERSION" installer\mailbrief.iss
           if ($LASTEXITCODE) { throw 'Inno Setup failed' }
 
