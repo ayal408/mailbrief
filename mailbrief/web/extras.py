@@ -187,6 +187,7 @@ HTML = """
   var typed = document.getElementById('mb-type'), li = 0, ci = 0, back = false;
   function type(){
     if (!typed) return;
+    if (window.MB_still && window.MB_still()) { typed.textContent = LINES[li]; return setTimeout(type, 1500); }
     var line = LINES[li];
     if (!back) { ci++; if (ci > line.length) { back = true; return setTimeout(type, 2200); } }
     else { ci -= 2; if (ci <= 0) { ci = 0; back = false; li = (li + 1) % LINES.length; } }
@@ -314,7 +315,9 @@ HTML += """
 <canvas id="mb-confetti"></canvas>
 <script>
 (function(){
-  var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // "stop animations": the accessibility button or the Windows setting — checked every time, so turning it on stops everything now
+  function still(){ return document.documentElement.hasAttribute('data-still') || !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+  window.MB_still = still;
 
   function sortLists(){
     Array.prototype.forEach.call(document.querySelectorAll('select.mb-sort'), function(sel){
@@ -337,12 +340,12 @@ HTML += """
   function fx(){
   sortLists();
   // cards and rows rise one after another
-  if (!still) Array.prototype.forEach.call(document.querySelectorAll('main .box, main .kpi, main > .item, main section > .item, main .scroll'), function(el, i){
+  if (!still()) Array.prototype.forEach.call(document.querySelectorAll('main .box, main .kpi, main > .item, main section > .item, main .scroll'), function(el, i){
     el.style.animationDelay = Math.min(i * 45, 700) + 'ms'; el.classList.add('pop');
   });
 
   // numbers count up (KPI cards)
-  if (!still) Array.prototype.forEach.call(document.querySelectorAll('.kpi b'), function(el){
+  if (!still()) Array.prototype.forEach.call(document.querySelectorAll('.kpi b'), function(el){
     var text = el.textContent, m = text.match(/^([^\\d-]*)(-?[\\d,]+(?:\\.\\d+)?)(.*)$/);
     if (!m) return;
     var target = parseFloat(m[2].replace(/,/g, '')), dec = (m[2].split('.')[1] || '').length, t0 = null;
@@ -360,7 +363,7 @@ HTML += """
   // ripple on every button
   document.addEventListener('pointerdown', function(ev){
     var b = ev.target.closest && ev.target.closest('button,.kbtn,.tbtn');
-    if (!b || still) return;
+    if (!b || still()) return;
     var r = b.getBoundingClientRect(), s = Math.max(r.width, r.height), d = document.createElement('span');
     d.className = 'ripple'; d.style.width = d.style.height = s + 'px';
     d.style.left = (ev.clientX - r.left - s / 2) + 'px'; d.style.top = (ev.clientY - r.top - s / 2) + 'px';
@@ -370,7 +373,7 @@ HTML += """
   // confetti
   var cv = document.getElementById('mb-confetti'), cx = cv.getContext('2d'), bits = [], running = false;
   function confetti(n, ox, oy){
-    if (still) return;
+    if (still()) return;
     cv.width = innerWidth; cv.height = innerHeight;
     var colors = ['#7c3aed', '#f97316', '#a78bfa', '#fbbf24', '#16a34a', '#ec4899', '#06b6d4'];
     var x0 = ox == null ? innerWidth / 2 : ox, y0 = oy == null ? innerHeight / 3 : oy, spread = ox == null ? 200 : 40;
@@ -386,6 +389,7 @@ HTML += """
       b.vy += .32; b.vx *= .99; b.x += b.vx; b.y += b.vy; b.a += b.va; b.life++;
       cx.save(); cx.translate(b.x, b.y); cx.rotate(b.a); cx.fillStyle = b.c; cx.fillRect(-b.r / 2, -b.r / 4, b.r, b.r / 2); cx.restore();
     });
+    if (still()) bits = [];
     if (bits.length) requestAnimationFrame(tick); else { running = false; cx.clearRect(0, 0, cv.width, cv.height); }
   }
   // finishing a task (or adding an invitation / recipe) celebrates on the next page
