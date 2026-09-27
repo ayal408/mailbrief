@@ -139,7 +139,7 @@ def update_banner():
 
 
 def undo_banner():
-    """„↩️ ביטול” for the last action, while it can still be taken back (a few minutes)."""
+    """„↩️ ביטול” for the last action, while it can still be taken back (10 seconds)."""
     from mailbrief.features.undo import last, seconds_left
     from mailbrief.web.token import TOKEN
     item = last()
@@ -150,7 +150,7 @@ def undo_banner():
             f'<input type="hidden" name="id" value="{e(item["id"])}"><button class="ghost" style="margin:0;padding:6px 14px">↩️ ביטול</button></form>'
             f'<span class="muted" style="font-size:12px" data-left="{seconds_left(item)}"></span></div>'
             '<script>(function(){var s=document.querySelector("#mb-undo [data-left]");if(!s)return;var n=+s.dataset.left;'
-            'function t(){s.textContent="אפשר לבטל עוד "+Math.floor(n/60)+":"+String(n%60).padStart(2,"0");if(n--<=0){var b=document.getElementById("mb-undo");if(b)b.remove();}else setTimeout(t,1000);}t();})();</script>')
+            'function t(){s.textContent="אפשר לבטל עוד "+n+" שניות";if(n--<=0){var b=document.getElementById("mb-undo");if(b)b.remove();}else setTimeout(t,1000);}t();})();</script>')
 
 
 def heading(icon, text):

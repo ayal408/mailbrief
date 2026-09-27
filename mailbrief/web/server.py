@@ -77,7 +77,12 @@ from mailbrief.features import setup
 from mailbrief.web.token import TOKEN
 
 
-UNDO_SEND = dt.timedelta(seconds=40)      # "send now" leaves this long to change your mind (↩️)
+UNDO_SEND = dt.timedelta(seconds=10)      # "send now" leaves this long to change your mind (↩️) — then it goes out
+
+
+def send_soon():
+    """Right after the undo window: send what's due now, instead of waiting for the next round of the outbox."""
+    threading.Timer(UNDO_SEND.total_seconds() + 1, lambda: outbox.send_due()).start()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -503,8 +508,9 @@ class Handler(BaseHTTPRequestHandler):
                 d = reply_details(f.get('account', ''), f.get('message_id', ''))
                 item = outbox.schedule(f['account'], d['to'], d['subject'], text, outbox.out_of_holy(dt.datetime.now().astimezone() + UNDO_SEND),
                                        thread=d)
-                undo.record('send', f'✉️ התשובה ל-{d["to"]} יוצאת בעוד רגע', {'ids': [item['id']]})
-                result = f'✉️ התשובה ל-{d["to"]} יוצאת בעוד רגע (↩️ אפשר לבטל למעלה)'
+                undo.record('send', f'✉️ התשובה ל-{d["to"]} יוצאת בעוד 10 שניות', {'ids': [item['id']]})
+                send_soon()
+                result = f'✉️ התשובה ל-{d["to"]} יוצאת בעוד 10 שניות (↩️ אפשר לבטל למעלה)'
             else:
                 when = outbox.when_for(when_choice)
                 d = reply_details(f.get('account', ''), f.get('message_id', ''))
@@ -754,6 +760,8 @@ class Handler(BaseHTTPRequestHandler):
             os.remove(draft_path())
         queued = [m['id'] for m in outbox.outbox() if m['status'] == 'waiting'][-count:]
         undo.record('send', f'📨 {count} מיילים אישיים בתור', {'ids': queued})
+        if choice == 'now':
+            send_soon()
         return ('/compose?msg=' + quote(f'📨 {count} מיילים אישיים בתור — יוצאים מ-{when:%d/%m %H:%M} בסבבים של 25') + '#queue', None)
 
     def post_payment_cfg(self, f):
@@ -1003,8 +1011,9 @@ class Handler(BaseHTTPRequestHandler):
             return ('/compose?msg=' + quote(f'⚠️ {exc}') + '#queue', None)
         if dt.datetime.fromisoformat(item['send_at']) > now + dt.timedelta(minutes=1):
             return ('/compose?msg=' + quote(f'🕯️ עכשיו שבת/חג — יישלח במוצאי ({dt.datetime.fromisoformat(item["send_at"]):%d/%m %H:%M})') + '#queue', None)
-        undo.record('send', f'📤 „{item["subject"][:40]}” יוצא בעוד רגע', {'ids': [item['id']]})
-        return ('/compose?msg=' + quote('📤 יוצא בעוד רגע (↩️ אפשר לבטל למעלה)') + '#queue', None)
+        undo.record('send', f'📤 „{item["subject"][:40]}” יוצא בעוד 10 שניות', {'ids': [item['id']]})
+        send_soon()
+        return ('/compose?msg=' + quote('📤 יוצא בעוד 10 שניות (↩️ אפשר לבטל למעלה)') + '#queue', None)
 
     def post_schedule_cancel(self, f):
         outbox.cancel(f.get('id', ''))

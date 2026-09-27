@@ -1,4 +1,4 @@
-"""↩️ Undo: the last action that changed something can be taken back for a few minutes — an inbox cleanup (the mail
+"""↩️ Undo: the last action that changed something can be taken back for 10 seconds — an inbox cleanup (the mail
 goes back to the inbox), "paid" (the invoice is open again and the thank-you mail is cancelled), and deleting a rule,
 template, text shortcut, client date or tracked invoice. One action at a time: the newest replaces the one before."""
 import datetime as dt
@@ -9,7 +9,7 @@ from mailbrief import config
 from mailbrief.storage import load_json, save_json
 
 
-WINDOW = dt.timedelta(minutes=5)
+WINDOW = dt.timedelta(seconds=10)
 
 
 def _path():
