@@ -52,7 +52,7 @@ class Isolated(unittest.TestCase):
         real = os.path.normcase(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         assert not os.path.normcase(os.path.abspath(config.DATA)).startswith(real), 'tests must never touch the real data folder'
         os.makedirs(config.DATA, exist_ok=True)
-        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
+        storage.save_json(config.ACCOUNTS_FILE, [{'id': 'test0001', 'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
 
     def tearDown(self):
         for p in self.patches:
@@ -1675,6 +1675,70 @@ class Batch8(Isolated):
         from mailbrief.web import extras
         self.assertIn('mb-attach-note', extras.HTML)
         self.assertIn('מצורפ', extras.HTML)
+
+
+class Batch9(Isolated):
+    def test_settings_search(self):
+        from mailbrief.web import settings_search
+        settings_search._CACHE.update(at=0.0, rows=[])
+        rows = settings_search.index()
+        ids = {r['id'] for r in rows}
+        for anchor in ('pin', 'income', 'recurring', 'blocked', 'backupcheck', 'holidayreply'):
+            self.assertIn(anchor, ids)
+        self.assertTrue(any('חתימה' in r['title'] for r in rows))
+        self.assertTrue(all('<' not in r['text'] for r in rows))                       # plain text, no markup
+        from mailbrief.web.settings import settings_page
+        self.assertIn('id="set-q"', settings_page())
+
+    def test_guide_groups(self):
+        from mailbrief.web.help import GUIDE, grouped
+        groups = grouped()
+        self.assertEqual(sum(len(r) for _, r in groups), len(GUIDE))                   # every feature in exactly one group
+        names = dict(groups)
+        self.assertTrue(any(link == '/merge' for _, link, _ in names['✉️ שליחה, תבניות ואוטומציות']))
+        self.assertTrue(any(link == '/year_report' for _, link, _ in names['💰 כסף, קבלות ורו״ח']))
+
+    def test_template_ranking(self):
+        from mailbrief.features.replies import rank_templates
+        templates = [{'id': 'a', 'name': 'תודה', 'text': 'תודה רבה!'},
+                     {'id': 'b', 'name': 'הצעת מחיר', 'text': 'מצורפת הצעת המחיר'},
+                     {'id': 'c', 'name': 'בקשת חשבונית', 'text': 'אשמח לקבל חשבונית'}]
+        self.assertEqual(rank_templates('בקשה להצעת מחיר לשיפוץ', templates)[0][0]['id'], 'b')
+        self.assertEqual(rank_templates('Invoice #123 — חשבונית', templates)[0][0]['id'], 'c')
+        self.assertEqual([t['id'] for t, s in rank_templates('שלום', templates)], ['a', 'b', 'c'])   # no match: original order
+        from mailbrief.web.triage import best_template
+        storage.save_json(config.SETTINGS_FILE, {'templates': templates})
+        self.assertEqual(best_template('הצעת מחיר'), 'b')
+        self.assertEqual(best_template('שלום'), '')
+
+    def test_pdf_search(self):
+        from mailbrief.features import pdfsearch
+        self.assertEqual(pdfsearch.words('from:(dana) חשבונית has:attachment OR "ארנונה"'), ['חשבונית', 'ארנונה'])
+        os.makedirs(os.path.join(config.RECEIPTS_DIR, '2026-09'))
+        path = os.path.join(config.RECEIPTS_DIR, '2026-09', 'bezeq.pdf')
+        with open(path, 'wb') as f:
+            f.write(b'%PDF-1.4 fake')
+        with mock.patch.object(pdfsearch, 'pdf_text', return_value='חשבונית מס 4471 בזק סכום לתשלום 118.00') as read:
+            hits = pdfsearch.search('4471 בזק')
+            self.assertEqual([h['name'] for h in hits], ['bezeq.pdf'])
+            self.assertIn('4471', hits[0]['snippet'])
+            pdfsearch.search('בזק')
+            self.assertEqual(read.call_count, 1)                                         # read once, then from the index
+        self.assertEqual(pdfsearch.search('ארנונה'), [])
+        self.assertTrue(pdfsearch.known(path))
+        self.assertFalse(pdfsearch.known(os.path.join(config.DATA, 'accounts.json')))    # only indexed PDFs can be opened
+
+    def test_email_notes(self):
+        from mailbrief.features import email_notes
+        email_notes.set_note('me|<1>', 'דיברנו בטלפון')
+        self.assertEqual(email_notes.notes()['me|<1>']['text'], 'דיברנו בטלפון')
+        email_notes.set_note('me|<1>', '  ')
+        self.assertNotIn('me|<1>', email_notes.notes())
+
+    def test_tour_is_new(self):
+        from mailbrief.web import extras
+        self.assertIn("'mb-tour-2'", extras.HTML)
+        self.assertIn('#mb-imp-btn', extras.HTML)
 
 
 def message_b64(claims):

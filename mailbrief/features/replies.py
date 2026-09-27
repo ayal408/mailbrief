@@ -44,6 +44,30 @@ def template_files(template_id):
     return out
 
 
+TOPICS = [   # an email about X -> a template about X first
+    ('הצעת מחיר', 'הצעה', 'מחיר', 'quote', 'quotation', 'price'),
+    ('חשבונית', 'קבלה', 'invoice', 'receipt'),
+    ('תשלום', 'לשלם', 'שולם', 'העברה', 'payment', 'pay'),
+    ('פגישה', 'לקבוע', 'לתאם', 'זמינ', 'meeting', 'schedule'),
+    ('תודה', 'thanks', 'thank you'),
+    ('משלוח', 'הזמנה', 'order', 'shipping', 'delivery'),
+    ('חוזה', 'הסכם', 'contract', 'agreement'),
+]
+
+
+def rank_templates(subject, templates=None):
+    """💡 The templates, best match for this email first: [(template, score)]. score 0 = no particular match."""
+    templates = reply_templates() if templates is None else templates
+    text = (subject or '').lower()
+    ranked = []
+    for n, t in enumerate(templates):
+        body = f"{t['name']} {t['text']}".lower()
+        score = sum(2 for words in TOPICS if any(w in text for w in words) and any(w in body for w in words))
+        score += sum(1 for w in t['name'].lower().split() if len(w) >= 3 and w in text)
+        ranked.append((score, -n, t))
+    return [(t, score) for score, _, t in sorted(ranked, key=lambda x: (x[0], x[1]), reverse=True)]
+
+
 def reply_templates():
     return load_json(config.SETTINGS_FILE, {}).get('templates') or DEFAULT_TEMPLATES
 

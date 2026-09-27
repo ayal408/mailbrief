@@ -37,6 +37,24 @@ QUICK = [('📎 עם קבצים', 'has:attachment newer_than:30d'), ('🧾 חש�
          ('💰 תשלום', 'לתשלום OR "דרישת תשלום" OR payment newer_than:30d')]
 
 
+def pdf_results(query):
+    """📄 The same words inside PDFs on this computer (receipts, clients' folders, Downloads)."""
+    from mailbrief.features.pdfsearch import search
+    try:
+        hits = search(query)
+    except Exception:
+        return ''
+    if not hits:
+        return ''
+    rows = ''.join(
+        f'<div class="item"><div class="t" dir="auto">📄 {e(h["name"])} <span class="muted" style="font-size:12px">· {e(h["label"])}</span></div>'
+        + (f'<div class="s" dir="auto">…{e(h["snippet"])}…</div>' if h['snippet'] else '')
+        + f'<form method="post" action="/open_file" style="margin:6px 0 0"><input type="hidden" name="t" value="{TOKEN}">'
+          f'<input type="hidden" name="path" value="{e(h["path"])}"><input type="hidden" name="q" value="{e(query)}"><button class="ghost" style="margin:0;padding:4px 12px">פתיחה</button></form></div>'
+        for h in hits)
+    return f'<h3>📄 בתוך קבצי PDF במחשב ({len(hits)})</h3><p class="muted" style="font-size:13px">קבלות, תיקיות לקוחות והורדות — נמצאה התאמה בתוך הקובץ עצמו.</p>{rows}'
+
+
 def search_page(query):
     results_html = ''
     if query:
@@ -49,7 +67,8 @@ def search_page(query):
                     f'<input type="hidden" name="q" value="{e(query)}"><button>📥 הורדת כל הקבצים המצורפים מהתוצאות</button></form>') if found else ''
         results_html = (''.join(f'<div class="err">⚠️ {e(x)}</div>' for x in errors)
                         + f'<p class="muted">{len(found)} תוצאות (עד 40 האחרונות מכל תיבה)</p>' + download
-                        + (f'<div class="scroll"><table><thead><tr><th>תאריך</th><th>מאת</th><th>נושא</th><th>תיבה</th></tr></thead><tbody>{rows}</tbody></table></div>' if found else ''))
+                        + (f'<div class="scroll"><table><thead><tr><th>תאריך</th><th>מאת</th><th>נושא</th><th>תיבה</th></tr></thead><tbody>{rows}</tbody></table></div>' if found else '')
+                        + pdf_results(query))
     saved = load_json(config.SETTINGS_FILE, {}).get('saved_searches') or []
     chips = ''.join(
         f'<span class="pill" style="display:inline-flex;gap:6px;align-items:center;font-size:14px;padding:4px 10px">'

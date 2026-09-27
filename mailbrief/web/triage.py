@@ -2,7 +2,7 @@
 import json
 
 from mailbrief.features.google_apps import gapps_account
-from mailbrief.features.replies import reply_templates
+from mailbrief.features.replies import rank_templates, reply_templates
 from mailbrief.features.triage import queue, triage_key
 from mailbrief.profile import g
 from mailbrief.util import e
@@ -11,10 +11,15 @@ from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
 
+def best_template(subject):
+    ranked = rank_templates(subject)
+    return ranked[0][0]['id'] if ranked and ranked[0][1] > 0 else ''
+
+
 def triage_page():
     items = [{'key': triage_key(r), 'kind': r['kind'], 'from': r.get('from', ''), 'subject': r.get('subject', ''),
               'days': r.get('days', 0), 'link': r.get('link', ''), 'account': r.get('account', ''),
-              'message_id': r.get('message_id', '')} for r in queue()]
+              'message_id': r.get('message_id', ''), 'tpl': best_template(r.get('subject', ''))} for r in queue()]
     templates = ''.join(f'<option value="{e(t["id"])}">{e(t["name"])}</option>' for t in reply_templates())
     task_button = '<button type="button" data-act="task"><kbd>4</kbd> ✅ משימה</button>' if gapps_account() else ''
     data = json.dumps(items, ensure_ascii=False).replace('</', '<\\/')
@@ -84,6 +89,7 @@ kbd{{display:inline-block;font:12px ui-monospace,monospace;border:1px solid var(
       return;
     }}
     document.getElementById('tri-count').textContent = (i + 1) + ' מתוך ' + items.length;
+    if (it.tpl) document.getElementById('tri-tpl').value = it.tpl;       // 💡 the template that fits this email
     card.innerHTML = '<div class="kind">' + (it.kind === 'mine' ? '⏳ מחכה לתשובה ממך' : '📤 שלחת — ועוד לא ענו') + ' · ' +
       '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + (COLORS[it.account] || '#999') + ';margin-inline-end:4px"></span>' + esc(it.account) + '</div>' +
       '<div class="who" dir="auto">' + (it.kind === 'mine' ? '' : 'אל ') + esc(it.from) + '</div>' +

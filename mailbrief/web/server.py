@@ -203,6 +203,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read(), 'text/plain; charset=utf-8')
             except OSError:
                 return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
+        if url.path == '/settings_index.json':
+            import json
+            from mailbrief.web.settings_search import index
+            return self._send(json.dumps(index(), ensure_ascii=False), 'application/json; charset=utf-8')
         if url.path == '/free_slots':
             import json
             from mailbrief.features.slots import suggest
@@ -915,6 +919,19 @@ class Handler(BaseHTTPRequestHandler):
         from mailbrief.features.maintenance import check_backups
         ok, lines = check_backups(force=True)
         return ('🧪 ' + ('הגיבוי תקין' if ok else 'נמצאה בעיה') + ' — ' + ' · '.join(lines))
+
+    def post_email_note(self, f):
+        from mailbrief.features.email_notes import set_note
+        saved = set_note(f.get('key', '')[:400], f.get('text', ''))
+        return ('/today?msg=' + quote('📝 ההערה נשמרה' if saved else 'ההערה נמחקה'), None)
+
+    def post_open_file(self, f):
+        from mailbrief.features.pdfsearch import known
+        path = f.get('path', '')
+        if not known(path):
+            return 'הקובץ לא נמצא'
+        os.startfile(path)
+        return ('/search?q=' + quote(f.get('q', '')), None)
 
     def post_client_docs(self, f):
         from mailbrief.features.client_docs import client_zip

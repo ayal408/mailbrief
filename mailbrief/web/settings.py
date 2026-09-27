@@ -14,6 +14,7 @@ from mailbrief.features.daily import daily_cfg
 from mailbrief.features.google_apps import API_PAGES, gapps_account
 from mailbrief.features.maintenance import schedule_status
 from mailbrief.features.replies import reply_templates, template_files, vacation_active, VACATION_DEFAULT
+from mailbrief.web import settings_search
 from mailbrief.web.settings_more import (backup_check_block, blocked_block, holiday_reply_block, income_block, payment_block,
                                          pin_block, recurring_block)
 from mailbrief.mail.classify import TAG_PREFIX
@@ -746,6 +747,7 @@ nav.subtabs a:hover{{border-color:var(--accent)}} nav.subtabs a[aria-current]{{b
 <h1>⚙️ <span class="g">הגדרות</span></h1><p class="muted" style="margin-top:0">{e(holy_status())}</p>{note}{undo_banner()}
 {update_banner()}
 {'<div class="item urgent">📦 נמצאו נתונים של MailBrief קודם — <a href="/?s=data#migrate">להעביר אותם לכאן</a></div>' if migrate.previous_copy() and sec != 'data' else ''}
+{settings_search.BOX}
 {subnav(sec)}
 {body}
 <form method="post" action="/quit" style="margin-top:40px">{_t()}

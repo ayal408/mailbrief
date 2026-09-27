@@ -10,9 +10,32 @@ from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
 
+GROUPS = [   # (name, where the feature lives) — the first group whose prefix matches the link
+    ('☀️ היום שלי ותשובות', ('/today', '/triage', '/insights')),
+    ('✉️ שליחה, תבניות ואוטומציות', ('/compose', '/merge', '/greetings', '/automations', '/?s=auto')),
+    ('👥 לקוחות', ('/clients', '/client_stats', '/contacts', '/?s=clients')),
+    ('💰 כסף, קבלות ורו״ח', ('/?s=money', '/month_report', '/year_report', '/dashboard', '/stats')),
+    ('🔍 חיפוש, קבצים וניוזלטרים', ('/search', '/files', '/reading', '/?s=tidy')),
+    ('🔒 הגדרות, פרטיות וגיבוי', ('/?s=', '/', '/help', '/about')),
+]
+
+
+def grouped():
+    """The guide in groups, in the order above; a feature whose page matches no group goes to the last one."""
+    out = {name: [] for name, _ in GROUPS}
+    for row in GUIDE:
+        link = row[1]
+        name = next((n for n, prefixes in GROUPS if any(link == p or (p != '/' and link.startswith(p)) for p in prefixes)), GROUPS[-1][0])
+        out[name].append(row)
+    return [(name, rows) for name, rows in out.items() if rows]
+
+
 GUIDE = [
     ('📬 התדריך השבועי', '/?s=boxes', 'כל יום ראשון ב-8:00 נוצר דוח של השבוע: דחוף, ממתינים לתשובה, קבלות, אבטחה, ניוזלטרים. „▶ הרצה עכשיו” — מיד.'),
     ('☀️ היום שלי', '/today', 'נפתח כשנכנסים למחשב: תאריך עברי, מזג אוויר, זמני שבת, דחוף, ממתינים, תשלומים, חשבוניות שלא הגיעו, לקוחות שלא שילמו.'),
+    ('📝 הערה על מייל', '/today', 'ליד כל מייל ב„היום שלי”: 📝 הערה אישית („דיברנו בטלפון, מחכה לאישור”) — מופיעה מתחתיו עד שהוא יורד מהרשימה.'),
+    ('💡 תבנית מתאימה', '/today', 'מייל על „הצעת מחיר” או „חשבונית”? בתשובה המהירה ובמיון המהיר התבנית המתאימה מופיעה ראשונה.'),
+    ('📄 חיפוש בתוך PDF', '/search', 'החיפוש מוצא מילים גם בתוך קבצי PDF במחשב — קבלות, תיקיות לקוחות והורדות — לא רק בתוך המיילים.'),
     ('💳 תשלום בלחיצה', '/?s=clients#debts', 'לתזכורות התשלום מצורפים לבד קישור Bit / PayBox או פרטי חשבון — הלקוח משלם בלחיצה.'),
     ('📆 חידושים שנתיים', '/today', 'ספק שחייב לפני שנה (דומיין, ביטוח, תוכנה) — תזכורת חודש לפני החידוש, כשעוד אפשר לבטל.'),
     ('📎 שכחת לצרף?', '/compose', 'כתוב „מצורף” ולא נבחר קובץ? MailBrief עוצר פעם אחת ושואל לפני השליחה.'),
@@ -89,8 +112,11 @@ GUIDE = [
 
 def help_page(msg=''):
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
-    guide = ''.join(f'<a href="{link}" style="text-decoration:none;color:inherit"><div class="item"><div class="t">{e(title)}</div>'
-                    f'<div class="s">{e(text)}</div></div></a>' for title, link, text in GUIDE)
+    item = lambda title, link, text: (f'<a href="{link}" style="text-decoration:none;color:inherit"><div class="item"><div class="t">{e(title)}</div>'
+                                      f'<div class="s">{e(text)}</div></div></a>')
+    guide = ''.join(f'<details class="guide-group"{" open" if n == 0 else ""}><summary style="cursor:pointer;font-size:17px;font-weight:600;margin:10px 0">'
+                    f'{e(name)} <span class="muted" style="font-size:13px;font-weight:400">({len(rows)})</span></summary>'
+                    + ''.join(item(*r) for r in rows) + '</details>' for n, (name, rows) in enumerate(grouped()))
     backups = ''.join(
         f'<tr><td dir="ltr">{e(b[10:20])} {e(b[21:23])}:{e(b[23:25])}</td><td>{"לפני שחזור" if "before-restore" in b else "ידני" if "manual" in b else "אוטומטי"}</td>'
         f'<td><form method="post" action="/restore" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="name" value="{e(b)}">'

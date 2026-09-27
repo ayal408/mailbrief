@@ -77,6 +77,36 @@ def by_thread(rows, who='from'):
     return out
 
 
+def note_button(r, note_rows):
+    """📝 A personal note on the email — shown under it until the email leaves the list."""
+    key = triage_key(r)
+    now = (note_rows.get(key) or {}).get('text', '')
+    return (f'<details style="display:inline-block;vertical-align:top"><summary style="{SMALL};display:inline-block;list-style:none;cursor:pointer" '
+            f'title="הערה אישית למייל הזה">📝{"✓" if now else ""}</summary><form method="post" action="/email_note" style="display:flex;gap:6px;margin:6px 0;min-width:260px">'
+            f'<input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="key" value="{e(key)}">'
+            f'<input type="text" name="text" value="{e(now)}" maxlength="500" placeholder="למשל: דיברנו בטלפון, מחכה לאישור" '
+            f'style="flex:1;font:inherit;font-size:14px;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">'
+            f'<button style="{SMALL};background:var(--accent);color:#fff;border-color:var(--accent)">💾</button></form></details>')
+
+
+def template_chips(r):
+    """💡 Up to 3 templates for the quick reply — the one that fits the email's subject first, marked 💡. A click fills the text."""
+    from mailbrief.features.greetings import first_name
+    from mailbrief.features.replies import rank_templates
+    ranked = rank_templates(r.get('subject', ''))[:3]
+    if not ranked:
+        return ''
+    name = first_name(r.get('from', '')) or r.get('from', '')
+    fill = lambda text: (text.replace('{שם_פרטי}', name).replace('{from_name}', name).replace('{first_name}', name)
+                         .replace('{שם}', r.get('from', '')))
+    chips = ''.join(f'<button type="button" class="tpl-chip" data-text="{e(fill(t["text"]))}" style="{SMALL}'
+                    f'{";border-color:var(--accent);color:var(--accent)" if score and n == 0 else ""}" title="{e(t["text"][:120])}">'
+                    f'{"💡 " if score and n == 0 else "📝 "}{e(t["name"])}</button>' for n, (t, score) in enumerate(ranked))
+    return (f'<div style="display:flex;gap:4px;flex-wrap:wrap">{chips}</div>'
+            '<script>document.currentScript.previousElementSibling.querySelectorAll(".tpl-chip").forEach(function(b){b.onclick=function(){'
+            'var t=b.closest("form").querySelector("textarea");t.value=b.dataset.text;t.focus();};});</script>')
+
+
 IMPORTANT_CARDS = ('🔥', '⏳', '⭐', '📌', '💰', '⏰')        # urgent, waiting, VIP, deadlines, unpaid, reminders
 
 
@@ -158,6 +188,8 @@ def today_page(msg='', show_all=False, print_now=False):
     card = lambda title, body: (f'<div class="box{" imp" if title.startswith(IMPORTANT_CARDS) else ""}" style="background:var(--surface);border:1px solid var(--line);'
                                 f'border-radius:16px;padding:16px 18px"><h3 style="margin:0 0 8px">{title}</h3>{body}</div>')
     important = important_senders()
+    from mailbrief.features.email_notes import notes as email_notes
+    note_rows = email_notes()
     snap = load_json(config.SNAPSHOT_FILE, {})
     box = current_account()
     snap = {k: ([r for r in v if mine(r, current=box)] if isinstance(v, list) else v) for k, v in snap.items()}
@@ -227,15 +259,19 @@ def today_page(msg='', show_all=False, print_now=False):
                        f'title="תשובה מכאן">✍️ תשובה</summary><form method="post" action="/reply_quick" style="display:grid;gap:6px;margin:6px 0;min-width:260px">'
                        f'<input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="account" value="{e(r["account"])}">'
                        f'<input type="hidden" name="message_id" value="{e(r["message_id"])}">'
+                       + template_chips(r) +
                        f'<textarea name="text" rows="3" required placeholder="התשובה שלך… (אפשר ;קיצור)" style="font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"></textarea>'
                        f'<div style="display:flex;gap:6px"><select name="when" style="font:inherit;font-size:13px;padding:4px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">'
                        '<option value="now">לשלוח עכשיו</option><option value="after_holy">🕯️ אחרי שבת/חג</option><option value="tomorrow8">🌅 מחר 8:00</option></select>'
                        f'<button style="{SMALL};background:var(--accent);color:#fff;border-color:var(--accent)">✉️ שליחה</button></div></form></details>')
+        button += note_button(r, note_rows)
         button += dismiss_button(r)
         sender = (r.get('sender') or '').lower()
         imp = imp or sender in important or '@' + sender.rsplit('@', 1)[-1] in important
         return (f'<li dir="auto" data-imp="{int(imp)}" data-days="{r.get("days", 0)}" data-name="{e(r["from"])}" data-account="{e(r.get("account", ""))}">'
-                f'{dot(r.get("account", ""))}{title}{thread} <span class="muted">— {e(r["from"])} · {tail}</span>{button}</li>')
+                f'{dot(r.get("account", ""))}{title}{thread} <span class="muted">— {e(r["from"])} · {tail}</span>{button}'
+                + (f'<div style="font-size:13px;color:var(--accent);margin-top:2px" dir="auto">📝 {e(note_rows[triage_key(r)]["text"])}</div>'
+                   if triage_key(r) in note_rows else '') + '</li>')
     to_sort = len(queue())
     scheduled = [m for m in outbox() if m['status'] == 'waiting']
     quick_bar = ('<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'

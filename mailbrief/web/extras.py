@@ -683,12 +683,15 @@ HTML += """
   var STEPS = [
     ['#mb-tabs a[href="/"]', '📬 מתחילים כאן', 'בהגדרות מחברים את תיבת המייל — כפתור „חיבור עם Google” ואישור. בלי סיסמאות, והמייל נשאר רק במחשב שלך.'],
     ['#mb-tabs a[href="/today"]', '☀️ היום שלי', 'מה דחוף, מי מחכה לתשובה, מה לתשלום ומה ביומן — בדף אחד. נפתח לבד כשנכנסים למחשב.'],
-    ['#mb-tabs a[href="/today"]', '⚡ מיון מהיר', 'ב„היום שלי” יש כפתור „מיון מהיר”: מייל אחרי מייל — בוצע, תזכורת, תשובה או נודניק — במקש אחד. כמה דקות ביום, ותיבה מסודרת.'],
-    ['.kbtn', '⌨️ מוצאים הכול', 'Ctrl+K (או /) פותח חיפוש מהיר של כל דף ופעולה. ? מציג את כל קיצורי המקלדת.'],
+    ['#mb-imp-btn', '🎯 רק חשוב', 'יום עמוס? הכפתור הזה משאיר רק דחוף, VIP, לקוחות ותזכורות — וכל השאר מוסתר. לחיצה נוספת מחזירה הכול.'],
+    ['#mb-tabs a[href="/today"]', '⚡ מיון מהיר ו-✍️ תשובה', 'ליד כל מייל שמחכה: ✍️ תשובה מכאן (עם ↩️ ביטול שליחה), ✕ להוריד מהרשימה, 🚫 לחסום שולח. „מיון מהיר” — מייל אחרי מייל במקש אחד.'],
+    ['#mb-tabs a[href="/clients"]', '👥 לקוחות', 'כל לקוח: טלפון מהחתימה ו-WhatsApp, סטטיסטיקות (כמה מהר עונים), מעקב תשלומים עם קישור Bit, וכל המסמכים שלו בקובץ ZIP אחד.'],
+    ['.kbtn', '⌨️ מוצאים הכול', 'Ctrl+K (או /) פותח חיפוש מהיר של כל דף ופעולה. בהגדרות יש גם 🔎 חיפוש משלהן. ? מציג את כל קיצורי המקלדת.'],
     ['#mb-a11y-btn', '♿ נגישות', 'טקסט גדול, ניגודיות, הקראה בקול ועוד — מהכפתור בצד המסך, בכל דף. זהו, אפשר להתחיל! 🎉']
   ];
   var box = document.getElementById('mb-tour'), dim = document.getElementById('mb-tour-dim'), n = 0, spot = null;
-  function done(){ try { localStorage.setItem('mb-tour', 'done'); } catch(e){} }
+  var KEY = 'mb-tour-2';                        // a new tour version: shown once again to everyone
+  function done(){ try { localStorage.setItem(KEY, 'done'); } catch(e){} }
   function clear(){ if (spot) spot.classList.remove('mb-tour-spot'); spot = null; }
   function close(){ clear(); box.classList.remove('on'); dim.classList.remove('on'); done(); }
   function place(){
@@ -713,7 +716,7 @@ HTML += """
   window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && box.classList.contains('on')) close(); });
   window.addEventListener('resize', function(){ if (box.classList.contains('on')) place(); });
   window.MB = window.MB || {}; window.MB.tour = start;
-  var seen = true; try { seen = localStorage.getItem('mb-tour') === 'done'; } catch(e){}
+  var seen = true; try { seen = localStorage.getItem(KEY) === 'done'; } catch(e){}
   if (!seen && document.getElementById('mb-tabs') && !/^[/](welcome|oauth)/.test(location.pathname)) setTimeout(start, 900);
 })();
 </script>"""
