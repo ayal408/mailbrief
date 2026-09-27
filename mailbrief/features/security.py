@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 from mailbrief import config
 from mailbrief.mail.message import decode
-from mailbrief.net import _PUBLIC_TLS
+from mailbrief.net import _PUBLIC_TLS, netfree_block
 from mailbrief.storage import decrypt, load_json, save_json
 
 
@@ -89,6 +89,8 @@ def breaches_for(address, key):
         with urllib.request.urlopen(req, timeout=20, context=_PUBLIC_TLS) as resp:
             rows = json.load(resp)
     except urllib.error.HTTPError as exc:
+        if netfree_block(exc):
+            raise RuntimeError(netfree_block(exc)) from None
         if exc.code == 404:
             return []
         if exc.code == 401:

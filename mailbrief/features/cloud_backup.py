@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from mailbrief import config
 from mailbrief.features.google_apps import _token
 from mailbrief.features.maintenance import list_backups, make_backup
-from mailbrief.net import _PUBLIC_TLS
+from mailbrief.net import _PUBLIC_TLS, netfree_block
 from mailbrief.storage import decrypt, encrypt, load_json, save_json
 
 
@@ -95,6 +95,8 @@ def _call(acc, method, url, data=None, ctype='application/json'):
         with urllib.request.urlopen(req, timeout=60, context=_PUBLIC_TLS) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
+        if netfree_block(exc):
+            raise RuntimeError(netfree_block(exc)) from None
         detail = exc.read().decode('utf-8', 'replace')
         if exc.code == 403 and ('accessNotConfigured' in detail or 'has not been used' in detail):
             raise RuntimeError('צריך להפעיל את Google Drive API בפרויקט ב-Google Cloud') from None

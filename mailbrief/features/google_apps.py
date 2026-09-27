@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode
 from mailbrief import config
 from mailbrief.mail.accounts import APPS_SCOPES
 from mailbrief.mail.oauth import access_token
-from mailbrief.net import _PUBLIC_TLS, require_online
+from mailbrief.net import _PUBLIC_TLS, netfree_block, require_online
 from mailbrief.storage import load_json, save_json
 
 
@@ -55,6 +55,8 @@ def api(acc, method, path, params=None, body=None):
             raw = resp.read()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
+        if netfree_block(exc):
+            raise RuntimeError(netfree_block(exc)) from None
         detail = exc.read().decode('utf-8', 'replace')
         which = 'Google Tasks' if path.startswith('tasks/') else 'Google Calendar'
         if exc.code == 403 and ('accessNotConfigured' in detail or 'has not been used' in detail or 'disabled' in detail):

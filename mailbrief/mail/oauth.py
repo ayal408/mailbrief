@@ -7,7 +7,7 @@ import urllib.request
 from urllib.parse import urlencode
 
 from mailbrief import config
-from mailbrief.net import TLS, require_online
+from mailbrief.net import TLS, netfree_block, require_online
 from mailbrief.storage import decrypt, encrypt, load_json
 
 
@@ -79,6 +79,8 @@ def token_request(provider, fields, client_id=None):
         with urllib.request.urlopen(req, timeout=30, context=TLS) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as exc:
+        if netfree_block(exc):
+            raise RuntimeError(netfree_block(exc)) from None
         detail = exc.read().decode('utf-8', 'replace')
         if 'invalid_grant' in detail or 'unauthorized_client' in detail:
             raise RuntimeError('ההרשאה פגה, בוטלה או ניתנה למפתח אחר — צריך להתחבר מחדש לתיבה הזו (כפתור „חיבור עם Google”)') from None

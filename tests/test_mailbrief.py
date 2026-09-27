@@ -1475,6 +1475,22 @@ class Batch6(Isolated):
         self.assertTrue(errors)
 
 
+class NetFree(Isolated):
+    def test_block_is_named(self):
+        import io
+        import urllib.error
+        err = urllib.error.HTTPError('https://www.googleapis.com/calendar/v3/x', 418, 'Error in NetFree', {}, io.BytesIO(b''))
+        self.assertIn('נטפרי', net.netfree_block(err))
+        self.assertIn('www.googleapis.com', net.netfree_block(err))
+        self.assertEqual(net.netfree_block(urllib.error.HTTPError('https://x.com', 500, 'oops', {}, io.BytesIO(b''))), '')
+        self.assertEqual(net.explain(ValueError('other')), 'other')
+        with mock.patch.object(google_apps, '_token', return_value='t'),                 mock.patch.object(google_apps.urllib.request, 'urlopen', side_effect=err):
+            with self.assertRaises(RuntimeError) as ctx:
+                google_apps.api({'email': 'me@gmail.com'}, 'GET', 'calendar/v3/x')
+        self.assertIn('נטפרי', str(ctx.exception))
+        self.assertIn('נטפרי', accounts.friendly_error(err, {'email': 'me@gmail.com'}))
+
+
 def message_b64(claims):
     import base64
     import json

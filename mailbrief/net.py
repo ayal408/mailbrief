@@ -40,6 +40,21 @@ def online():
     return ok
 
 
+def netfree_block(exc):
+    """A filtered network (NetFree) answers a blocked address with HTTP 418. Returns a clear message, or '' when it isn't that."""
+    code = getattr(exc, 'code', None)
+    if code != 418 and 'NetFree' not in str(exc) and 'netfree' not in str(getattr(exc, 'reason', '')).lower():
+        return ''
+    host = urlparse(getattr(exc, 'url', None) or getattr(exc, 'filename', None) or '').hostname or ''
+    return (f'🛡️ נטפרי חסם את הגישה{" ל-" + host if host else ""} (קוד 418) — אפשר לבקש מנטפרי לפתוח את הכתובת'
+            ' (בטופס הבקשות שלהם), ואז לנסות שוב')
+
+
+def explain(exc):
+    """The error as the user should read it: NetFree blocks get their own sentence."""
+    return netfree_block(exc) or str(exc)
+
+
 def require_online():
     if not online():
         raise RuntimeError(OFFLINE)

@@ -17,7 +17,7 @@ from urllib.parse import quote
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
-from mailbrief import config
+from mailbrief import config, net
 from mailbrief.address import base_url, link, remember
 from mailbrief.profile import FORMS, g, has_profile, profile, save_profile
 from mailbrief.features import notify
@@ -160,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 msg = finish_oauth(parse_qs(url.query))
             except Exception as exc:
-                msg = f'שגיאה: {exc}'
+                msg = net.netfree_block(exc) or f'שגיאה: {exc}'
             first = (msg.startswith('✓') and len(load_json(config.ACCOUNTS_FILE, [])) == 1
                      and not os.path.exists(config.INSIGHTS_FILE))
             target = link(('insights?run=1&msg=' if first else '?msg=') + quote(msg))   # first mailbox: show its 30 days
@@ -307,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
             msg = 'שגיאה פנימית — נרשמה ביומן השגיאות'
         except Exception as exc:
             log_error(f'POST {route}')
-            msg = f'שגיאה: {exc}'
+            msg = net.netfree_block(exc) or f'שגיאה: {exc}'
         if msg is None:                         # handler already answered
             return
         if isinstance(msg, tuple):              # (redirect target, None)

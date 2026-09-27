@@ -80,7 +80,10 @@ def save_avatar(address, url):
 
 
 def friendly_error(exc, acc):
+    from mailbrief.net import netfree_block
     text = str(exc)
+    if netfree_block(exc):
+        return netfree_block(exc)
     if isinstance(exc, RuntimeError):
         return text
     if isinstance(exc, imaplib.IMAP4.error) and re.search(r'auth|login|credential|password', text, re.I):
