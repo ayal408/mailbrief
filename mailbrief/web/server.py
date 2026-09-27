@@ -200,6 +200,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read(), 'text/plain; charset=utf-8')
             except OSError:
                 return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
+        if url.path == '/free_slots':
+            import json
+            from mailbrief.features.slots import suggest
+            text, error = suggest()
+            return self._send(json.dumps({'text': text, 'error': error}, ensure_ascii=False), 'application/json; charset=utf-8')
+        if url.path == '/merge':
+            from mailbrief.web.merge import merge_page
+            return self._send(merge_page(parse_qs(url.query).get('msg', [''])[0]))
+        if url.path == '/year_report':
+            from mailbrief.web.year_report import year_report_page
+            return self._send(year_report_page(parse_qs(url.query).get('year', [''])[0]))
         if url.path == '/client_stats':
             from mailbrief.web.clients import client_stats_page
             return self._send(client_stats_page())
@@ -687,10 +698,69 @@ class Handler(BaseHTTPRequestHandler):
             when = outbox.when_for(f.get('when', 'after_holy'), f.get('custom', ''))
             from mailbrief.features.replies import template_files
             attached = [x for x in f['_files'] if x[1]] + template_files(f.get('template', ''))
-            outbox.schedule(f['account'], f.get('to', ''), f.get('subject', ''), f.get('body', ''), when, files=attached)
+            follow = {'days': f.get('follow_days', '3'), 'text': f.get('follow_text', '')} if f.get('follow') == '1' else None
+            outbox.schedule(f['account'], f.get('to', ''), f.get('subject', ''), f.get('body', ''), when, files=attached, follow=follow)
         except (ValueError, KeyError) as exc:
             return back(f'⚠️ {exc}')
-        return back(f'✓ יישלח ב-{when:%d/%m} בשעה {when:%H:%M}')
+        return back(f'✓ יישלח ב-{when:%d/%m} בשעה {when:%H:%M}' + (f' · ⏰ תזכורת אם אין תשובה תוך {follow["days"]} ימים' if follow else ''))
+
+    # ---- 📨 mass mailing · 🚫 blocking · 📅 free times ----------------------------------------------------------------------
+    def post_merge_load(self, f):
+        from mailbrief.features.mailmerge import read_table, recipients_from_table
+        from mailbrief.web.merge import draft_path
+        name, data = next(((n, d) for n, d in f['_files'] if d), ('', b''))
+        try:
+            rows = recipients_from_table(read_table(name, data)) if data else []
+        except Exception:
+            rows = []
+        if not rows:
+            return ('/merge?msg=' + quote('⚠️ לא מצאתי כתובות מייל בקובץ — צריך עמודה של כתובות (ואפשר גם עמודת שם)'), None)
+        save_json(draft_path(), {'name': os.path.basename(name), 'rows': rows[:300]})
+        return ('/merge?msg=' + quote(f'📥 נטענו {len(rows[:300])} נמענים מ-„{os.path.basename(name)}”'), None)
+
+    def post_merge_clear(self, f):
+        from mailbrief.web.merge import draft_path
+        if os.path.exists(draft_path()):
+            os.remove(draft_path())
+        return ('/merge', None)
+
+    def post_merge_send(self, f):
+        from mailbrief.features.mailmerge import send_merge
+        from mailbrief.web.contacts import people
+        from mailbrief.web.merge import draft_path
+        back = lambda m: ('/merge?msg=' + quote(m), None)
+        wanted = [a.strip() for a in f['_lists'].get('to', []) if a.strip()]
+        names = {a.lower(): n for a, n in load_json(draft_path(), {}).get('rows', [])} or {p['email']: p['name'] for p in people()}
+        choice = f.get('when', 'now')
+        try:
+            when = (outbox.out_of_holy(dt.datetime.now().astimezone() + dt.timedelta(minutes=1)) if choice == 'now'
+                    else outbox.when_for(choice, f.get('custom', '')))
+            count = send_merge(f.get('account', ''), [(a, names.get(a.lower(), '')) for a in wanted], f.get('subject', ''),
+                               f.get('body', ''), when, files=[x for x in f['_files'] if x[1]])
+        except ValueError as exc:
+            return back(f'⚠️ {exc}')
+        if os.path.exists(draft_path()):
+            os.remove(draft_path())
+        return ('/compose?msg=' + quote(f'📨 {count} מיילים אישיים בתור — יוצאים מ-{when:%d/%m %H:%M} בסבבים של 25') + '#queue', None)
+
+    def post_block(self, f):
+        from mailbrief.features.blocking import block
+        try:
+            who = block(f.get('who', ''))
+        except ValueError as exc:
+            return f'⚠️ {exc}'
+        text = f'🚫 {who} חסום — מיילים חדשים ממנו יעברו לארכיון לבד (ביטול: הגדרות ← כללים ותבניות)'
+        return ('/today?msg=' + quote(text), None) if f.get('back') == '/today' else text
+
+    def post_unblock(self, f):
+        from mailbrief.features.blocking import unblock
+        unblock(f.get('who', ''))
+        return f'✓ החסימה של {f.get("who", "")} בוטלה'
+
+    def post_follow_cancel(self, f):
+        from mailbrief.features.autofollow import cancel
+        cancel(f.get('id', ''))
+        return ('/compose?msg=' + quote('התזכורת האוטומטית בוטלה') + '#queue', None)
 
     def post_greetings(self, f):
         back = lambda m: ('/greetings?msg=' + quote(m), None)
@@ -853,8 +923,27 @@ class Handler(BaseHTTPRequestHandler):
         if not acc:
             return 'התיבה לא נמצאה'
         acc['signature'] = f.get('signature', '').strip()[:1000]
+        from mailbrief.features.contacts import normalize
+        site = f.get('site', '').strip()[:200]
+        acc['signature_links'] = {'site': site if site.startswith(('https://', 'http://')) else ('https://' + site if site else ''),
+                                  'whatsapp': normalize(f.get('whatsapp', '')) if normalize(f.get('whatsapp', '')).startswith('05') else ''}
+        path = outbox.logo_path(acc)
+        logo = next((d for n, d in f['_files'] if d), b'')
+        kind = 'png' if logo[:8] == b'\x89PNG\r\n\x1a\n' else 'jpeg' if logo[:3] == b'\xff\xd8\xff' else 'gif' if logo[:4] == b'GIF8' else ''
+        if logo and (not kind or len(logo) > 300_000):
+            return '⚠️ הלוגו צריך להיות PNG, JPG או GIF עד 300KB'
+        if logo:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'wb') as out:
+                out.write(logo)
+            acc['signature_logo'] = kind
+        elif f.get('remove_logo'):
+            acc.pop('signature_logo', None)
+            if os.path.exists(path):
+                os.remove(path)
         save_json(config.ACCOUNTS_FILE, accounts)
-        return f'✍️ החתימה של {acc["email"]} נשמרה' if acc['signature'] else f'החתימה של {acc["email"]} הוסרה'
+        has = acc['signature'] or acc.get('signature_logo') or any(acc['signature_links'].values())
+        return f'✍️ החתימה של {acc["email"]} נשמרה' if has else f'החתימה של {acc["email"]} הוסרה'
 
     def post_schedule_edit(self, f):
         try:

@@ -14,7 +14,7 @@ from mailbrief.features.daily import daily_cfg
 from mailbrief.features.google_apps import API_PAGES, gapps_account
 from mailbrief.features.maintenance import schedule_status
 from mailbrief.features.replies import reply_templates, template_files, vacation_active, VACATION_DEFAULT
-from mailbrief.web.settings_more import backup_check_block, income_block, pin_block, recurring_block
+from mailbrief.web.settings_more import backup_check_block, blocked_block, income_block, pin_block, recurring_block
 from mailbrief.mail.classify import TAG_PREFIX
 from mailbrief.mail.oauth import PROVIDERS, bundled_client
 from mailbrief.money.accountant import accountant_cfg, previous_month
@@ -42,7 +42,7 @@ ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'accou
            'export': 'money', 'debts': 'clients', 'dates': 'clients', 'rules': 'auto', 'vacation': 'auto', 'templates': 'auto',
            'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect',
            'simple': 'me', 'startup': 'me', 'quotes': 'clients', 'folders': 'clients', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money',
-           'income': 'money', 'recurring': 'auto', 'pin': 'me', 'backupcheck': 'data'}
+           'income': 'money', 'recurring': 'auto', 'pin': 'me', 'backupcheck': 'data', 'blocked': 'auto'}
 
 FIELD = 'font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
 
@@ -87,8 +87,14 @@ def boxes_section():
           <button formaction="/check" class="ghost" title="בדיקה מהירה של היומיים האחרונים — רק לתיבה הזו">🔄 בדיקה</button>
           <button formaction="/run" class="ghost" title="תדריך מלא לשבוע — רק לתיבה הזו">▶ תדריך לתיבה הזו</button></form>
           <details style="margin-top:8px"><summary style="cursor:pointer;font-size:14px">✍️ חתימה{' ✓' if a.get('signature') else ''}</summary>
-          <form method="post" action="/signature" style="display:grid;gap:6px;margin-top:6px">{_t()}<input type="hidden" name="id" value="{e(a["id"])}">
+          <form method="post" action="/signature" enctype="multipart/form-data" style="display:grid;gap:6px;margin-top:6px">{_t()}<input type="hidden" name="id" value="{e(a["id"])}">
           <textarea name="signature" rows="4" dir="auto" placeholder="שם · תפקיד · טלפון" style="font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{e(a.get("signature", ""))}</textarea>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <input type="url" name="site" dir="ltr" value="{e((a.get('signature_links') or {}).get('site', ''))}" placeholder="🌐 https://האתר-שלך.co.il" style="flex:1;min-width:180px;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+          <input type="tel" name="whatsapp" dir="ltr" value="{e((a.get('signature_links') or {}).get('whatsapp', ''))}" placeholder="💬 WhatsApp 050-0000000" style="width:180px;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"></div>
+          <label style="margin:0;font-size:13px">🖼️ לוגו <span class="muted">(PNG / JPG / GIF, עד 300KB)</span>{' — ✓ יש לוגו' if a.get('signature_logo') else ''}
+          <input type="file" name="logo" accept="image/png,image/jpeg,image/gif"></label>
+          {'<label style="margin:0;font-size:13px;font-weight:400"><input type="checkbox" name="remove_logo"> להסיר את הלוגו</label>' if a.get('signature_logo') else ''}
           <div class="muted" style="font-size:12px">מתווספת בסוף כל מייל שיוצא מ-MailBrief מהתיבה הזו (מתוזמן, תשובה מהירה, ברכות, תודות). ריק = בלי חתימה.</div>
           <div><button style="margin:0;padding:6px 16px">💾 שמירת חתימה</button></div></form></details></div>''')
     reports = sorted((f for f in os.listdir(config.REPORTS) if f.endswith('.html')), reverse=True)[:6] if os.path.isdir(config.REPORTS) else []
@@ -252,6 +258,7 @@ def money_section(month=''):
 <button formaction="/import_receipts" class="ghost" style="margin:0" title="סורק 90 ימים אחורה, שומר קבלות ובונה את האקסל החודשי">⬇️ ייבוא קבלות מ-90 הימים האחרונים</button></form>
 
 {income_block()}
+<p><a href="/year_report">📊 סיכום שנתי (PDF) ←</a> · <a href="/month_report">🧾 דוח חודשי לרו״ח ←</a></p>
 {_h('missing', '🧾 חשבוניות שעוד לא הגיעו החודש')}
 <p class="muted">ספקים ששולחים חשבונית כל חודש — ועבר המועד הרגיל שלהם בלי שהגיעה. מופיע גם בסיכום היומי ובהתראה.</p>
 {gap_rows}
@@ -523,6 +530,8 @@ def auto_section():
 t.value=t.value.slice(0,s)+b.dataset.field+t.value.slice(t.selectionEnd||s);t.focus();t.selectionStart=t.selectionEnd=s+b.dataset.field.length;}};}});</script>
 
 {recurring_block()}
+
+{blocked_block()}
 
 {_h('snippets', '⚡ קיצורי טקסט')}
 <p class="muted">כותבים <b dir="ltr">;קיצור</b> ורווח בכל תיבת טקסט ב-MailBrief (תשובה במיון המהיר, מייל מתוזמן, ברכות) — והוא הופך לפסקה המלאה.</p>

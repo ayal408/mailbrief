@@ -102,3 +102,18 @@ def backup_check_block():
 אם הוא פעיל. גיבוי פגום — נוצר מיד גיבוי חדש, ומגיעה התראה.</p>
 {state}
 <form method="post" action="/backup_check">{_t()}<button class="ghost">🧪 לבדוק עכשיו</button></form>'''
+
+
+def blocked_block():
+    from mailbrief.features.blocking import blocked
+    rows = ''.join(
+        f'<tr><td dir="ltr" style="text-align:right">{e(b["who"])}</td><td class="muted">מ-{e(b["since"][8:10])}/{e(b["since"][5:7])}</td>'
+        f'<td><form method="post" action="/unblock" style="margin:0">{_t()}<input type="hidden" name="who" value="{e(b["who"])}">'
+        f'<button class="ghost" style="margin:0;padding:4px 10px">ביטול החסימה</button></form></td></tr>' for b in blocked())
+    return f'''{_h('blocked', '🚫 שולחים חסומים')}
+<p class="muted">מיילים חדשים מהם יוצאים לבד מהדואר הנכנס (נשארים בתיבה, בארכיון) ולא מופיעים ב„היום שלי” ובהתראות.
+חוסמים בלחיצה על 🚫 ליד מייל ב„היום שלי”, או כאן. אפשר כתובת או דומיין שלם (@shop.com).</p>
+{f'<div class="scroll"><table><tbody>{rows}</tbody></table></div>' if rows else ''}
+<form method="post" action="/block" style="display:flex;gap:8px;margin-top:8px">{_t()}
+<input type="text" name="who" dir="ltr" required placeholder="spam@example.com או @example.com" style="flex:1;{FIELD}">
+<button style="margin:0">🚫 חסימה</button></form>'''

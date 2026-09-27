@@ -1491,6 +1491,120 @@ class NetFree(Isolated):
         self.assertIn('נטפרי', accounts.friendly_error(err, {'email': 'me@gmail.com'}))
 
 
+class Batch7(Isolated):
+    def test_mail_merge(self):
+        from mailbrief.features import mailmerge, outbox
+        from mailbrief.money.excel import write_xlsx
+        path = os.path.join(config.DATA, 'list.xlsx')
+        write_xlsx(path, 'לקוחות', ['שם', 'מייל'], [['דנה כהן', 'dana@client.co.il'], ['יוסי', 'yossi@x.co.il'],
+                                                    ['כפול', 'DANA@client.co.il'], ['בלי', 'not-an-address']], [20, 30])
+        with open(path, 'rb') as f:
+            rows = mailmerge.recipients_from_table(mailmerge.read_table('list.xlsx', f.read()))
+        self.assertEqual(rows, [('dana@client.co.il', 'דנה כהן'), ('yossi@x.co.il', 'יוסי')])
+        csv_rows = mailmerge.read_table('a.csv', 'a@b.co.il,רחל\nc@d.co.il,\n'.encode('cp1255'))
+        self.assertEqual(mailmerge.recipients_from_table(csv_rows), [('a@b.co.il', 'רחל'), ('c@d.co.il', '')])
+        when = dt.datetime.now().astimezone() + dt.timedelta(hours=1)
+        self.assertEqual(mailmerge.send_merge('me@gmail.com', rows, 'היי {שם_פרטי}', 'שלום {שם_פרטי},\nעדכון', when), 2)
+        sent = outbox.outbox()
+        self.assertEqual([(m['to'], m['subject']) for m in sent], [(['dana@client.co.il'], 'היי דנה'), (['yossi@x.co.il'], 'היי יוסי')])
+        with self.assertRaises(ValueError):
+            mailmerge.send_merge('me@gmail.com', [], 'x', 'y', when)
+
+    def test_follow_up(self):
+        from mailbrief.features import autofollow, outbox
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
+        past = dt.datetime.now().astimezone() - dt.timedelta(minutes=5)
+        item = outbox.schedule('me@gmail.com', 'a@b.co.il', 'הצעת מחיר', 'מצורפת', past, follow={'days': 3, 'text': 'עדיין רלוונטי?'})
+        with mock.patch.object(outbox, 'is_holy_time', return_value=False), mock.patch.object(outbox.smtp, 'send_mail') as send:
+            outbox.send_due()
+        mid = send.call_args[0][1]['Message-ID']
+        row = autofollow.items()[0]
+        self.assertEqual((row['message_id'], row['status']), (mid, 'waiting'))
+        later = dt.datetime.now().astimezone() + dt.timedelta(days=4)
+        m = mock.Mock()
+        m.uid.return_value = ('OK', [b''])                                         # no reply found
+        with mock.patch.object(imap, 'connect', return_value=m), mock.patch('mailbrief.mail.imap.special_folder', return_value='[Gmail]/All Mail'), \
+                mock.patch.object(net, 'online', return_value=True), mock.patch.object(outbox, 'holy_windows', return_value=[]):
+            self.assertEqual(autofollow.check_due(later), 1)
+        reminder = outbox.outbox()[-1]
+        self.assertEqual((reminder['subject'], reminder['body'], reminder['thread']['in_reply_to']), ('Re: הצעת מחיר', 'עדיין רלוונטי?', mid))
+        self.assertNotEqual(item['id'], reminder['id'])
+        # a reply cancels it
+        autofollow.register(dict(item, message_id='<2@x>', follow={'days': 1}), dt.datetime.now().astimezone())
+        m.uid.return_value = ('OK', [b'7'])
+        with mock.patch.object(imap, 'connect', return_value=m), mock.patch('mailbrief.mail.imap.special_folder', return_value='INBOX'), \
+                mock.patch.object(net, 'online', return_value=True):
+            self.assertEqual(autofollow.check_due(later), 0)
+        self.assertEqual(autofollow.items()[-1]['status'], 'answered')
+
+    def test_free_slots(self):
+        from mailbrief.features import slots
+        now = dt.datetime(2026, 9, 27, 8, 0, tzinfo=IL)                                    # Sunday morning
+        events = [{'day': '2026-09-27', 'time': '10:00', 'end_iso': '2026-09-27T13:00:00+03:00'},
+                  {'day': '2026-09-28', 'time': 'כל היום', 'end_iso': '2026-09-29'}]
+        found = slots.free_slots(events, now=now, holy=[])
+        self.assertTrue(all(s.weekday() not in (4, 5) for s in found))                    # no Friday / Shabbat
+        self.assertTrue(all(not (s.date() == now.date() and 10 <= s.hour < 13) for s in found))   # not in the meeting
+        self.assertTrue(all(s >= now + dt.timedelta(hours=2) for s in found))
+        self.assertLessEqual(len(found), 6)
+        self.assertIn('יום ראשון 27/09 בשעה 13:00', slots.slots_text(found))
+        self.assertEqual(slots.slots_text([]), '')
+
+    def test_signature_with_logo(self):
+        from mailbrief.features import outbox
+        acc = {'id': 'abcd1234', 'email': 'me@gmail.com', 'signature': 'דנה', 'signature_logo': 'png',
+               'signature_links': {'site': 'https://dana.co.il', 'whatsapp': '0501234567'}}
+        os.makedirs(os.path.dirname(outbox.logo_path(acc)), exist_ok=True)
+        with open(outbox.logo_path(acc), 'wb') as f:
+            f.write(b'\x89PNG\r\n\x1a\n' + b'0' * 50)
+        item = {'id': 'x', 'to': ['a@b.co.il'], 'subject': 's', 'body': 'שלום'}
+        msg = outbox.build(item, acc)
+        html = msg.get_body(('html',)).get_content()
+        self.assertIn('cid:mailbrief-logo', html)
+        self.assertIn('https://wa.me/972501234567', html)
+        self.assertIn('dana.co.il', html)
+        self.assertTrue(any(p.get('Content-ID') == '<mailbrief-logo>' for p in msg.walk()))
+        self.assertIn('-- \nדנה', msg.get_body(('plain',)).get_content())
+        self.assertTrue(item['message_id'].endswith('@gmail.com>'))
+
+    def test_blocking(self):
+        from mailbrief.features import blocking
+        blocking.block('Spam@Shop.com')
+        blocking.block('@ads.co.il')
+        self.assertTrue(blocking.is_blocked('spam@shop.com'))
+        self.assertTrue(blocking.is_blocked('news@ads.co.il'))
+        self.assertFalse(blocking.is_blocked('friend@shop.com'))
+        m = mock.Mock()
+        items = [{'sender': 'spam@shop.com', 'uid': '5'}, {'sender': 'dana@client.co.il', 'uid': '6'}]
+        with mock.patch('mailbrief.mail.imap.is_gmail', return_value=True):
+            kept = blocking.archive_blocked(m, {'email': 'me@gmail.com', 'host': 'imap.gmail.com'}, items)
+        self.assertEqual([it['sender'] for it in kept], ['dana@client.co.il'])
+        m.uid.assert_called_with('STORE', b'5', '-X-GM-LABELS', r'(\Inbox)')
+        blocking.unblock('spam@shop.com')
+        self.assertFalse(blocking.is_blocked('spam@shop.com'))
+        with self.assertRaises(ValueError):
+            blocking.block('nothing')
+
+    def test_year_report(self):
+        from mailbrief.web.year_report import year_report_page
+        storage.save_json(config.LEDGER_FILE, {'1': {'date': '2026-03-03', 'vendor': 'Bezeq', 'vendor_key': 'bezeq.co.il', 'amount': 118.0,
+                                                     'currency': '₪', 'subject': 'חשבונית'}})
+        storage.save_json(config.INCOME_FILE, {'k': {'date': '2026-03-10', 'service': 'Bit', 'amount': 500.0, 'currency': '₪', 'payer': 'דנה'}})
+        html = year_report_page('2026')
+        for text in ('סיכום שנת 2026', 'Bezeq', 'דנה', '₪500', '₪382', 'window.print()'):
+            self.assertIn(text, html)
+
+    def test_new_pages_render(self):
+        from mailbrief.web.compose import compose_page
+        from mailbrief.web.merge import merge_page
+        from mailbrief.web.settings import settings_page
+        self.assertIn('/merge_send', merge_page())
+        self.assertIn('/free_slots', compose_page())
+        self.assertIn('id="blocked"', settings_page('', 'auto'))
+        storage.save_json(config.ACCOUNTS_FILE, [{'id': 'abcd1234', 'email': 'me@gmail.com', 'host': 'imap.gmail.com'}])
+        self.assertIn('name="logo"', settings_page('', 'boxes'))
+
+
 def message_b64(claims):
     import base64
     import json

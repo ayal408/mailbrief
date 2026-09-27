@@ -93,7 +93,10 @@ def dismiss_button(r):
     """✕ — take it off the list (it doesn't need an answer). Can be undone for a few minutes."""
     return (f'<form method="post" action="/dismiss" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
             f'<input type="hidden" name="key" value="{e(triage_key(r))}"><input type="hidden" name="subject" value="{e(r.get("subject", ""))}">'
-            f'<button style="{SMALL}" title="להוריד מהרשימה — לא צריך תשובה">✕</button></form>')
+            f'<button style="{SMALL}" title="להוריד מהרשימה — לא צריך תשובה">✕</button></form>'
+            + (f'<form method="post" action="/block" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+               f'<input type="hidden" name="who" value="{e(r["sender"])}"><input type="hidden" name="back" value="/today">'
+               f'<button style="{SMALL}" title="לחסום את השולח — מיילים ממנו לא יגיעו יותר לדואר הנכנס">🚫</button></form>' if r.get('sender') else ''))
 
 
 def today_page(msg='', show_all=False, print_now=False):

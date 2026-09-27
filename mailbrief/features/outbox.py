@@ -7,6 +7,7 @@ import re
 import secrets
 import shutil
 from email.message import EmailMessage
+from email.utils import make_msgid
 
 from mailbrief import config, net
 from mailbrief.features.calendar import holy_windows, is_holy_time
@@ -57,7 +58,7 @@ def when_for(choice, custom='', now=None, windows=None):
     return out_of_holy(moment, windows)
 
 
-def schedule(account, to, subject, body, send_at, files=(), thread=None):
+def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=None):
     to = [a.strip() for a in re.split(r'[,;\s]+', to) if a.strip()]
     if not to or not all(EMAIL.fullmatch(a) for a in to):
         raise ValueError('כתובת הנמען לא נראית תקינה')
@@ -67,6 +68,8 @@ def schedule(account, to, subject, body, send_at, files=(), thread=None):
             'send_at': send_at.isoformat(timespec='minutes'), 'created': _now().isoformat(timespec='minutes'), 'status': 'waiting'}
     if thread:
         item['thread'] = {k: thread.get(k, '') for k in ('in_reply_to', 'references')}
+    if follow and follow.get('days'):                  # ⏰ "no answer within N days -> a polite reminder"
+        item['follow'] = {'days': int(follow['days']), 'text': (follow.get('text') or '').strip()[:3000]}
     if files:
         folder = os.path.join(config.DATA, 'outbox-files', item['id'])
         os.makedirs(folder, exist_ok=True)
@@ -118,6 +121,41 @@ def with_signature(body, acc):
     return body.rstrip() + '\n\n-- \n' + sig
 
 
+LOGO_CID = 'mailbrief-logo'
+
+
+def logo_path(acc):
+    import re as _re
+    return os.path.join(config.DATA, 'signatures', f"{_re.sub(r'[^0-9a-f]', '', acc.get('id', ''))[:16] or 'x'}.img")
+
+
+def signature_html(acc):
+    """🖼️ The signature as HTML: the text, the business logo and the links (website, WhatsApp). (html, (bytes, subtype) or None)."""
+    sig = (acc.get('signature') or '').strip()
+    links = acc.get('signature_links') or {}
+    logo = None
+    path = logo_path(acc)
+    if acc.get('signature_logo') and os.path.isfile(path):
+        with open(path, 'rb') as f:
+            logo = (f.read(), acc['signature_logo'])
+    if not (sig or logo or links.get('site') or links.get('whatsapp')):
+        return '', None
+    parts = []
+    if logo:
+        parts.append(f'<img src="cid:{LOGO_CID}" alt="" style="max-height:60px;max-width:180px;display:block;margin-bottom:6px">')
+    if sig:
+        parts.append(f'<div style="white-space:pre-wrap">{e(sig)}</div>')
+    row = []
+    if links.get('site'):
+        row.append(f'<a href="{e(links["site"])}" style="color:#7c3aed">{e(links["site"].split("//")[-1].rstrip("/"))}</a>')
+    if links.get('whatsapp'):
+        row.append(f'<a href="https://wa.me/972{e(links["whatsapp"][1:])}" style="color:#16a34a">💬 WhatsApp</a>')
+    if row:
+        parts.append('<div style="margin-top:4px">' + ' · '.join(row) + '</div>')
+    return ('<div dir="auto" style="font-family:Arial;color:#555;border-top:1px solid #ddd;margin-top:16px;padding-top:8px;font-size:13px">'
+            + ''.join(parts) + '</div>'), logo
+
+
 def build(item, acc):
     msg = EmailMessage()
     msg['From'], msg['To'], msg['Subject'] = acc['email'], ', '.join(item['to']), item['subject']
@@ -125,9 +163,14 @@ def build(item, acc):
     for header, key in (('In-Reply-To', 'in_reply_to'), ('References', 'references')):
         if (item.get('thread') or {}).get(key):
             msg[header] = item['thread'][key]
-    body = with_signature(item['body'], acc)
-    msg.set_content(body)
-    msg.add_alternative(f'<div dir="auto" style="font-family:Arial;white-space:pre-wrap">{e(body)}</div>', subtype='html')
+    if not item.get('message_id'):                     # known in advance: the automatic follow-up looks for replies to it
+        item['message_id'] = make_msgid(domain=acc['email'].rsplit('@', 1)[-1])
+    msg['Message-ID'] = item['message_id']
+    msg.set_content(with_signature(item['body'], acc))
+    sig_html, logo = signature_html(acc)
+    msg.add_alternative(f'<div dir="auto" style="font-family:Arial;white-space:pre-wrap">{e(item["body"].rstrip())}</div>{sig_html}', subtype='html')
+    if logo:
+        msg.get_payload()[-1].add_related(logo[0], maintype='image', subtype=logo[1], cid=f'<{LOGO_CID}>')
     for name in item.get('files', []):
         path = os.path.join(config.DATA, 'outbox-files', item['id'], name)
         with open(path, 'rb') as f:
@@ -158,6 +201,9 @@ def send_due(accounts=None, now=None):
             smtp.send_mail(acc, build(it, acc))
             it['status'], it['sent'] = 'sent', now.isoformat(timespec='minutes')
             sent += 1
+            if it.get('follow'):
+                from mailbrief.features.autofollow import register
+                register(it, now)
         except (OSError, TimeoutError) as exc:           # the connection dropped midway: try again next round
             it['retry'] = f'{now.isoformat(timespec="minutes")} · {str(exc)[:120]}'
         except Exception as exc:

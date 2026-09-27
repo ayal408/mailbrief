@@ -102,6 +102,11 @@ def check_alerts(only=None):
                     pairs.append((it, msg))
                     if it['forward']:
                         pending.append((it, msg))
+                from mailbrief.features.blocking import archive_blocked
+                kept = archive_blocked(m, acc, items)                  # 🚫 blocked senders: out of the inbox, out of sight
+                if len(kept) != len(items):
+                    ids = {id(it) for it in kept}
+                    items, pairs, pending = kept, [p for p in pairs if id(p[0]) in ids], [p for p in pending if id(p[0]) in ids]
                 demote_automated(items, [a['email'] for a in accounts])
                 mark_unanswered(m, items)
                 run_workflows(m, acc, pairs, state, ledger, budget)
@@ -195,7 +200,8 @@ def check_alerts(only=None):
         ok, lines = check_backups(state)
         if ok is False:
             alerts.append(('🧪 בדיקת גיבוי', {'subject': ' · '.join(lines), 'sender_name': 'MailBrief', 'link': link('?s=data#backupcheck')}))
-    jobs = (chase_due, greet_due, run_recurring,          # queue first, so the outbox sends them in the same round
+    from mailbrief.features.autofollow import check_due as follow_ups_due
+    jobs = (chase_due, greet_due, run_recurring, lambda: follow_ups_due(accounts=accounts),   # queue first, so the outbox sends them in the same round
             lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due,
             lambda: meeting_followups(state), lambda: maybe_share(state, accounts), quote_follow_up, backups_monthly)
     for job in (jobs if not only else ()):
