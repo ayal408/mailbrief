@@ -81,6 +81,18 @@ TITLE_TAB = {'היום שלי': '/today', 'לוח בקרה': '/dashboard', 'המ
 SIMPLE_TABS = ('/today', '/', '/search', '/help')
 
 
+def corner_avatars():
+    """The mailbox chosen in the switcher — or, on "all mailboxes", every mailbox's picture, overlapping a little."""
+    boxes = [view.current_account()] if view.current_account() else view.emails()
+    if not boxes:
+        return ''
+    pics = ''.join(f'<span style="display:inline-flex;border-radius:50%;box-shadow:0 0 0 2px var(--surface);'
+                   f'margin-inline-start:{0 if n == 0 else -10}px;position:relative;z-index:{len(boxes) - n}">{view.avatar(b, 30)}</span>'
+                   for n, b in enumerate(boxes[:4]))
+    more = f'<span class="muted" style="font-size:12px;margin-inline-start:4px">+{len(boxes) - 4}</span>' if len(boxes) > 4 else ''
+    return f'<a href="/?s=boxes" title="{e(" · ".join(boxes))}" style="display:inline-flex;align-items:center;text-decoration:none">{pics}{more}</a>'
+
+
 def simple_mode():
     """🌱 Only the essentials: My day, settings, search and the guide (everything else is still in Ctrl+K)."""
     from mailbrief.storage import load_json
@@ -98,8 +110,7 @@ def top_bar(active=''):
             '<button class="kbtn" type="button" onclick="MB.open()" title="מעבר מהיר לכל דף ופעולה">⌨️ Ctrl+K</button>'
             f'<a class="kbtn" href="/about" title="אודות MailBrief, הגרסה ועדכונים" style="text-decoration:none">ℹ️ {__version__}</a>'
             '<button class="fchip" id="mb-focus" type="button" title="טיימר ריכוז — לחיצה לפתיחה"></button>'
-            + (f'<a href="/?s=boxes" title="{e(view.current_account() or view.emails()[0])}">{view.avatar(view.current_account() or view.emails()[0], 30)}</a>'
-               if view.emails() else '') + '</div>'
+            + corner_avatars() + '</div>'
             f'<span class="gift" id="mb-gift" title="🎉">📬</span><h1 class="name g" id="mb-hello" data-name="{e(me.get("name", ""))}" '
             f'data-back="{e(welcome_back() if me.get("form") else "")}">שלום!</h1>'
             '<p class="tag"><span id="mb-type"></span><span class="caret"></span></p></header>'
