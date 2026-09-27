@@ -42,6 +42,8 @@ border:2px solid currentColor;border-top-color:transparent;animation:mbspin .7s 
 
 HTML = """
 <div id="mb-bar"></div>
+<div id="mb-offline" role="alert" hidden style="position:fixed;top:0;left:0;right:0;z-index:60;background:#b45309;color:#fff;text-align:center;padding:8px 12px;font-weight:600">
+📡 אין חיבור לאינטרנט — מוצג המידע השמור האחרון. MailBrief ימשיך לבד כשהחיבור יחזור.</div>
 <div id="mb-load" role="status" aria-live="polite"><div class="card" style="position:relative">
 <button class="x" type="button" title="הסתרה" onclick="MB.hide()">✕</button>
 <div class="sky"><span class="env">📬</span><span class="spark a">✨</span><span class="spark b">✨</span><span class="spark c">⭐</span></div>
@@ -73,7 +75,8 @@ HTML = """
     clearTimeout(timer); clearInterval(ticker);
     timer = setTimeout(function(){
       el.classList.add('on'); var n = 0;
-      ticker = setInterval(function(){ document.getElementById('mb-sub').textContent = LONG[n++ % LONG.length]; }, 7000);
+      ticker = setInterval(function(){ document.getElementById('mb-sub').textContent =
+        navigator.onLine ? LONG[n++ % LONG.length] : '📡 אין חיבור לאינטרנט — אפשר לסגור עם ✕ ולנסות שוב אחר כך'; }, 7000);
     }, 350);                                  // quick pages never show it
   }
   function hide(){ clearTimeout(timer); clearInterval(ticker); el.classList.remove('on'); }
@@ -159,6 +162,12 @@ HTML = """
     if (a) { var u = local(a.href); if (u && u.pathname !== location.pathname) load(u.pathname + u.search); }
   });
   window.addEventListener('popstate', function(){ navigate(location.href, false); });
+  var off = document.getElementById('mb-offline');           // the internet dropped: say so, instead of an endless "loading"
+  function net(){
+    off.hidden = navigator.onLine;
+    if (!navigator.onLine && el.classList.contains('on')) document.getElementById('mb-sub').textContent = '📡 אין חיבור לאינטרנט — אפשר לסגור עם ✕ ולנסות שוב אחר כך';
+  }
+  window.addEventListener('offline', net); window.addEventListener('online', net); net();
   window.addEventListener('pageshow', function(){ hide(); progress(false);
     Array.prototype.forEach.call(document.querySelectorAll('.busy'), function(b){ b.classList.remove('busy'); }); });
 

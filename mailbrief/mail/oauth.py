@@ -7,7 +7,7 @@ import urllib.request
 from urllib.parse import urlencode
 
 from mailbrief import config
-from mailbrief.net import TLS
+from mailbrief.net import TLS, require_online
 from mailbrief.storage import decrypt, encrypt, load_json
 
 
@@ -72,6 +72,7 @@ def token_request(provider, fields, client_id=None):
     fields = {'client_id': client_id, **fields}
     if secret:
         fields['client_secret'] = secret
+    require_online()
     req = urllib.request.Request(PROVIDERS[provider]['token'], data=urlencode(fields).encode(),
                                  headers={'Content-Type': 'application/x-www-form-urlencoded'})
     try:

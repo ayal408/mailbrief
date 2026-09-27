@@ -96,6 +96,7 @@ def top_bar(active=''):
     return (f'<style>{extras.STYLE}</style><header class="hero"><div class="corner">'
             '<button class="tbtn" id="mb-theme" type="button" onclick="MB.theme()">🌗</button>'
             '<button class="kbtn" type="button" onclick="MB.open()" title="מעבר מהיר לכל דף ופעולה">⌨️ Ctrl+K</button>'
+            f'<a class="kbtn" href="/about" title="אודות MailBrief, הגרסה ועדכונים" style="text-decoration:none">ℹ️ {__version__}</a>'
             '<button class="fchip" id="mb-focus" type="button" title="טיימר ריכוז — לחיצה לפתיחה"></button>'
             + (f'<a href="/?s=boxes" title="{e(view.current_account() or view.emails()[0])}">{view.avatar(view.current_account() or view.emails()[0], 30)}</a>'
                if view.emails() else '') + '</div>'

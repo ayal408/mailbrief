@@ -4,6 +4,7 @@ import ipaddress
 import json
 import socket
 import ssl
+import time
 import urllib.request
 from urllib.parse import urlparse
 
@@ -20,11 +21,37 @@ _PUBLIC_TLS.verify_flags &= ~getattr(ssl, 'VERIFY_X509_STRICT', 0)
 TLS = _PUBLIC_TLS
 
 
+OFFLINE = 'אין חיבור לאינטרנט כרגע — ננסה שוב כשהחיבור יחזור'
+_STATE = {'ok': True, 'until': 0.0}
+
+
+def online():
+    """Is the internet reachable? One quick 2-second check, remembered for a little while — so when the connection
+    drops, pages show the last saved data right away instead of each request waiting up to a minute."""
+    now = time.monotonic()
+    if now < _STATE['until']:
+        return _STATE['ok']
+    try:
+        socket.create_connection(('oauth2.googleapis.com', 443), timeout=2).close()
+        ok = True
+    except OSError:
+        ok = False
+    _STATE.update(ok=ok, until=now + (30 if ok else 10))
+    return ok
+
+
+def require_online():
+    if not online():
+        raise RuntimeError(OFFLINE)
+
+
 def cached_json(key, url, max_age_min):
     cache = load_json(config.CACHE_FILE, {})
     hit = cache.get(key)
     if hit and hit.get('url') == url and (dt.datetime.now().timestamp() - hit['at']) < max_age_min * 60:
         return hit['data']
+    if not online():
+        return hit['data'] if hit else None
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'MailBrief/1.0'})
         with urllib.request.urlopen(req, timeout=8, context=_PUBLIC_TLS) as resp:

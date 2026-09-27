@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode
 from mailbrief import config
 from mailbrief.mail.accounts import APPS_SCOPES
 from mailbrief.mail.oauth import access_token
-from mailbrief.net import _PUBLIC_TLS
+from mailbrief.net import _PUBLIC_TLS, require_online
 from mailbrief.storage import load_json, save_json
 
 
@@ -46,6 +46,7 @@ def _token(acc):
 
 
 def api(acc, method, path, params=None, body=None):
+    require_online()
     url = 'https://www.googleapis.com/' + path + ('?' + urlencode(params) if params else '')
     req = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body is not None else None,
                                  headers={'Authorization': f'Bearer {_token(acc)}', 'Content-Type': 'application/json'})

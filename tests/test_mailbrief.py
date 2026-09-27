@@ -18,6 +18,7 @@ from mailbrief.mail import accounts, classify as sorting, imap, message, smtp
 from mailbrief.money import ledger
 
 IL = dt.timezone(dt.timedelta(hours=3))
+net._STATE.update(ok=True, until=float('inf'))     # no real connectivity check: the tests mock the network
 
 
 def mk(frm, subject, text, when='Wed, 23 Sep 2026 10:00:00 +0300', html=None, headers=None, attach=None):
