@@ -35,11 +35,21 @@ def vip_list():
     return {v.strip().lower().lstrip('@') for v in cfg.get('vip', []) if v.strip()}
 
 
-def toast(title, lines, link='', vip=False):
+def sound_mode():
+    """'urgent' (default: a sound only for urgent / VIP / security), 'all', or 'off'."""
+    return load_json(config.SETTINGS_FILE, {}).get('sound') or 'urgent'
+
+
+def toast(title, lines, link='', vip=False, actions=(), loud=False):
+    """actions: [(label, url)] — buttons on the notification (they open a MailBrief address that does the action)."""
     if is_holy_time() or paused_until() or (quiet_now() and not vip):
         return
     body = ''.join(f'<text>{xml_escape(line[:180])}</text>' for line in lines[:2])
     launch = f' activationType="protocol" launch={quoteattr(link)}' if link else ''
-    xml = f'<toast{launch}><visual><binding template="ToastGeneric"><text>{xml_escape(title)}</text>{body}</binding></visual></toast>'
+    buttons = ''.join(f'<action content={quoteattr(label)} activationType="protocol" arguments={quoteattr(url)}/>' for label, url in actions[:4])
+    mode = sound_mode()
+    audio = '' if mode == 'all' or (mode == 'urgent' and (loud or vip)) else '<audio silent="true"/>'
+    xml = (f'<toast{launch}><visual><binding template="ToastGeneric"><text>{xml_escape(title)}</text>{body}</binding></visual>'
+           + (f'<actions>{buttons}</actions>' if buttons else '') + f'{audio}</toast>')
     subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', POWERSHELL_TOAST],
                    env={**os.environ, 'MAILBRIEF_TOAST': xml}, creationflags=0x08000000, timeout=30)

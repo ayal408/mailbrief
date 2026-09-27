@@ -80,7 +80,12 @@ def main():
         except Exception:
             with open(os.path.join(config.DATA, 'last-check.log'), 'w', encoding='utf-8') as f:
                 f.write(traceback.format_exc())
-    elif '--today' in sys.argv:                  # at Windows sign-in: open "My day"
-        serve('today')
+    elif '--today' in sys.argv:                  # at Windows sign-in: "My day", a short summary, or nothing (settings)
+        startup = load_json(config.SETTINGS_FILE, {}).get('startup') or 'page'
+        if startup == 'toast':
+            from mailbrief.features.morning import morning_toast
+            morning_toast()
+        elif startup == 'page':
+            serve('today')
     else:
         serve()

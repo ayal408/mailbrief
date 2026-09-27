@@ -69,6 +69,10 @@ def undo(item_id):
         if p.get('outbox'):
             outbox.cancel(p['outbox'])
         text = '↩️ החשבונית פתוחה שוב' + (' — ומייל התודה בוטל' if p.get('outbox') else '')
+    elif kind == 'dismiss':
+        from mailbrief.features import triage
+        triage.undo(p['key'])
+        text = '↩️ חזר לרשימה'
     elif kind == 'rule':
         _restore_list(config.RULES_FILE, p)
         text = '↩️ הכלל חזר'

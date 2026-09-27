@@ -6,7 +6,7 @@ import secrets
 from mailbrief import config
 from mailbrief.mail import imap
 from mailbrief.mail.domains import MICROSOFT
-from mailbrief.mail.oauth import jwt_claims, PENDING, PROVIDERS, token_request
+from mailbrief.mail.oauth import client_for, jwt_claims, PENDING, PROVIDERS, token_request
 from mailbrief.storage import encrypt, load_json, save_json
 
 
@@ -31,12 +31,17 @@ def finish_oauth(query):
     accounts = load_json(config.ACCOUNTS_FILE, [])
     old = next((a for a in accounts if a['email'].lower() == address.lower()), {})
     acc = {'id': secrets.token_hex(4), 'tag': True, **old, 'email': address, 'user': address, 'auth': provider,
-           'host': p['host'], 'port': 993, 'refresh': encrypt(data['refresh_token'])}    # reconnecting keeps settings
+           'host': p['host'], 'port': 993, 'refresh': encrypt(data['refresh_token']),    # reconnecting keeps settings
+           'client_id': client_for(provider)[0]}                                          # the key this access belongs to
     acc.pop('password', None)
     if (acc.get('last') or {}).get('error'):
         acc.pop('last')                           # the old sign-in error no longer applies
     granted = set(data.get('scope', '').split())
     acc['gapps'] = provider == 'google' and all(s in granted for s in APPS_SCOPES)
+    if claims.get('name'):
+        acc['display_name'] = claims['name']
+    if claims.get('picture'):
+        acc['avatar'] = save_avatar(address, claims['picture']) or acc.get('avatar', '')
     acc['drive'] = provider == 'google' and DRIVE_SCOPE in granted
     try:
         imap.connect(acc).logout()
@@ -51,6 +56,27 @@ def finish_oauth(query):
     if extra_scope:
         return f'✓ היומן והמשימות של {address} מחוברים — מופיעים עכשיו ב„היום שלי”'
     return f'✓ {address} חוברה בהצלחה'
+
+
+def save_avatar(address, url):
+    """The Google profile picture, kept on the computer (data/avatars) so the pages don't load it from the internet."""
+    import hashlib
+    import os
+    import urllib.request
+    from mailbrief.net import TLS
+    if not url.startswith('https://') or 'googleusercontent.com' not in url:
+        return ''
+    name = hashlib.sha1(address.lower().encode()).hexdigest()[:16] + '.jpg'
+    folder = os.path.join(config.DATA, 'avatars')
+    try:
+        os.makedirs(folder, exist_ok=True)
+        with urllib.request.urlopen(url.split('=s')[0] + '=s128-c', timeout=15, context=TLS) as resp:
+            data = resp.read(500_000)
+        with open(os.path.join(folder, name), 'wb') as f:
+            f.write(data)
+        return name
+    except Exception:
+        return ''
 
 
 def friendly_error(exc, acc):

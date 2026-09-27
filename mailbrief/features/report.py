@@ -133,7 +133,8 @@ def write_report(results, subs=()):
                  + '</tbody></table></div><div>')
     page = (f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>תדריך מייל</title>{FONT}'
-            f'<style>{STYLE}</style></head><body><main><h1>📬 תדריך מייל</h1>'
+            f'<style>{STYLE}</style></head><body><main><p style="margin:0 0 8px"><a href="/today" style="font-weight:600">→ חזרה ל-MailBrief</a>'
+            f' · <a href="javascript:history.back()">חזרה לדף הקודם</a></p><h1>📬 תדריך מייל</h1>'
             f'<p class="muted">{now:%d/%m/%Y %H:%M} · {config.DAYS} ימים אחרונים · נוצר מקומית על ידי MailBrief</p>'
             f'<div class="kpis">{kpis}</div>{week_ahead()}{"".join(render_account(r) for r in results)}</main></body></html>')
     os.makedirs(config.REPORTS, exist_ok=True)

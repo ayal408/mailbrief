@@ -201,7 +201,7 @@ HTML = """
     ['📎 כל הקבצים המצורפים', '/files'], ['📊 תקציב חודשי', '/?s=money#budget'], ['⚖️ מי זול יותר', '/?s=money#compare'],
     ['🧾 מסמכים להחזר מס', '/?s=money#tax'], ['⚡ קיצורי טקסט', '/?s=auto#snippets'], ['🔓 בדיקת דליפות', '/?s=me#leaks'],
     ['📋 דוח שבועי לשותף', '/?s=clients#share'], ['🖨️ הדפסת היום שלי', '/today?print=1'],
-    ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'], ['🎓 סיור היכרות', 'javascript:tour'],
+    ['ℹ️ אודות וגרסה', '/about'], ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'], ['🎓 סיור היכרות', 'javascript:tour'],
     ['📅 Google Calendar', 'https://calendar.google.com/'], ['✅ Google Tasks', 'https://tasks.google.com/']
   ];
   var pal = document.getElementById('mb-pal'), q = document.getElementById('mb-q'), list = document.getElementById('mb-list'), sel = 0, shown = [];
@@ -244,12 +244,14 @@ HTML = """
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'k' || ev.key === 'K' || ev.code === 'KeyK')) { ev.preventDefault(); pal.classList.contains('on') ? close() : open(); }
     else if (ev.key === '/' && !typing && !pal.classList.contains('on')) { ev.preventDefault(); open(); }
   });
-  var MODES = ['auto', 'light', 'dark'], ICONS = {auto: '🌗', light: '☀️', dark: '🌙'},
-      NAMES = {auto: 'לפי Windows', light: 'בהיר', dark: 'כהה'};
+  var MODES = ['auto', 'light', 'dark', 'night'], ICONS = {auto: '🌗', light: '☀️', dark: '🌙', night: '🌆'},
+      NAMES = {auto: 'לפי Windows', light: 'בהיר', dark: 'כהה', night: 'כהה בערב (19:00–06:00)'};
+  function evening(){ var h = new Date().getHours(); return h >= 19 || h < 6; }
   function mode(){ try { return localStorage.getItem('mb-theme') || 'auto'; } catch(e){ return 'auto'; } }
   function paint(){
     var m = mode(), b = document.getElementById('mb-theme');
-    if (m === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', m);
+    if (m === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', m === 'night' ? (evening() ? 'dark' : 'light') : m);
     if (b) { b.textContent = ICONS[m]; b.title = 'מצב תצוגה: ' + NAMES[m] + ' (לחיצה להחלפה)'; }
   }
   function theme(){
@@ -258,6 +260,7 @@ HTML = """
     paint();
   }
   paint();
+  setInterval(function(){ if (mode() === 'night') paint(); }, 10 * 60 * 1000);   // evening comes: switch by itself
   window.addEventListener('storage', paint);  // another open tab switched
   window.MB = {show: show, hide: hide, open: open, close: close, theme: theme};
 })();
@@ -682,6 +685,7 @@ HTML += """
 </script>"""
 
 
-BOOT = ("<script>try{var d=document.documentElement,t=localStorage.getItem('mb-theme');if(t==='light'||t==='dark')"
+BOOT = ("<script>try{var d=document.documentElement,t=localStorage.getItem('mb-theme'),h=new Date().getHours();"
+        "if(t==='night')t=(h>=19||h<6)?'dark':'light';if(t==='light'||t==='dark')"
         "d.setAttribute('data-theme',t);var a=JSON.parse(localStorage.getItem('mb-a11y')||'{}');if(a.fs)d.setAttribute('data-fs',a.fs);"
         "['contrast','still','spacing','links','cursor','focus'].forEach(function(f){if(a[f])d.setAttribute('data-'+f,'')})}catch(e){}</script>")

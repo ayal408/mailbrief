@@ -22,11 +22,12 @@ from mailbrief.money.budget import TAX_KINDS, budget_status, budgets, compare_su
 from mailbrief.features.clientcare import THANKS_DEFAULT
 from mailbrief.features.security import hibp_key
 from mailbrief.features.sharing import share_cfg
+from mailbrief.features.quotes import quotes as quote_list, suggestions as quote_suggestions, win_rate as quote_rate
 from mailbrief.profile import FORMS, g, GOALS, goals, profile
 from mailbrief.storage import load_json
 from mailbrief.util import e, money
 from mailbrief.web import extras
-from mailbrief.web.layout import FONT, STYLE, simple_mode, top_bar, undo_banner, update_banner
+from mailbrief.web.layout import FONT, STYLE, footer, simple_mode, top_bar, undo_banner, update_banner
 from mailbrief.web.token import TOKEN
 
 
@@ -39,7 +40,7 @@ SECTIONS = [('boxes', '📬', 'תיבות'), ('me', '👤', 'אישי והתרא
 ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'accountant': 'money', 'vendors': 'money', 'vat': 'money',
            'export': 'money', 'debts': 'clients', 'dates': 'clients', 'rules': 'auto', 'vacation': 'auto', 'templates': 'auto',
            'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect',
-           'simple': 'me', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money'}
+           'simple': 'me', 'startup': 'me', 'quotes': 'clients', 'folders': 'clients', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money'}
 
 FIELD = 'font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
 
@@ -71,7 +72,11 @@ def boxes_section():
         last = a.get('last') or {}
         status = ('<span style="color:var(--bad)">⚠️ ' + e(last['error']) + '</span>') if last.get('error') else (
             f'✓ ריצה אחרונה {e(last["at"])} · {last["count"]} הודעות · {last["tagged"]} תיוגים' if last else 'עוד לא רץ')
-        cards.append(f'''<div class="item"><div class="t" dir="ltr" style="text-align:right">{e(a["email"])}</div>
+        picture = ('' if a.get('avatar') or a.get('auth') != 'google' else
+                   f'<form method="post" action="/reconnect" style="display:inline;margin:0">{_t()}<input type="hidden" name="id" value="{e(a["id"])}">'
+                   f'<button class="ghost" style="margin:0;padding:3px 10px;font-size:12px" title="התחברות מחדש כדי להציג את תמונת הפרופיל">🖼️ תמונה</button></form>')
+        cards.append(f'''<div class="item"><div class="t" style="display:flex;gap:10px;align-items:center">{view.avatar(a["email"], 36)}
+          <div><div dir="auto">{e(a.get("display_name", ""))}</div><div dir="ltr" style="text-align:right">{e(a["email"])}</div></div> {picture}</div>
           <div class="m" dir="ltr" style="text-align:right">{e(PROVIDERS[a["auth"]]["name"] + " sign-in" if a.get("auth") in PROVIDERS else a["host"])} · {"תיוג פעיל" if a.get("tag", True) else "בלי תיוג"}</div>
           <div class="s">{status}</div>
           <form method="post" style="display:inline">{_t()}<input type="hidden" name="id" value="{e(a["id"])}">
@@ -157,6 +162,17 @@ def me_section():
 <textarea name="vip" rows="3" dir="ltr" style="width:100%;{FIELD}">{e(chr(10).join(quiet.get('vip', [])))}</textarea></label>
 <div><button name="action" value="on" style="margin:0">{'שמירה' if quiet.get('on') else '✅ הפעלה'}</button>
 {'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if quiet.get('on') else ''}</div></form>
+
+{_h('startup', '☀️ בבוקר, ובהתראות')}
+<form method="post" action="/prefs" style="display:grid;gap:8px;max-width:640px">{_t()}
+<label style="margin:0">כשנכנסים ל-Windows
+<select name="startup" style="width:100%;{FIELD}">{''.join(f'<option value="{k}"{" selected" if (load_json(config.SETTINGS_FILE, {}).get("startup") or "page") == k else ""}>{v}</option>'
+  for k, v in (('page', '☀️ לפתוח את „היום שלי”'), ('toast', '🔔 רק התראה קצרה: כמה דחופים, תשלומים והפגישה הראשונה'), ('none', '🤫 כלום')))}</select></label>
+<label style="margin:0">צליל בהתראות
+<select name="sound" style="width:100%;{FIELD}">{''.join(f'<option value="{k}"{" selected" if (load_json(config.SETTINGS_FILE, {}).get("sound") or "urgent") == k else ""}>{v}</option>'
+  for k, v in (('urgent', '🔔 רק לדחוף, לאבטחה ולאנשים חשובים (VIP)'), ('all', '🔊 לכל התראה'), ('off', '🔇 בלי צליל')))}</select></label>
+<p class="muted" style="margin:0;font-size:13px">בשבת ובחג אין התראות בכלל. בהתראה יש כפתורים: „⏰ להזכיר בעוד שעה” ו„📅 מחר בבוקר”.</p>
+<div><button style="margin:0">שמירה</button></div></form>
 
 {_h('leaks', '🔓 בדיקת דליפות סיסמה')}
 <p class="muted">פעם בשבוע בודק אם הכתובות שלך הופיעו בדליפת מידע ידועה (Have I Been Pwned) — ואם כן, מתריע להחליף סיסמה.
@@ -325,12 +341,29 @@ def clients_section():
         for r in suggestions())
     date_rows = ''.join(
         f'<tr><td>{DATE_KINDS[d["kind"]][0]} {e(d["name"])}<div class="muted" dir="ltr" style="font-size:12px;text-align:right">{e(d["email"])}</div></td>'
-        f'<td>{d["day"]:02d}/{d["month"]:02d}</td><td>{e(DATE_KINDS[d["kind"]][1])}</td>'
+        f'<td>{e(d["hebrew"]["text"]) if d.get("hebrew") else f"{d[chr(100) + chr(97) + chr(121)]:02d}/{d[chr(109) + chr(111) + chr(110) + chr(116) + chr(104)]:02d}"}</td><td>{e(DATE_KINDS[d["kind"]][1])}</td>'
         f'<td><form method="post" action="/date_remove" style="margin:0">{_t()}<input type="hidden" name="id" value="{e(d["id"])}">'
         f'<button class="ghost" style="margin:0">🗑️</button></form></td></tr>' for d in client_dates()) or '<tr><td class="muted">עוד אין תאריכים</td></tr>'
     soon = ''.join(f'<span class="pill">{DATE_KINDS[d["kind"]][0]} {e(d["name"])} · {d["date"]:%d/%m}</span>' for d in upcoming_dates())
     kinds = ''.join(f'<option value="{k}">{icon} {title}</option>' for k, (icon, title, _) in DATE_KINDS.items())
     share = share_cfg()
+    rate = quote_rate()
+    quote_rows = ''.join(
+        f'<tr><td dir="auto"><b>{e(q["name"])}</b> <span class="muted">— {e(q["subject"])}</span></td><td>{e(q["amount"])}</td>'
+        f'<td>{e(q["sent"][8:10])}/{e(q["sent"][5:7])}</td><td>'
+        + ({'won': '🎉 התקבלה', 'lost': 'לא התקבלה'}.get(q['status']) or
+           f'<form method="post" action="/quote_set" style="display:flex;gap:4px;margin:0">{_t()}<input type="hidden" name="id" value="{e(q["id"])}">'
+           '<button name="status" value="won" style="margin:0">🎉 התקבלה</button><button name="status" value="lost" class="ghost" style="margin:0">לא</button>'
+           '<button name="status" value="deleted" class="ghost" style="margin:0">🗑️</button></form>')
+        + '</td></tr>' for q in sorted(quote_list(), key=lambda q: (q['status'] != 'open', q['sent']), reverse=False)[:30]) \
+        or '<tr><td class="muted">אין הצעות במעקב</td></tr>'
+    quote_sugg = ''.join(
+        f'<form method="post" action="/quote_add" class="item" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 6px">{_t()}'
+        f'<input type="hidden" name="account" value="{e(r.get("account", ""))}"><input type="hidden" name="email" value="{e(r.get("to_email", ""))}">'
+        f'<input type="hidden" name="name" value="{e(r.get("to", ""))}"><input type="hidden" name="subject" value="{e(r.get("subject", ""))}">'
+        f'<input type="hidden" name="sent" value="{(dt.date.today() - dt.timedelta(days=r.get("days", 0))).isoformat()}">'
+        f'<span style="flex:1" dir="auto">📤 {e(r.get("subject", ""))} <span class="muted">— אל {e(r.get("to", ""))}</span></span>'
+        f'<button class="ghost" style="margin:0">📝 למעקב</button></form>' for r in quote_suggestions())
     labels = sorted({r['label'] for r in load_json(config.RULES_FILE, []) if r.get('label')})
     label_boxes = ''.join(f'<label style="margin:0;font-weight:400;display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line);'
                           f'border-radius:999px;padding:4px 10px"><input type="checkbox" name="label" value="{e(l)}"{" checked" if l in share["labels"] else ""}> 🏷️ {e(l)}</label>'
@@ -361,6 +394,30 @@ def clients_section():
 <p class="muted" style="font-size:13px">💌 „✓ שולם” עם תודה: יוצא ללקוח מייל תודה (עם הקבלה, אם צירפת) בנוסח:
 <span style="white-space:pre-line">{e(THANKS_DEFAULT)}</span></p>
 
+{_h('quotes', '📝 הצעות מחיר')}
+<p class="muted">הצעה ששלחת ללקוח: אם אין תשובה תוך שבוע — תזכורת לבדוק איתו. מסמנים „🎉 התקבלה” או „לא התקבלה”, ורואים כמה אחוז מההצעות מתקבלות.
+{f'<b>ב-90 הימים האחרונים: {rate["won"]} התקבלו, {rate["lost"]} לא, {rate["open"]} פתוחות' + (f' — {rate["rate"]}% הצלחה' if rate['rate'] is not None else '') + '</b>' if rate['won'] + rate['lost'] + rate['open'] else ''}</p>
+<div class="scroll"><table><tbody>{quote_rows}</tbody></table></div>
+{f'<h3>הצעות — מיילים ששלחת שנראים כמו הצעת מחיר</h3>{quote_sugg}' if quote_sugg else ''}
+<details style="margin-top:10px"><summary><b>➕ הצעת מחיר למעקב</b></summary>
+<form method="post" action="/quote_add" style="display:grid;gap:8px;margin-top:8px">{_t()}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
+<label style="margin:0">מייל הלקוח<input type="email" name="email" required dir="ltr" style="width:100%;{FIELD}"></label>
+<label style="margin:0">שם<input type="text" name="name" style="width:100%;{FIELD}"></label>
+<label style="margin:0">על מה<input type="text" name="subject" style="width:100%;{FIELD}"></label>
+<label style="margin:0">סכום<input type="text" name="amount" style="width:100%;{FIELD}"></label>
+<label style="margin:0">נשלחה ב-<input type="date" name="sent" value="{today}" style="width:100%;{FIELD}"></label>
+<label style="margin:0">מהתיבה<select name="account" style="width:100%;{FIELD}">{_account_options()}</select></label></div>
+<div><button style="margin:0">➕ הוספה</button></div></form></details>
+
+{_h('folders', '📁 תיקייה לכל לקוח')}
+<p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if load_json(config.SETTINGS_FILE, {}).get('client_folders') else ''}כל קובץ שמגיע ממייל שתואם כלל שלך (למשל „לקוח כהן”)
+נשמר לבד בתיקייה <span dir="ltr">{e(config.CLIENTS_DIR)}</span>\שם הלקוח\חודש. המייל עצמו לא משתנה.</p>
+<form method="post" style="display:flex;gap:8px;flex-wrap:wrap">{_t()}
+{'<button formaction="/client_folders" name="on" value="0" class="ghost" style="margin:0">כיבוי</button>' if load_json(config.SETTINGS_FILE, {}).get('client_folders') else
+ '<button formaction="/client_folders" name="on" value="1" style="margin:0">📁 הפעלה</button>'}
+<button formaction="/open_clients" class="ghost" style="margin:0">📂 פתיחת התיקייה</button></form>
+
 {_h('share', '📋 דוח שבועי לשותף / עובד')}
 <p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if share['on'] else ''}כל יום ראשון בבוקר: מה קרה בשבוע עם התוויות שבוחרים (למשל הלקוחות שהם מטפלים בהם) —
 מי כתב, על מה, ומה עוד ממתין. רק התוויות שנבחרו נשלחות, שום דבר אחר.</p>
@@ -385,6 +442,7 @@ def clients_section():
 <label style="margin:0">תאריך<input type="date" name="day" required style="width:100%;{FIELD}"></label>
 <label style="margin:0">סוג<select name="kind" style="width:100%;{FIELD}">{kinds}</select></label>
 <label style="margin:0">מהתיבה<select name="account" style="width:100%;{FIELD}">{_account_options()}</select></label></div>
+<label style="margin:0;font-weight:400;display:flex;gap:6px;align-items:center"><input type="checkbox" name="hebrew"> 🕎 לפי התאריך העברי (משתנה כל שנה בלוח הלועזי)</label>
 <label style="margin:0">נוסח משלך <span class="muted">(ריק = נוסח מוכן · {{first_name}} {{my_name}})</span><textarea name="text" rows="3" style="width:100%;{FIELD}"></textarea></label>
 <div><button style="margin:0">➕ הוספה</button></div></form></details>'''
 
@@ -645,7 +703,8 @@ def settings_page(msg='', sec='boxes', month=''):
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
     title = next(t for k, _, t in SECTIONS if k == sec)
     return f'''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{e(title)} · הגדרות · MailBrief</title>{FONT}<style>{STYLE}
+<title>{e(title)} · הגדרות · MailBrief</title>{FONT}<style>{STYLE}</style></head><body>{top_bar('/')}<main>
+<style>
 input[type=text],input[type=email],input[type=password],input[type=number]{{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}}
 label{{display:block;margin:10px 0 4px;font-weight:500}} button{{font:inherit;font-weight:500;border:0;background:var(--accent);color:#fff;padding:9px 16px;border-radius:12px;cursor:pointer;margin-top:8px}}
 button.ghost{{background:transparent;color:var(--ink);border:1px solid var(--line)}} .grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px}}
@@ -654,7 +713,7 @@ h2{{font-size:20px;margin:28px 0 6px}} h2:first-of-type{{margin-top:12px}}
 nav.subtabs{{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line)}}
 nav.subtabs a{{text-decoration:none;color:var(--ink);font-size:14px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);transition:background .15s}}
 nav.subtabs a:hover{{border-color:var(--accent)}} nav.subtabs a[aria-current]{{background:var(--accent);border-color:var(--accent);color:#fff}}
-</style></head><body>{top_bar('/')}<main>
+</style>
 <h1>⚙️ <span class="g">הגדרות</span></h1><p class="muted" style="margin-top:0">{e(holy_status())}</p>{note}{undo_banner()}
 {update_banner()}
 {'<div class="item urgent">📦 נמצאו נתונים של MailBrief קודם — <a href="/?s=data#migrate">להעביר אותם לכאן</a></div>' if migrate.previous_copy() and sec != 'data' else ''}
@@ -662,6 +721,7 @@ nav.subtabs a:hover{{border-color:var(--accent)}} nav.subtabs a[aria-current]{{b
 {body}
 <form method="post" action="/quit" style="margin-top:40px">{_t()}
 <button class="ghost">⏻ סגירת MailBrief</button> <span class="muted" style="font-size:13px">הריצות המתוזמנות ימשיכו לעבוד גם כשהוא סגור.</span></form>
+{footer()}
 <script>(function(){{var map={json.dumps(ANCHORS)},h=location.hash.slice(1);
 if(h&&map[h]&&map[h]!=='{sec}')location.replace('/?s='+map[h]+'#'+h);}})();</script>
 </main>{extras.HTML}</body></html>'''

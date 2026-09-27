@@ -10,6 +10,7 @@ from mailbrief.features.history import client_groups
 from mailbrief.mail.classify import CATS
 from mailbrief.money.ledger import ils, vendor_key
 from mailbrief.util import e, money
+from mailbrief.view import avatar, current_account, emails, mine
 from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
@@ -22,7 +23,11 @@ def clients_page():
         if d['status'] == 'open':
             owed[vendor_key(d['email'])] = owed.get(vendor_key(d['email']), 0) + 1
     rows = []
+    box = current_account()
     for k, g in groups.items():
+        if box:                                              # one mailbox chosen in the switcher: only its clients
+            g = dict(g, emails=[h for h in g['emails'] if mine(h, current=box)],
+                     invoices=[r for r in g['invoices'] if mine(r, current=box)])
         if not (g['emails'] or g['invoices']):
             continue
         people = [h for h in g['emails'] if 'people' in h['cats'] and h.get('answered') is not None]
@@ -33,7 +38,8 @@ def clients_page():
         spent = sum(ils(r) or 0 for r in g['invoices'])
         rows.append((k, g, rate, since, debt, spent))
     table = ''.join(
-        f'<tr><td dir="auto"><a href="/client?key={quote(k)}">{e(g["name"])}</a></td><td>{len(g["emails"])}</td>'
+        f'<tr><td dir="auto">{"".join(avatar(a, 18) + " " for a in sorted({h.get("account", "") for h in g["emails"]} - {""})) if len(emails()) > 1 else ""}'
+        f'<a href="/client?key={quote(k)}">{e(g["name"])}</a></td><td>{len(g["emails"])}</td>'
         f'<td>{"—" if rate is None else f"{rate}%"}</td>'
         f'<td{" style=color:var(--warn)" if since is not None and since > 30 else ""}>{"—" if since is None else "היום" if since == 0 else f"לפני {since} ימים"}</td>'
         f'<td>{f"<b style=color:var(--warn)>⏳ {g["waiting"]}</b>" if g["waiting"] else "✓"}</td>'
@@ -73,7 +79,8 @@ def client_page(key):
 <div class="kpis">{kpis}</div>
 <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/search?q={quote(g["query"])}"><button type="button">🔍 כל המיילים</button></a>
 <form method="post" action="/search_download" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="q" value="{e(g["query"])}">
-<button>📥 הורדת כל הקבצים</button></form></div>
+<button>📥 הורדת כל הקבצים</button></form>
+<a href="/client_summary?key={quote(key)}"><button type="button" class="ghost" style="background:transparent;color:var(--ink);border:1px solid var(--line)">📨 סיכום חודשי ללקוח</button></a></div>
 <h3>📝 הערות</h3>
 <form method="post" action="/client_note"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="key" value="{e(key)}">
 <textarea name="note" rows="4" placeholder="מה חשוב לזכור על הלקוח: מחירים שסוכמו, איש קשר, העדפות…" style="width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{e(load_json(os.path.join(config.DATA, 'client-notes.json'), {}).get(key, ''))}</textarea>

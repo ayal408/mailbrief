@@ -17,6 +17,14 @@ def add_reminder(days, subject, who, link, account, note=''):
     return due
 
 
+def remind_at(when, subject, who, link, account, note=''):
+    items = load_json(config.REMINDERS_FILE, [])
+    items.append({'id': secrets.token_hex(4), 'due': when.isoformat(), 'subject': subject, 'from': who,
+                  'link': link, 'account': account, 'note': note})
+    save_json(config.REMINDERS_FILE, items)
+    return when
+
+
 def fire_reminders():
     items, now, left, fired = load_json(config.REMINDERS_FILE, []), dt.datetime.now().astimezone(), [], 0
     for r in items:

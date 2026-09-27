@@ -62,7 +62,7 @@ from mailbrief.features import greetings, snooze
 from mailbrief.features.replies import reply_details, reply_now
 from mailbrief.features import migrate, outbox, triage
 from mailbrief.features.diag import log_error, problem_report
-from mailbrief.features import cleanup, clientcare, cloud_backup, files, security, sharing, undo
+from mailbrief.features import cleanup, clientcare, cloud_backup, files, quotes, security, sharing, toast_actions, undo
 from mailbrief.money import budget
 from mailbrief.web.files import files_page
 from mailbrief.mail.accounts import DRIVE_SCOPE
@@ -176,6 +176,29 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read(), 'text/plain; charset=utf-8')
             except OSError:
                 return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
+        if url.path.startswith('/avatar/'):          # a mailbox's profile picture, kept on the computer
+            name = url.path.rsplit('/', 1)[-1]
+            path = os.path.join(config.DATA, 'avatars', name)
+            if re.fullmatch(r'[0-9a-f]{16}\.jpg', name) and os.path.isfile(path):
+                with open(path, 'rb') as f:
+                    return self._send(f.read(), 'image/jpeg')
+            return self._send('not found', code=404)
+        if url.path == '/toast_act':                 # a button on a Windows notification (signed; see toast_actions)
+            q = parse_qs(url.query)
+            try:
+                when = toast_actions.act(q.get('id', [''])[0], q.get('do', [''])[0], q.get('sig', [''])[0])
+                text = f'⏰ תזכורת נקבעה ל-{when:%d/%m %H:%M}'
+            except ValueError as exc:
+                text = f'⚠️ {exc}'
+            return self._send(f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>MailBrief</title>{FONT}'
+                              f'<style>{STYLE}</style></head><body><main style="text-align:center"><h1>{e(text)}</h1>'
+                              '<p class="muted">אפשר לסגור את הלשונית.</p><script>setTimeout(function(){window.close()},1800)</script></main></body></html>')
+        if url.path == '/client_summary':            # a monthly summary for a client, ready to edit and send
+            from mailbrief.web.clients import client_summary
+            return self._send(compose_page('', *client_summary(parse_qs(url.query).get('key', [''])[0])))
+        if url.path == '/about':
+            from mailbrief.web.about import about_page
+            return self._send(about_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/files':
             return self._send(files_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/snippets.json':             # the text shortcuts, for the page script
@@ -192,7 +215,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/automations':
             return self._send(automations_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/search':
-            return self._send(search_page(parse_qs(url.query).get('q', [''])[0].strip()[:200]))
+            from mailbrief.web.search import build_query
+            return self._send(search_page(build_query(parse_qs(url.query))))
         if url.path == '/unsub':                # link from a report: confirm first, never act on GET
             key = parse_qs(url.query).get('id', [''])[0]
             entry = load_json(config.UNSUBS_FILE, {}).get(key)
@@ -396,6 +420,73 @@ class Handler(BaseHTTPRequestHandler):
             notes.pop(key, None)
         save_json(path, notes)
         return ('/client?key=' + quote(key), None)
+
+    def post_reconnect(self, f):
+        """Sign in again to the same Google mailbox (e.g. to add the profile picture)."""
+        acc = next((a for a in load_json(config.ACCOUNTS_FILE, []) if a['id'] == f.get('id')), None)
+        return (start_oauth(acc['auth'] if acc else 'google', '', acc['email'] if acc else ''), None)
+
+    def post_reply_quick(self, f):
+        """Answer from "My day": now, or after Shabbat / tomorrow morning."""
+        text, when_choice = f.get('text', ''), f.get('when', 'now')
+        try:
+            if not text.strip():
+                raise RuntimeError('התשובה ריקה')
+            if when_choice == 'now':
+                result = f'✉️ נשלח ל-{reply_now(f.get("account", ""), f.get("message_id", ""), text)}'
+            else:
+                when = outbox.when_for(when_choice)
+                d = reply_details(f.get('account', ''), f.get('message_id', ''))
+                outbox.schedule(f['account'], d['to'], d['subject'], text, when, thread=d)
+                result = f'⏳ התשובה תצא ב-{when:%d/%m %H:%M}'
+            triage.dismiss(f"{f.get('account', '')}|{f.get('message_id', '')}")
+        except Exception as exc:
+            result = f'⚠️ {exc}'
+        return ('/today?msg=' + quote(result), None)
+
+    def post_prefs(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        if f.get('startup') in ('page', 'toast', 'none'):
+            settings['startup'] = f['startup']
+        if f.get('sound') in ('urgent', 'all', 'off'):
+            settings['sound'] = f['sound']
+        save_json(config.SETTINGS_FILE, settings)
+        return '✓ נשמר'
+
+    def post_quote_add(self, f):
+        try:
+            q = quotes.add_quote(self._first_account(f), f.get('email', ''), f.get('name', ''), f.get('subject', ''),
+                                 f.get('amount', ''), f.get('sent', ''))
+        except ValueError as exc:
+            return f'⚠️ {exc}'
+        return f'✓ הצעת המחיר ל{q["name"]} במעקב — אם לא יענו תוך שבוע, תקבל{g("י", "", "ו")} תזכורת'
+
+    def post_quote_set(self, f):
+        status = f.get('status', '')
+        if status not in ('won', 'lost', 'deleted'):
+            return 'פעולה לא מוכרת'
+        quotes.set_quote(f.get('id', ''), status)
+        return {'won': '🎉 מזל טוב! ההצעה התקבלה', 'lost': 'נרשם — ההצעה לא התקבלה', 'deleted': 'נמחק'}[status]
+
+    def post_client_folders(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['client_folders'] = f.get('on') == '1'
+        save_json(config.SETTINGS_FILE, settings)
+        if settings['client_folders']:
+            os.makedirs(config.CLIENTS_DIR, exist_ok=True)
+        return ('📁 מעכשיו קבצים מלקוחות נשמרים בתיקייה „לקוחות”' if settings['client_folders'] else 'שמירת הקבצים לתיקיות לקוחות כובתה')
+
+    def post_open_clients(self, f):
+        os.makedirs(config.CLIENTS_DIR, exist_ok=True)
+        os.startfile(config.CLIENTS_DIR)
+        return '📁 תיקיית הלקוחות נפתחה'
+
+    def post_dismiss(self, f):
+        """✕ next to an email that waits: it doesn't need an answer (can be undone)."""
+        key = f.get('key', '')[:400]
+        triage.dismiss(key)
+        undo.record('dismiss', f'„{f.get("subject", "")[:50]}” הוסר מהרשימה', {'key': key})
+        return ('/today', None)
 
     def post_simple(self, f):
         settings = load_json(config.SETTINGS_FILE, {})
@@ -749,7 +840,7 @@ class Handler(BaseHTTPRequestHandler):
     def post_date_add(self, f):
         try:
             d = clientcare.add_date(self._first_account(f), f.get('email', ''), f.get('name', ''), f.get('day', ''),
-                                    f.get('kind', 'birthday'), f.get('text', ''))
+                                    f.get('kind', 'birthday'), f.get('text', ''), hebrew='hebrew' in f)
         except ValueError as exc:
             return f'⚠️ {exc}'
         return f'✓ נשמר — ב-{d["day"]:02d}/{d["month"]:02d} תצא ברכה ל{d["name"]}'

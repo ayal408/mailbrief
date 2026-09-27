@@ -96,7 +96,9 @@ def top_bar(active=''):
     return (f'<style>{extras.STYLE}</style><header class="hero"><div class="corner">'
             '<button class="tbtn" id="mb-theme" type="button" onclick="MB.theme()">🌗</button>'
             '<button class="kbtn" type="button" onclick="MB.open()" title="מעבר מהיר לכל דף ופעולה">⌨️ Ctrl+K</button>'
-            '<button class="fchip" id="mb-focus" type="button" title="טיימר ריכוז — לחיצה לפתיחה"></button></div>'
+            '<button class="fchip" id="mb-focus" type="button" title="טיימר ריכוז — לחיצה לפתיחה"></button>'
+            + (f'<a href="/?s=boxes" title="{e(view.current_account() or view.emails()[0])}">{view.avatar(view.current_account() or view.emails()[0], 30)}</a>'
+               if view.emails() else '') + '</div>'
             f'<span class="gift" id="mb-gift" title="🎉">📬</span><h1 class="name g" id="mb-hello" data-name="{e(me.get("name", ""))}" '
             f'data-back="{e(welcome_back() if me.get("form") else "")}">שלום!</h1>'
             '<p class="tag"><span id="mb-type"></span><span class="caret"></span></p></header>'
@@ -141,10 +143,19 @@ def heading(icon, text):
     return f'<h1>{icon} <span class="g">{e(text)}</span></h1>'
 
 
+PAGE_STYLE = ('<style>.bar{height:20px;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:6px;min-width:3px}'
+              'input[type=search]{width:100%;font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}'
+              'button{font:inherit;border:0;background:var(--accent);color:#fff;padding:12px 22px;border-radius:12px;cursor:pointer;font-weight:500}</style>')
+
+
+def footer():
+    return (f'<footer class="foot">MailBrief {__version__} · <a href="/about">ℹ️ אודות</a> · <a href="/help">❓ מדריך</a> · '
+            '<a href="/help#privacy">🔒 פרטיות</a></footer>')
+
+
 def page(title, body, active=''):
+    # the page's own styles sit inside <main>: switching tabs swaps <main>, so every tab looks right however you got there
     return (f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>{e(title)} · MailBrief</title>{FONT}'
-            f'<style>{STYLE}.bar{{height:20px;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:6px;min-width:3px}}'
-            'input[type=search]{width:100%;font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}'
-            'button{font:inherit;border:0;background:var(--accent);color:#fff;padding:12px 22px;border-radius:12px;cursor:pointer;font-weight:500}</style>'
-            f'</head><body>{top_bar(active or TITLE_TAB.get(title, ""))}<main>{undo_banner()}{body}</main>{extras.HTML}</body></html>')
+            f'<style>{STYLE}</style></head><body>{top_bar(active or TITLE_TAB.get(title, ""))}'
+            f'<main>{PAGE_STYLE}{undo_banner()}{body}{footer()}</main>{extras.HTML}</body></html>')

@@ -123,13 +123,20 @@ def client_dates():
     return load_json(_path(DATES_FILE), [])
 
 
-def add_date(account, email, name, day, kind='birthday', text=''):
+def add_date(account, email, name, day, kind='birthday', text='', hebrew=False):
+    """hebrew: the date repeats by the Hebrew calendar (a different Gregorian day every year)."""
     if not EMAIL.fullmatch(email.strip()):
         raise ValueError('כתובת הלקוח לא נראית תקינה')
     month_day = dt.date.fromisoformat(day)
     item = {'id': secrets.token_hex(4), 'account': account, 'email': email.strip(), 'name': name.strip() or email.split('@')[0],
             'month': month_day.month, 'day': month_day.day, 'kind': kind if kind in DATE_KINDS else 'other',
             'text': text.strip(), 'sent_years': []}
+    if hebrew:
+        from mailbrief.features.hebdate import g2h
+        h = g2h(month_day)
+        if not h:
+            raise ValueError('אין חיבור לאינטרנט להמרת התאריך העברי — אפשר לנסות שוב')
+        item['hebrew'] = {'hm': h['hm'], 'hd': h['hd'], 'text': ' '.join(h['hebrew'].split()[:2])}
     save_json(_path(DATES_FILE), client_dates() + [item])
     return item
 
@@ -142,6 +149,12 @@ def upcoming_dates(today=None, days=14):
     today = today or dt.date.today()
     out = []
     for d in client_dates():
+        if d.get('hebrew'):
+            from mailbrief.features.hebdate import next_occurrence
+            when = next_occurrence(d['hebrew']['hm'], d['hebrew']['hd'], today)
+            if when and 0 <= (when - today).days <= days:
+                out.append({**d, 'date': when})
+            continue
         for year in (today.year, today.year + 1):
             try:
                 when = dt.date(year, d['month'], d['day'])

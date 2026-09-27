@@ -16,7 +16,7 @@ PROVIDERS = {
         'name': 'Google', 'host': 'imap.gmail.com',
         'auth': 'https://accounts.google.com/o/oauth2/v2/auth',
         'token': 'https://oauth2.googleapis.com/token',
-        'scope': 'openid email https://mail.google.com/',
+        'scope': 'openid email profile https://mail.google.com/',   # profile: the name and picture shown in MailBrief
         'redirect': f'http://127.0.0.1:{config.PORT}/oauth/callback',
         'extra': {'access_type': 'offline', 'prompt': 'consent select_account', 'include_granted_scopes': 'true'},
     },
@@ -55,8 +55,20 @@ def client_for(provider):
     return bundled_client(provider)
 
 
-def token_request(provider, fields):
-    client_id, secret = client_for(provider)
+def clients(provider):
+    """Every key this copy knows: the user's own (settings) and the built-in one."""
+    cfg = load_json(config.SETTINGS_FILE, {}).get(provider) or {}
+    own = [(cfg['client_id'], decrypt(cfg['client_secret']) if cfg.get('client_secret') else '')] if cfg.get('client_id') else []
+    built_in = bundled_client(provider)
+    return own + ([built_in] if built_in[0] and built_in[0] not in {c for c, _ in own} else [])
+
+
+def token_request(provider, fields, client_id=None):
+    """client_id: the key a mailbox was connected with — a refresh token only works with that same key."""
+    known = dict(clients(provider))
+    if client_id and client_id not in known:
+        raise RuntimeError('התיבה חוברה עם מפתח התחברות אחר — צריך להתחבר מחדש לתיבה הזו (כפתור „חיבור עם Google”)')
+    client_id, secret = (client_id, known[client_id]) if client_id else client_for(provider)
     fields = {'client_id': client_id, **fields}
     if secret:
         fields['client_secret'] = secret
@@ -67,13 +79,27 @@ def token_request(provider, fields):
             return json.load(resp)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode('utf-8', 'replace')
-        if 'invalid_grant' in detail:
-            raise RuntimeError('ההרשאה פגה או בוטלה — צריך להתחבר מחדש לתיבה הזו') from None
+        if 'invalid_grant' in detail or 'unauthorized_client' in detail:
+            raise RuntimeError('ההרשאה פגה, בוטלה או ניתנה למפתח אחר — צריך להתחבר מחדש לתיבה הזו (כפתור „חיבור עם Google”)') from None
         raise RuntimeError(f'שגיאת התחברות מול {PROVIDERS[provider]["name"]}: {detail[:200]}') from None
 
 
 def access_token(acc):
-    data = token_request(acc['auth'], {'grant_type': 'refresh_token', 'refresh_token': decrypt(acc['refresh'])})
+    fields = {'grant_type': 'refresh_token', 'refresh_token': decrypt(acc['refresh'])}
+    if acc.get('client_id'):
+        data = token_request(acc['auth'], fields, acc['client_id'])
+    else:                                       # connected before MailBrief remembered the key: find the one that works
+        error = None
+        for client_id, _ in clients(acc['auth']) or [(None, '')]:
+            try:
+                data = token_request(acc['auth'], fields, client_id)
+                if client_id:
+                    acc['client_id'] = client_id
+                break
+            except RuntimeError as exc:
+                error = exc
+        else:
+            raise error
     if data.get('refresh_token'):               # Microsoft rotates refresh tokens
         acc['refresh'] = encrypt(data['refresh_token'])
     return data['access_token']

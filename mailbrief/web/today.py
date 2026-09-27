@@ -77,6 +77,13 @@ def by_thread(rows, who='from'):
     return out
 
 
+def dismiss_button(r):
+    """✕ — take it off the list (it doesn't need an answer). Can be undone for a few minutes."""
+    return (f'<form method="post" action="/dismiss" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+            f'<input type="hidden" name="key" value="{e(triage_key(r))}"><input type="hidden" name="subject" value="{e(r.get("subject", ""))}">'
+            f'<button style="{SMALL}" title="להוריד מהרשימה — לא צריך תשובה">✕</button></form>')
+
+
 def today_page(msg='', show_all=False, print_now=False):
     now = dt.datetime.now()
     city = load_json(config.SETTINGS_FILE, {}).get('city', 'ירושלים')
@@ -176,6 +183,16 @@ def today_page(msg='', show_all=False, print_now=False):
                        f'<input type="hidden" name="from" value="{e(r["from"])}"><input type="hidden" name="link" value="{e(r.get("link", ""))}">'
                        f'<button style="{SMALL}" title="משימה ב-Google Tasks">✅ משימה</button></form>')
         thread = f' <span class="pill" title="הודעות בשיחה">💬 {r["thread"]}</span>' if r.get('thread', 1) > 1 else ''
+        if remind and r.get('message_id'):
+            button += (f'<details style="display:inline-block;vertical-align:top"><summary style="{SMALL};display:inline-block;list-style:none;cursor:pointer" '
+                       f'title="תשובה מכאן">✍️ תשובה</summary><form method="post" action="/reply_quick" style="display:grid;gap:6px;margin:6px 0;min-width:260px">'
+                       f'<input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="account" value="{e(r["account"])}">'
+                       f'<input type="hidden" name="message_id" value="{e(r["message_id"])}">'
+                       f'<textarea name="text" rows="3" required placeholder="התשובה שלך… (אפשר ;קיצור)" style="font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"></textarea>'
+                       f'<div style="display:flex;gap:6px"><select name="when" style="font:inherit;font-size:13px;padding:4px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">'
+                       '<option value="now">לשלוח עכשיו</option><option value="after_holy">🕯️ אחרי שבת/חג</option><option value="tomorrow8">🌅 מחר 8:00</option></select>'
+                       f'<button style="{SMALL};background:var(--accent);color:#fff;border-color:var(--accent)">✉️ שליחה</button></div></form></details>')
+        button += dismiss_button(r)
         return (f'<li dir="auto" data-days="{r.get("days", 0)}" data-name="{e(r["from"])}" data-account="{e(r.get("account", ""))}">'
                 f'{dot(r.get("account", ""))}{title}{thread} <span class="muted">— {e(r["from"])} · {tail}</span>{button}</li>')
     to_sort = len(queue())
@@ -248,7 +265,7 @@ def today_page(msg='', show_all=False, print_now=False):
                  + f'<button style="{SMALL}" title="תזכורת מנומסת באותה שיחה — יוצאת מהתיבה שלך (לא בשבת)">📨 להזכיר</button></form>'
                  ) if r.get('message_id') and r.get('to_email') and not back else ''
         return (f'<li dir="auto" data-days="{r["days"]}" data-name="{e(r["to"])}" data-account="{e(r.get("account", ""))}">'
-                f'{dot(r.get("account", ""))}{title}{thread}{away_note} <span class="muted">— אל {e(r["to"])} · 📤 {r["days"]} ימים</span>{nudge}{remind}{task}</li>')
+                f'{dot(r.get("account", ""))}{title}{thread}{away_note} <span class="muted">— אל {e(r["to"])} · 📤 {r["days"]} ימים</span>{nudge}{remind}{task}{dismiss_button(r)}</li>')
     awaiting = ''.join(awaiting_row(r) for r in by_thread([r for r in snap.get('awaiting', []) if triage_key(r) not in handled], 'to')[:20]) \
         or '<li class="muted">כולם ענו לך ✨</li>'
 

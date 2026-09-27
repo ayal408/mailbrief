@@ -44,6 +44,21 @@ def dot(address):
             f'background:{color(address)};margin-inline-end:6px;vertical-align:1px"></span>')
 
 
+def account(address):
+    return next((a for a in load_json(config.ACCOUNTS_FILE, []) if a['email'].lower() == (address or '').lower()), {})
+
+
+def avatar(address, size=22):
+    """The mailbox's Google profile picture, or a coloured circle with its first letter."""
+    acc = account(address)
+    style = f'width:{size}px;height:{size}px;border-radius:50%;flex:none;vertical-align:middle'
+    if acc.get('avatar'):
+        return f'<img src="/avatar/{e(acc["avatar"])}" alt="" title="{e(acc.get("display_name") or address)}" style="{style};object-fit:cover">'
+    letter = (acc.get('display_name') or address or '?')[:1].upper()
+    return (f'<span title="{e(address)}" style="{style};display:inline-grid;place-items:center;background:{color(address)};'
+            f'color:#fff;font-weight:700;font-size:{int(size * .5)}px">{e(letter)}</span>')
+
+
 def switcher():
     """The chips under the tabs; hidden with a single mailbox."""
     from mailbrief.web.token import TOKEN
@@ -54,6 +69,6 @@ def switcher():
     chip = ('<button name="account" value="{value}" class="mbx{on}" type="submit">{mark}{label}</button>')
     chips = chip.format(value='', on=' on' if not current else '', mark='📬 ', label='כל התיבות') + ''.join(
         chip.format(value=e(m), on=' on' if m == current else '',
-                    mark=f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:{color(m)};margin-inline-end:6px"></span>',
+                    mark=f'<span style="margin-inline-end:6px">{avatar(m, 18)}</span>',
                     label=e(m.split('@')[0])) for m in boxes)
     return (f'<form method="post" action="/view_account" class="mbxs"><input type="hidden" name="t" value="{TOKEN}">{chips}</form>')

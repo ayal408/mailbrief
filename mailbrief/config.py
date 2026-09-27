@@ -66,6 +66,7 @@ MAX_VACATION_REPLIES = 30
 BACKUP_DIR = os.path.join(HERE, 'גיבויים')
 KEEP_BACKUPS = 10
 ARCHIVE_DIR = os.path.join(HERE, 'ארכיון')
+CLIENTS_DIR = os.path.join(HERE, 'לקוחות')
 ARCHIVE_MANIFEST = os.path.join(DATA, 'archive.json')
 WF_FILE = os.path.join(DATA, 'automations.json')
 WF_LOG = os.path.join(DATA, 'automation-log.json')

@@ -21,7 +21,7 @@ def _preview(choice):
         return ''
 
 
-def compose_page(msg=''):
+def compose_page(msg='', to='', subject='', body=''):
     accounts = load_json(config.ACCOUNTS_FILE, [])
     field = 'font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%'
     options = ''.join(f'<option>{e(a["email"])}</option>' for a in accounts)
@@ -41,11 +41,11 @@ def compose_page(msg=''):
 <br>{e(holy_status())}</p>
 <form method="post" action="/schedule_mail" enctype="multipart/form-data" style="display:grid;gap:10px;max-width:720px"><input type="hidden" name="t" value="{TOKEN}">
 <label style="margin:0">מהתיבה<select name="account" style="{field}">{options or '<option value="">(צריך לחבר תיבה)</option>'}</select></label>
-<label style="margin:0">אל <span class="muted">(כמה כתובות — מופרדות בפסיק)</span><input type="text" name="to" dir="ltr" required style="{field}"></label>
-<label style="margin:0">נושא<input type="text" name="subject" maxlength="300" style="{field}"></label>
+<label style="margin:0">אל <span class="muted">(כמה כתובות — מופרדות בפסיק)</span><input type="text" name="to" dir="ltr" required value="{e(to)}" style="{field}"></label>
+<label style="margin:0">נושא<input type="text" name="subject" maxlength="300" value="{e(subject)}" style="{field}"></label>
 <label style="margin:0">תוכן <select id="c-tmpl" style="font:inherit;font-size:13px;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
 <option value="">📝 מתבנית…</option>{''.join(f'<option value="{e(t["text"])}">{e(t["name"])}</option>' for t in reply_templates())}</select>
-<textarea name="body" id="c-body" rows="8" style="{field}"></textarea></label>
+<textarea name="body" id="c-body" rows="8" style="{field}">{e(body)}</textarea></label>
 <script>(function(){{var s=document.getElementById('c-tmpl'),b=document.getElementById('c-body');if(!s)return;
 s.onchange=function(){{if(!s.value)return;var me={json.dumps(profile().get('name', ''))},d=new Date().toLocaleDateString('he-IL');
 var v=s.value;[['{{השם_שלי}}',me],['{{my_name}}',me],['{{היום}}',d],['{{today}}',d]].forEach(function(p){{v=v.split(p[0]).join(p[1]);}});

@@ -107,6 +107,11 @@ def check_alerts(only=None):
                 run_workflows(m, acc, pairs, state, ledger, budget)
                 vacation_replies(acc, pairs, state)
                 from mailbrief.features.away import note as note_away
+                from mailbrief.features.client_files import save_client_files
+                try:
+                    save_client_files(pairs, state)
+                except Exception:
+                    pass
                 for it, msg in pairs:
                     try:
                         note_away(msg, it['sender'], dt.date.fromisoformat(it['iso'][:10]))
@@ -164,9 +169,10 @@ def check_alerts(only=None):
     from mailbrief.features.clientcare import chase_due, greet_due
     from mailbrief.features.meetings import meeting_followups
     from mailbrief.features.sharing import maybe_share
+    from mailbrief.features.quotes import follow_up as quote_follow_up
     jobs = (chase_due, greet_due,                         # queue first, so the outbox sends them in the same round
             lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due,
-            lambda: meeting_followups(state), lambda: maybe_share(state, accounts))
+            lambda: meeting_followups(state), lambda: maybe_share(state, accounts), quote_follow_up)
     for job in (jobs if not only else ()):
         try:
             job()
@@ -219,6 +225,8 @@ def check_alerts(only=None):
     title = f'📬 MailBrief — {why}' if len(alerts) == 1 else f'📬 MailBrief — {len(alerts)} הודעות דורשות תשומת לב'
     vip = notify.vip_list()
     important = any((a.get('sender') or '').lower() in vip or (a.get('sender') or '').rsplit('@', 1)[-1].lower() in vip for _, a in alerts)
+    loud = important or any(w.startswith(('🎣', '🚨', 'דחוף', 'חריג')) for w, _ in alerts)
+    from mailbrief.features.toast_actions import buttons
     notify.toast(title, [f'{first["subject"]} ({first["sender_name"]})'] + [f'{t}: {a["subject"]}' for t, a in alerts[1:2]],
-          first.get('link') or link(), vip=important)
+          first.get('link') or link(), vip=important, actions=buttons(first), loud=loud)
     return len(alerts)
