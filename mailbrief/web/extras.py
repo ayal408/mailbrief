@@ -162,6 +162,22 @@ HTML = """
     if (a) { var u = local(a.href); if (u && u.pathname !== location.pathname) load(u.pathname + u.search); }
   });
   window.addEventListener('popstate', function(){ navigate(location.href, false); });
+  // 📎 "forgot the attachment?" — the text says "attached" but no file was chosen: stop once and say so
+  document.addEventListener('submit', function(ev){
+    var f = ev.target, inputs = f.querySelectorAll('input[type=file]');
+    if (!inputs.length || f.dataset.attachOk) return;
+    var text = Array.prototype.map.call(f.querySelectorAll('textarea'), function(t){ return t.value; }).join(' ');
+    if (!/מצורפ|מצ"ב|מצ״ב|בקובץ המצורף|בצירוף|attached|attachment|enclosed/i.test(text)) return;
+    var has = Array.prototype.some.call(inputs, function(i){ return i.files && i.files.length; });
+    var tpl = f.querySelector('#c-tfiles');
+    if (has || (tpl && tpl.textContent)) return;
+    ev.preventDefault(); ev.stopImmediatePropagation(); f.dataset.attachOk = '1';
+    var note = f.querySelector('.mb-attach-note') || document.createElement('div');
+    note.className = 'mb-attach-note item urgent'; note.setAttribute('role', 'alert');
+    note.textContent = '📎 כתוב „מצורף” — אבל לא נבחר קובץ. אפשר לצרף עכשיו, או ללחוץ שוב כדי לשלוח בלי.';
+    (ev.submitter && ev.submitter.parentNode ? ev.submitter.parentNode : f).insertAdjacentElement('beforebegin', note);
+    note.scrollIntoView({block: 'center', behavior: 'smooth'});
+  }, true);
   var off = document.getElementById('mb-offline');           // the internet dropped: say so, instead of an endless "loading"
   function net(){
     off.hidden = navigator.onLine;
@@ -211,6 +227,7 @@ HTML = """
     ['📎 כל הקבצים המצורפים', '/files'], ['📊 תקציב חודשי', '/?s=money#budget'], ['⚖️ מי זול יותר', '/?s=money#compare'],
     ['🧾 מסמכים להחזר מס', '/?s=money#tax'], ['⚡ קיצורי טקסט', '/?s=auto#snippets'], ['🔓 בדיקת דליפות', '/?s=me#leaks'],
     ['📋 דוח שבועי לשותף', '/?s=clients#share'], ['🖨️ הדפסת היום שלי', '/today?print=1'],
+    ['💳 פרטי תשלום בתזכורות', '/?s=clients#debts'], ['🕯️ מענה אוטומטי בחגים', '/?s=auto#holidayreply'],
     ['📨 מייל אישי לרשימה', '/merge'], ['📊 סיכום שנתי', '/year_report'], ['🚫 שולחים חסומים', '/?s=auto#blocked'],
     ['📇 אנשי קשר', '/contacts'], ['📊 סטטיסטיקות לקוחות', '/client_stats'], ['💚 הכנסות החודש', '/?s=money#income'], ['🔁 מיילים חוזרים', '/?s=auto#recurring'],
     ['🔒 קוד לפתיחה', '/?s=me#pin'], ['🧪 בדיקת גיבוי', '/?s=data#backupcheck'],

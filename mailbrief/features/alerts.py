@@ -209,6 +209,13 @@ def check_alerts(only=None):
             job()
         except Exception:
             pass                                 # try again next hour
+    from mailbrief.features.renewals import yearly_renewals
+    for rn in (yearly_renewals(ledger, ahead=30) if not only else []):
+        key = f"renewal|{rn['key']}|{rn['next']}"
+        if key not in seen and rn['days'] <= 30:
+            seen.add(key)
+            alerts.append(('📆 חידוש שנתי בקרוב', {'subject': f"{rn['vendor']} חייב בערך לפני שנה — החידוש צפוי ב-{rn['next']:%d/%m}. "
+                                                              'זה הזמן לבטל או להשוות מחירים.', 'sender_name': rn['vendor'], 'link': ''}))
     from mailbrief.money.books import missing_invoices
     for gap in (missing_invoices(ledger) if not only else []):
         key = f"missing|{gap['key']}|{dt.date.today():%Y-%m}"

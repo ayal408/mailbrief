@@ -69,6 +69,13 @@ def undo(item_id):
         if p.get('outbox'):
             outbox.cancel(p['outbox'])
         text = '↩️ החשבונית פתוחה שוב' + (' — ומייל התודה בוטל' if p.get('outbox') else '')
+    elif kind == 'send':
+        from mailbrief.features import outbox
+        waiting = {m['id'] for m in outbox.outbox() if m['status'] == 'waiting'}
+        ids = [i for i in p['ids'] if i in waiting]
+        for i in ids:
+            outbox.cancel(i)
+        text = ('↩️ השליחה בוטלה' + (f' ({len(ids)} מיילים)' if len(ids) > 1 else '')) if ids else 'כבר נשלח — אי אפשר לבטל'
     elif kind == 'dismiss':
         from mailbrief.features import triage
         triage.undo(p['key'])

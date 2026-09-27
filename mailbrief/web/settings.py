@@ -14,7 +14,8 @@ from mailbrief.features.daily import daily_cfg
 from mailbrief.features.google_apps import API_PAGES, gapps_account
 from mailbrief.features.maintenance import schedule_status
 from mailbrief.features.replies import reply_templates, template_files, vacation_active, VACATION_DEFAULT
-from mailbrief.web.settings_more import backup_check_block, blocked_block, income_block, pin_block, recurring_block
+from mailbrief.web.settings_more import (backup_check_block, blocked_block, holiday_reply_block, income_block, payment_block,
+                                         pin_block, recurring_block)
 from mailbrief.mail.classify import TAG_PREFIX
 from mailbrief.mail.oauth import PROVIDERS, bundled_client
 from mailbrief.money.accountant import accountant_cfg, previous_month
@@ -42,7 +43,7 @@ ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'accou
            'export': 'money', 'debts': 'clients', 'dates': 'clients', 'rules': 'auto', 'vacation': 'auto', 'templates': 'auto',
            'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect',
            'simple': 'me', 'startup': 'me', 'quotes': 'clients', 'folders': 'clients', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money',
-           'income': 'money', 'recurring': 'auto', 'pin': 'me', 'backupcheck': 'data', 'blocked': 'auto'}
+           'income': 'money', 'recurring': 'auto', 'pin': 'me', 'backupcheck': 'data', 'blocked': 'auto', 'holidayreply': 'auto'}
 
 FIELD = 'font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
 
@@ -393,6 +394,7 @@ def clients_section():
 <p class="muted">חשבונית ששלחת ללקוח ועוד לא שולמה: אחרי מועד התשלום יוצאת תזכורת מנומסת מהתיבה שלך (10:00, אף פעם לא בשבת ובחג),
 ועוד אחת כל כמה ימים — עד 3 תזכורות, או עד שמסמנים „✓ שולם”.</p>
 <div class="scroll"><table><thead><tr><th>לקוח</th><th>סכום</th><th>חשבונית</th><th>לתשלום עד</th><th>תזכורות</th><th></th></tr></thead><tbody>{debt_rows}</tbody></table></div>
+{payment_block()}
 {f'<h3>הצעות — חשבוניות ששלחת ולא נענו</h3>{sugg}' if sugg else ''}
 <details style="margin-top:10px"><summary><b>➕ חשבונית חדשה למעקב</b></summary>
 <form method="post" action="/debt_add" style="display:grid;gap:8px;margin-top:8px">{_t()}
@@ -548,7 +550,8 @@ t.value=t.value.slice(0,s)+b.dataset.field+t.value.slice(t.selectionEnd||s);t.fo
 <div style="display:flex;gap:10px;flex-wrap:wrap"><label style="margin:0">מתאריך <input type="date" name="from" value="{e(vac.get('from', ''))}" style="{FIELD}"></label>
 <label style="margin:0">עד תאריך <input type="date" name="to" value="{e(vac.get('to', ''))}" style="{FIELD}"></label></div>
 <textarea name="message" rows="4" style="{FIELD}">{e(vac.get('message') or VACATION_DEFAULT)}</textarea>
-<div><button name="action" value="save" style="margin:0">שמירה</button> <button name="action" value="off" class="ghost" style="margin:0">כיבוי</button></div></form>'''
+<div><button name="action" value="save" style="margin:0">שמירה</button> <button name="action" value="off" class="ghost" style="margin:0">כיבוי</button></div></form>
+{holiday_reply_block()}'''
 
 
 # ---- 🧹 tidy up -------------------------------------------------------------------------------------------------------

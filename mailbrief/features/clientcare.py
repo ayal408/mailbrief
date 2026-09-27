@@ -86,15 +86,39 @@ def next_reminder(d):
     return start + dt.timedelta(days=d['every'] * len(d['reminders']))
 
 
+def payment_text(cfg=None):
+    """💳 How to pay, from the settings: a Bit / PayBox link and / or bank details. '' when nothing is set."""
+    cfg = (load_json(config.SETTINGS_FILE, {}).get('payment') or {}) if cfg is None else cfg
+    lines = []
+    if cfg.get('bit'):
+        lines.append(f'💳 תשלום ב-Bit: {cfg["bit"]}')
+    if cfg.get('paybox'):
+        lines.append(f'💳 תשלום ב-PayBox: {cfg["paybox"]}')
+    if cfg.get('bank'):
+        lines.append(f'🏦 העברה בנקאית: {cfg["bank"]}')
+    return ('לנוחותך, אפשר לשלם כאן:\n' + '\n'.join(lines)) if lines else ''
+
+
+def with_payment(body, text):
+    """The payment lines where {פרטי_תשלום} is written — else before the sign-off (the last paragraph)."""
+    if not text:
+        return body.replace('{פרטי_תשלום}', '').replace('{payment}', '')
+    if '{פרטי_תשלום}' in body or '{payment}' in body:
+        return body.replace('{פרטי_תשלום}', text).replace('{payment}', text)
+    head, sep, tail = body.rstrip().rpartition('\n\n')
+    return f'{head}\n\n{text}\n\n{tail}' if sep else f'{body.rstrip()}\n\n{text}'
+
+
 def chase_due(today=None):
     """Queues today's payment reminders in the outbox (10:00, or after Shabbat / Yom Tov). Returns how many."""
     today = today or dt.date.today()
     rows, queued, me = debts(), 0, profile().get('name', '')
+    pay = payment_text()
     for d in rows:
         day = next_reminder(d)
         if not day or day > today:
             continue
-        body = _fill(d['text'], first_name=first_name(d['name']), name=d['name'], invoice=d['invoice'] or '',
+        body = _fill(with_payment(d['text'], pay), first_name=first_name(d['name']), name=d['name'], invoice=d['invoice'] or '',
                      amount=d['amount'] or '', date=dt.date.fromisoformat(d['sent']).strftime('%d/%m/%Y'), my_name=me)
         when = out_of_holy(max(_now(), _now().replace(hour=10, minute=0, second=0, microsecond=0)))
         subject = f'תזכורת: חשבונית {d["invoice"]}'.strip() if d['invoice'] else 'תזכורת לגבי תשלום'

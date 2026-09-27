@@ -1605,6 +1605,78 @@ class Batch7(Isolated):
         self.assertIn('name="logo"', settings_page('', 'boxes'))
 
 
+class Batch8(Isolated):
+    def test_payment_details_in_reminders(self):
+        from mailbrief.features import clientcare, outbox
+        self.assertEqual(clientcare.payment_text({}), '')
+        text = clientcare.payment_text({'bit': 'https://bit.ly/x', 'bank': 'לאומי 800-12345'})
+        self.assertIn('https://bit.ly/x', text)
+        self.assertIn('לאומי 800-12345', text)
+        body = clientcare.with_payment('שלום דנה,\n\nתזכורת.\n\nבברכה,\nרחל', text)
+        self.assertLess(body.index('bit.ly'), body.index('בברכה'))                         # before the sign-off
+        self.assertEqual(clientcare.with_payment('א {פרטי_תשלום} ב', 'X'), 'א X ב')
+        self.assertEqual(clientcare.with_payment('א {פרטי_תשלום} ב', ''), 'א  ב')
+        storage.save_json(config.SETTINGS_FILE, {'payment': {'paybox': 'https://payboxapp.page.link/abc'}})
+        clientcare.add_debt('me@gmail.com', 'dana@client.co.il', 'דנה', '₪500', '7', '2026-08-01', due_days=10)
+        with mock.patch.object(clientcare, 'out_of_holy', side_effect=lambda w: w):
+            self.assertEqual(clientcare.chase_due(dt.date(2026, 9, 1)), 1)
+        self.assertIn('https://payboxapp.page.link/abc', outbox.outbox()[-1]['body'])
+
+    def test_yearly_renewals(self):
+        from mailbrief.features.renewals import yearly_renewals
+        ledger = {'1': {'date': '2025-10-10', 'vendor': 'Domains Ltd', 'vendor_key': 'domains.co.il', 'amount': 99.0, 'currency': '₪'},
+                  '2': {'date': '2026-09-01', 'vendor': 'Bezeq', 'vendor_key': 'bezeq.co.il', 'amount': 118.0, 'currency': '₪'},
+                  '3': {'date': '2025-09-01', 'vendor': 'Bezeq', 'vendor_key': 'bezeq.co.il', 'amount': 118.0, 'currency': '₪'}}
+        found = yearly_renewals(ledger, today=dt.date(2026, 9, 27))
+        self.assertEqual([(r['vendor'], r['next'], r['days']) for r in found], [('Domains Ltd', dt.date(2026, 10, 10), 13)])
+        self.assertEqual(yearly_renewals(ledger, today=dt.date(2026, 3, 1)), [])
+
+    def test_holiday_reply(self):
+        from mailbrief.features import holiday_reply
+        items = [{'category': 'holiday', 'title': 'Erev Sukkot', 'date': '2026-09-25'},
+                 {'category': 'holiday', 'title': 'Sukkot I', 'date': '2026-09-26'},
+                 {'category': 'holiday', 'title': "Sukkot II (CH''M)", 'date': '2026-09-27'},
+                 {'category': 'holiday', 'title': "Sukkot VII (Hoshana Raba)", 'date': '2026-10-02'},
+                 {'category': 'holiday', 'title': 'Shmini Atzeret', 'date': '2026-10-03'}]
+        for n in range(3, 7):
+            items.append({'category': 'holiday', 'title': f"Sukkot {n} (CH''M)", 'date': (dt.date(2026, 9, 25) + dt.timedelta(days=n)).isoformat()})
+        self.assertEqual(holiday_reply.holiday_period(items, dt.date(2026, 9, 29)), ('סוכות', dt.date(2026, 9, 25), dt.date(2026, 10, 3)))
+        self.assertIsNone(holiday_reply.holiday_period(items, dt.date(2026, 10, 5)))
+        storage.save_json(config.CACHE_FILE, {'holy': {'data': {'items': items}}})
+        self.assertIsNone(holiday_reply.active(dt.date(2026, 9, 29)))                            # off by default
+        storage.save_json(config.SETTINGS_FILE, {'holiday_reply': {'on': True, 'message': ''}})
+        now = holiday_reply.active(dt.date(2026, 9, 29))
+        self.assertEqual((now['holiday'], now['to'], now['message']), ('סוכות', '2026-10-03', holiday_reply.DEFAULT))
+
+    def test_undo_send(self):
+        from mailbrief.features import outbox, undo
+        later = dt.datetime.now().astimezone() + dt.timedelta(seconds=40)
+        item = outbox.schedule('me@gmail.com', 'a@b.co.il', 'x', 'y', later)
+        undo.record('send', 'יוצא בעוד רגע', {'ids': [item['id']]})
+        self.assertIn('בוטלה', undo.undo(undo.last()['id']))
+        self.assertEqual(outbox.outbox()[0]['status'], 'cancelled')
+        undo.record('send', 'שוב', {'ids': [item['id']]})
+        self.assertIn('כבר נשלח', undo.undo(undo.last()['id']))
+
+    def test_important_only(self):
+        from mailbrief.web import today
+        storage.save_json(config.SNAPSHOT_FILE, {'waiting': [
+            {'account': 'me@gmail.com', 'from': 'דנה', 'sender': 'dana@client.co.il', 'subject': 'שאלה', 'days': 2, 'message_id': '<1>', 'link': ''},
+            {'account': 'me@gmail.com', 'from': 'Shop', 'sender': 'hello@shop.com', 'subject': 'מבצע', 'days': 1, 'message_id': '<2>', 'link': ''}]})
+        storage.save_json(config.SETTINGS_FILE, {'quiet': {'vip': ['dana@client.co.il']}, 'profile': {'name': 'רחל'}})
+        with mock.patch.object(net, 'cached_json', return_value=None), mock.patch.object(today, 'today_overview', return_value=None), \
+                mock.patch.object(today, 'holy_windows', create=True, return_value=[]):
+            html = today.today_page()
+        self.assertIn('id="mb-imp-btn"', html)
+        self.assertRegex(html, r'data-imp="1"[^>]*data-name="דנה"')
+        self.assertRegex(html, r'data-imp="0"[^>]*data-name="Shop"')
+
+    def test_forgot_attachment_script(self):
+        from mailbrief.web import extras
+        self.assertIn('mb-attach-note', extras.HTML)
+        self.assertIn('מצורפ', extras.HTML)
+
+
 def message_b64(claims):
     import base64
     import json

@@ -77,6 +77,28 @@ def by_thread(rows, who='from'):
     return out
 
 
+IMPORTANT_CARDS = ('🔥', '⏳', '⭐', '📌', '💰', '⏰')        # urgent, waiting, VIP, deadlines, unpaid, reminders
+
+
+def important_senders():
+    """🎯 VIP addresses / domains, and the people you really correspond with (the clients list)."""
+    from mailbrief.features.history import client_groups
+    people = {vip.lower() for vip in vip_list()}
+    try:
+        for group in client_groups().values():
+            people |= {(h.get('sender') or '').lower() for h in group['emails'] if 'people' in h.get('cats', [])}
+    except Exception:
+        pass
+    return {p if '@' in p else '@' + p for p in people if p}
+
+
+IMPORTANT_TOGGLE = '''<style>main.mb-imp #today-grid>.box:not(.imp){display:none}main.mb-imp #today-grid li[data-imp="0"]{display:none}
+main.mb-imp #mb-imp-btn{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}</style>
+<script>(function(){var b=document.getElementById('mb-imp-btn'),m=document.querySelector('main');if(!b||!m)return;
+function set(on){m.classList.toggle('mb-imp',on);b.textContent=on?'🎯 רק חשוב ✓ (להציג הכול)':'🎯 רק חשוב';try{localStorage.setItem('mb-imp',on?'1':'');}catch(e){}}
+var on=false;try{on=localStorage.getItem('mb-imp')==='1';}catch(e){}set(on);b.onclick=function(){set(!m.classList.contains('mb-imp'));};})();</script>'''
+
+
 def deadline_row(key, d):
     """📌 "by 15/10" from an email: the date, what, from whom — ✓ when done."""
     when = dt.date.fromisoformat(d['date'])
@@ -133,7 +155,9 @@ def today_page(msg='', show_all=False, print_now=False):
     wanted = set(goals())
     def want(*keys):
         return show_all or not keys or bool(wanted & set(keys))
-    card = lambda title, body: f'<div class="box" style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px"><h3 style="margin:0 0 8px">{title}</h3>{body}</div>'
+    card = lambda title, body: (f'<div class="box{" imp" if title.startswith(IMPORTANT_CARDS) else ""}" style="background:var(--surface);border:1px solid var(--line);'
+                                f'border-radius:16px;padding:16px 18px"><h3 style="margin:0 0 8px">{title}</h3>{body}</div>')
+    important = important_senders()
     snap = load_json(config.SNAPSHOT_FILE, {})
     box = current_account()
     snap = {k: ([r for r in v if mine(r, current=box)] if isinstance(v, list) else v) for k, v in snap.items()}
@@ -172,7 +196,7 @@ def today_page(msg='', show_all=False, print_now=False):
             f'<input name="title" required maxlength="300" placeholder="משימה חדשה" style="flex:1;min-width:120px;{field}">'
             f'<input type="date" name="due" style="{field}" title="תאריך יעד (לא חובה)"><button style="{SMALL}">➕</button></form>'
             '<div class="muted" style="font-size:12px;margin-top:4px"><a href="https://tasks.google.com/" target="_blank">פתיחת Google Tasks</a></div>')
-    def mail_row(r, tail, remind=False):
+    def mail_row(r, tail, remind=False, imp=False):
         title = f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:70])}</a>' if r.get('link') else e(r['subject'][:70])
         button = (f'<form method="post" action="/remind" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
                   + ''.join(f'<input type="hidden" name="{k}" value="{e(str(r.get(v, "")))}">' for k, v in
@@ -208,7 +232,9 @@ def today_page(msg='', show_all=False, print_now=False):
                        '<option value="now">לשלוח עכשיו</option><option value="after_holy">🕯️ אחרי שבת/חג</option><option value="tomorrow8">🌅 מחר 8:00</option></select>'
                        f'<button style="{SMALL};background:var(--accent);color:#fff;border-color:var(--accent)">✉️ שליחה</button></div></form></details>')
         button += dismiss_button(r)
-        return (f'<li dir="auto" data-days="{r.get("days", 0)}" data-name="{e(r["from"])}" data-account="{e(r.get("account", ""))}">'
+        sender = (r.get('sender') or '').lower()
+        imp = imp or sender in important or '@' + sender.rsplit('@', 1)[-1] in important
+        return (f'<li dir="auto" data-imp="{int(imp)}" data-days="{r.get("days", 0)}" data-name="{e(r["from"])}" data-account="{e(r.get("account", ""))}">'
                 f'{dot(r.get("account", ""))}{title}{thread} <span class="muted">— {e(r["from"])} · {tail}</span>{button}</li>')
     to_sort = len(queue())
     scheduled = [m for m in outbox() if m['status'] == 'waiting']
@@ -218,7 +244,9 @@ def today_page(msg='', show_all=False, print_now=False):
                  + (f' ({len(scheduled)} ממתינים)' if scheduled else '') + '</button></a>'
                  + '<a href="/greetings"><button type="button" class="ghost">🗓️ ברכות חג</button></a>'
                  + '<a href="/files"><button type="button" class="ghost">📎 קבצים</button></a>'
-                 + '<button type="button" class="ghost no-print" onclick="window.print()" title="הדפסה / שמירה כ-PDF">🖨️ הדפסה</button></div>')
+                 + '<button type="button" class="ghost no-print" onclick="window.print()" title="הדפסה / שמירה כ-PDF">🖨️ הדפסה</button>'
+                 + '<button type="button" class="ghost no-print" id="mb-imp-btn" title="רק דחוף, VIP ולקוחות — כל השאר מוסתר">🎯 רק חשוב</button></div>'
+                 + IMPORTANT_TOGGLE)
     sleeping = [s for s in snoozed() if mine(s, current=box)]
     snoozed_card = card('💤 בנודניק', '<ul style="margin:0;padding-inline-start:18px">' + ''.join(
         f'<li dir="auto">{dot(s["account"])}{e(s["subject"][:60])} <span class="muted">— חוזר {dt.datetime.fromisoformat(s["until"]):%d/%m %H:%M}</span>'
@@ -243,7 +271,7 @@ def today_page(msg='', show_all=False, print_now=False):
         f'<form method="post" action="/reminder_delete" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
         f'<input type="hidden" name="id" value="{e(r["id"])}"><button style="font:inherit;font-size:12px;padding:0 6px;margin:0 4px;border:0;background:transparent;color:var(--muted);cursor:pointer">✕</button></form></li>'
         for r in sorted((r for r in load_json(config.REMINDERS_FILE, []) if mine(r, current=box)), key=lambda r: r['due'])[:8]) or '<li class="muted">אין תזכורות</li>'
-    urgent = ''.join(mail_row(r, e(r['why'])) for r in snap.get('urgent', [])[:6]) or '<li class="muted">אין משהו דחוף</li>'
+    urgent = ''.join(mail_row(r, e(r['why']), imp=True) for r in snap.get('urgent', [])[:6]) or '<li class="muted">אין משהו דחוף</li>'
 
     added = set(load_json(config.CACHE_FILE, {}).get('invites_added', []))
     def invite_row(i):
@@ -305,6 +333,12 @@ def today_page(msg='', show_all=False, print_now=False):
             expected.append(f'<li dir="auto">{e(s["vendor"])} — בערך {nxt:%d/%m}'
                             f'{f" · {e(s["currency"])}{s["amount"]}" if s["amount"] is not None else ""}</li>')
 
+    from mailbrief.features.renewals import yearly_renewals
+    for rn in yearly_renewals(ahead=30):
+        expected.append(f'<li dir="auto" style="color:var(--warn)">📆 {e(rn["vendor"])} — חידוש שנתי בערך {rn["next"]:%d/%m}'
+                        f'{f" · {e(rn["currency"])}{rn["amount"]:g}" if rn["amount"] is not None else ""}'
+                        f' <span class="muted">(אפשר לבטל או להשוות לפני)</span></li>')
+
     projects = project_pulse()
     dirty = ''.join(f'<li><span dir="ltr">{e(p["name"])}</span> — {p["dirty"]} קבצים לא שמורים <span class="muted">({e(p["branch"])})</span></li>'
                     for p in sorted(projects, key=lambda p: -p['dirty']) if p['dirty']) or ('<li class="muted">כל הפרויקטים נקיים ✓</li>' if projects_root() else
@@ -326,7 +360,7 @@ a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;b
 <p class="muted" style="font-style:italic">🥠 {e(fortune)}</p>{update_banner()}{vacation_note}{f'<div class="item urgent">{e(msg)}</div>' if msg else ''}
 {f'<p class="pill" style="display:inline-block;font-size:14px;margin:8px 0 0">🔥 {streak} ימים ברצף בלי אף אחד שמחכה לתשובה ממך</p>' if streak >= 2 else ''}
 {quick_bar}
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px">
+<div id="today-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px">
 {card(f"🌤️ מזג האוויר ב{e(city)}", f'<div>{weather}</div><form method="post" action="/set_city" style="margin-top:8px"><input type="hidden" name="t" value="{TOKEN}"><select name="city" onchange="this.form.submit()" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{options}</select></form>')}
 {card("🕯️ שבת וחג", f'<ul style="margin:0;padding-inline-start:18px">{times or "<li class=muted>—</li>"}</ul><div style="font-size:13px;margin-top:6px">{e(holy_status())}</div><div class="muted" style="margin-top:8px;font-size:14px">בקרוב:</div><ul style="margin:0;padding-inline-start:18px;font-size:14px">{holidays or "<li class=muted>אין חגים בשלושת השבועות הקרובים</li>"}</ul>')}
 {calendar_card if want('calendar') else ''}{tasks_card if want('calendar') else ''}

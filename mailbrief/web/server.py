@@ -77,6 +77,9 @@ from mailbrief.features import setup
 from mailbrief.web.token import TOKEN
 
 
+UNDO_SEND = dt.timedelta(seconds=40)      # "send now" leaves this long to change your mind (↩️)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -492,8 +495,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if not text.strip():
                 raise RuntimeError('התשובה ריקה')
-            if when_choice == 'now':
-                result = f'✉️ נשלח ל-{reply_now(f.get("account", ""), f.get("message_id", ""), text)}'
+            if when_choice == 'now':                    # ↩️ goes out in about a minute — until then "undo" stops it
+                d = reply_details(f.get('account', ''), f.get('message_id', ''))
+                item = outbox.schedule(f['account'], d['to'], d['subject'], text, outbox.out_of_holy(dt.datetime.now().astimezone() + UNDO_SEND),
+                                       thread=d)
+                undo.record('send', f'✉️ התשובה ל-{d["to"]} יוצאת בעוד רגע', {'ids': [item['id']]})
+                result = f'✉️ התשובה ל-{d["to"]} יוצאת בעוד רגע (↩️ אפשר לבטל למעלה)'
             else:
                 when = outbox.when_for(when_choice)
                 d = reply_details(f.get('account', ''), f.get('message_id', ''))
@@ -733,7 +740,7 @@ class Handler(BaseHTTPRequestHandler):
         names = {a.lower(): n for a, n in load_json(draft_path(), {}).get('rows', [])} or {p['email']: p['name'] for p in people()}
         choice = f.get('when', 'now')
         try:
-            when = (outbox.out_of_holy(dt.datetime.now().astimezone() + dt.timedelta(minutes=1)) if choice == 'now'
+            when = (outbox.out_of_holy(dt.datetime.now().astimezone() + UNDO_SEND) if choice == 'now'
                     else outbox.when_for(choice, f.get('custom', '')))
             count = send_merge(f.get('account', ''), [(a, names.get(a.lower(), '')) for a in wanted], f.get('subject', ''),
                                f.get('body', ''), when, files=[x for x in f['_files'] if x[1]])
@@ -741,7 +748,24 @@ class Handler(BaseHTTPRequestHandler):
             return back(f'⚠️ {exc}')
         if os.path.exists(draft_path()):
             os.remove(draft_path())
+        queued = [m['id'] for m in outbox.outbox() if m['status'] == 'waiting'][-count:]
+        undo.record('send', f'📨 {count} מיילים אישיים בתור', {'ids': queued})
         return ('/compose?msg=' + quote(f'📨 {count} מיילים אישיים בתור — יוצאים מ-{when:%d/%m %H:%M} בסבבים של 25') + '#queue', None)
+
+    def post_payment_cfg(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        link = lambda v: v.strip()[:200] if v.strip().startswith('https://') else ''
+        settings['payment'] = {'bit': link(f.get('bit', '')), 'paybox': link(f.get('paybox', '')), 'bank': f.get('bank', '').strip()[:200]}
+        save_json(config.SETTINGS_FILE, settings)
+        from mailbrief.features.clientcare import payment_text
+        return '💳 פרטי התשלום יצורפו לכל תזכורת תשלום' if payment_text() else 'פרטי התשלום הוסרו מהתזכורות'
+
+    def post_holiday_reply(self, f):
+        settings = load_json(config.SETTINGS_FILE, {})
+        settings['holiday_reply'] = {'on': f.get('action') == 'on', 'message': f.get('message', '').strip()[:2000]}
+        save_json(config.SETTINGS_FILE, settings)
+        return ('🕯️ המענה האוטומטי בחגים פעיל — בסוכות ובפסח, פעם אחת לכל אדם' if settings['holiday_reply']['on']
+                else 'המענה האוטומטי בחגים כבוי')
 
     def post_block(self, f):
         from mailbrief.features.blocking import block
@@ -955,15 +979,15 @@ class Handler(BaseHTTPRequestHandler):
         return ('/compose?msg=' + quote(f'✓ נשמר · יישלח ב-{when:%d/%m %H:%M}') + '#queue', None)
 
     def post_schedule_now(self, f):
-        now = dt.datetime.now().astimezone()
+        now = dt.datetime.now().astimezone() + UNDO_SEND
         try:
             item = outbox.update(f.get('id', ''), send_at=now)
         except ValueError as exc:
             return ('/compose?msg=' + quote(f'⚠️ {exc}') + '#queue', None)
         if dt.datetime.fromisoformat(item['send_at']) > now + dt.timedelta(minutes=1):
             return ('/compose?msg=' + quote(f'🕯️ עכשיו שבת/חג — יישלח במוצאי ({dt.datetime.fromisoformat(item["send_at"]):%d/%m %H:%M})') + '#queue', None)
-        sent = outbox.send_due()
-        return ('/compose?msg=' + quote('📤 נשלח' if sent else '📡 אין כרגע חיבור — יישלח לבד כשהאינטרנט יחזור') + '#queue', None)
+        undo.record('send', f'📤 „{item["subject"][:40]}” יוצא בעוד רגע', {'ids': [item['id']]})
+        return ('/compose?msg=' + quote('📤 יוצא בעוד רגע (↩️ אפשר לבטל למעלה)') + '#queue', None)
 
     def post_schedule_cancel(self, f):
         outbox.cancel(f.get('id', ''))

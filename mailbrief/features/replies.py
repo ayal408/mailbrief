@@ -123,7 +123,8 @@ def vacation_active():
 
 def vacation_replies(acc, pairs, state):
     """Out-of-office: one reply per real person per vacation. Same protections as automatic replies."""
-    vac = vacation_active()
+    from mailbrief.features import holiday_reply
+    vac = vacation_active() or holiday_reply.active()
     if not vac:
         return 0
     start = dt.datetime.fromisoformat(vac['from']).astimezone()
@@ -140,7 +141,8 @@ def vacation_replies(acc, pairs, state):
                 or msg.get('X-MailBrief-Auto') or count_today + sent >= config.MAX_VACATION_REPLIES):
             continue
         back = dt.date.fromisoformat(vac['to']) + dt.timedelta(days=1)
-        text = fill(vac.get('message') or VACATION_DEFAULT, wf_context(acc, it) | {'to': f'{back:%d/%m}'})
+        text = fill(vac.get('message') or VACATION_DEFAULT, wf_context(acc, it) | {'to': f'{back:%d/%m}', 'holiday': vac.get('holiday', ''),
+                                                                               'חג': vac.get('holiday', '')})
         try:
             smtp.send_mail(acc, build_reply(msg, acc, text, auto=True))
             done.add(key)

@@ -117,3 +117,28 @@ def blocked_block():
 <form method="post" action="/block" style="display:flex;gap:8px;margin-top:8px">{_t()}
 <input type="text" name="who" dir="ltr" required placeholder="spam@example.com או @example.com" style="flex:1;{FIELD}">
 <button style="margin:0">🚫 חסימה</button></form>'''
+
+
+def payment_block():
+    c = load_json(config.SETTINGS_FILE, {}).get('payment') or {}
+    return f'''<details style="margin-top:10px"{' open' if not any(c.values()) else ''}><summary><b>💳 פרטי תשלום בתזכורות</b>{' ✓' if any(c.values()) else ''}</summary>
+<p class="muted" style="font-size:13px">מתווספים לכל תזכורת תשלום, כדי שהלקוח ישלם בלחיצה. אפשר לכתוב בנוסח התזכורת {{פרטי_תשלום}} כדי לבחור את המקום.</p>
+<form method="post" action="/payment_cfg" style="display:grid;gap:8px">{_t()}
+<input type="url" name="bit" dir="ltr" value="{e(c.get('bit', ''))}" placeholder="קישור Bit לתשלום — https://..." style="{FIELD}">
+<input type="url" name="paybox" dir="ltr" value="{e(c.get('paybox', ''))}" placeholder="קישור PayBox — https://payboxapp.page.link/..." style="{FIELD}">
+<input type="text" name="bank" value="{e(c.get('bank', ''))}" placeholder="פרטי חשבון: בנק, סניף, חשבון, על שם…" style="{FIELD}">
+<div><button style="margin:0">💾 שמירה</button></div></form></details>'''
+
+
+def holiday_reply_block():
+    from mailbrief.features.holiday_reply import DEFAULT, active, cfg
+    c = cfg()
+    now = active()
+    return f'''{_h('holidayreply', '🕯️ מענה אוטומטי בחגים')}
+<p class="muted">{'<b style="color:var(--good)">פעיל עכשיו — ' + e(now['holiday']) + '</b> · ' if now else ''}בסוכות ובפסח (מערב החג ועד היום האחרון) מי שכותב לך
+אישית מקבל מענה — פעם אחת לכל אדם בכל חג. התאריכים מהלוח העברי. בשבת ובחג עצמו לא נשלח כלום: המענה יוצא בחול המועד או מיד אחרי.
+<span dir="ltr">{{holiday}}</span> = שם החג, <span dir="ltr">{{to}}</span> = היום שחוזרים.</p>
+<form method="post" action="/holiday_reply" class="box" style="display:grid;gap:8px">{_t()}
+<textarea name="message" rows="4" style="{FIELD}">{e(c.get('message') or DEFAULT)}</textarea>
+<div><button name="action" value="on" style="margin:0">{'שמירה' if c.get('on') else '✅ הפעלה'}</button>
+{'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if c.get('on') else ''}</div></form>'''
