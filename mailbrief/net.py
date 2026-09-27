@@ -46,8 +46,8 @@ def netfree_block(exc):
     if code != 418 and 'NetFree' not in str(exc) and 'netfree' not in str(getattr(exc, 'reason', '')).lower():
         return ''
     host = urlparse(getattr(exc, 'url', None) or getattr(exc, 'filename', None) or '').hostname or ''
-    return (f'🛡️ נטפרי חסם את הגישה{" ל-" + host if host else ""} (קוד 418) — אפשר לבקש מנטפרי לפתוח את הכתובת'
-            ' (בטופס הבקשות שלהם), ואז לנסות שוב')
+    return (f'⛔ BLOCKED BY NETFREE — נחסם על ידי נטפרי{": " + host if host else ""} (קוד 418). '
+            'אפשר לבקש מנטפרי לפתוח את הכתובת (בטופס הבקשות שלהם), ואז לנסות שוב')
 
 
 def explain(exc):
