@@ -42,8 +42,7 @@ def online():
 
 def netfree_block(exc):
     """A filtered network (NetFree) answers a blocked address with HTTP 418. Returns a clear message, or '' when it isn't that."""
-    code = getattr(exc, 'code', None)
-    if code != 418 and 'NetFree' not in str(exc) and 'netfree' not in str(getattr(exc, 'reason', '')).lower():
+    if getattr(exc, 'code', None) != 418:                  # only NetFree's own "blocked" answer, nothing else
         return ''
     host = urlparse(getattr(exc, 'url', None) or getattr(exc, 'filename', None) or '').hostname or ''
     return (f'⛔ BLOCKED BY NETFREE — נחסם על ידי נטפרי{": " + host if host else ""} (קוד 418). '
