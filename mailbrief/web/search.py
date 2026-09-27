@@ -47,12 +47,13 @@ def pdf_results(query):
     if not hits:
         return ''
     rows = ''.join(
-        f'<div class="item"><div class="t" dir="auto">📄 {e(h["name"])} <span class="muted" style="font-size:12px">· {e(h["label"])}</span></div>'
+        f'<div class="item"><div class="t" dir="auto">{"🧾" if h.get("scan") else "📄"} {e(h["name"])} <span class="muted" style="font-size:12px">· {e(h["label"])}'
+        f'{" · נקרא מסריקה" if h.get("scan") else ""}</span></div>'
         + (f'<div class="s" dir="auto">…{e(h["snippet"])}…</div>' if h['snippet'] else '')
         + f'<form method="post" action="/open_file" style="margin:6px 0 0"><input type="hidden" name="t" value="{TOKEN}">'
           f'<input type="hidden" name="path" value="{e(h["path"])}"><input type="hidden" name="q" value="{e(query)}"><button class="ghost" style="margin:0;padding:4px 12px">פתיחה</button></form></div>'
         for h in hits)
-    return f'<h3>📄 בתוך קבצי PDF במחשב ({len(hits)})</h3><p class="muted" style="font-size:13px">קבלות, תיקיות לקוחות והורדות — נמצאה התאמה בתוך הקובץ עצמו.</p>{rows}'
+    return f'<h3>📄 בתוך קבצים במחשב ({len(hits)})</h3><p class="muted" style="font-size:13px">קבלות, תיקיות לקוחות והורדות — נמצאה התאמה בתוך הקובץ עצמו. קבלות סרוקות ותמונות: מספרים ואנגלית בלבד.</p>{rows}'
 
 
 def search_page(query):

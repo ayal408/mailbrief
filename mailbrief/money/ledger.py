@@ -9,7 +9,8 @@ from mailbrief.mail.classify import RX
 from mailbrief.mail.domains import FREE_MAIL
 from mailbrief.mail.message import decode
 from mailbrief.money.excel import write_xlsx
-from mailbrief.money.pdftext import total_from_pdf
+from mailbrief.features.ocr import IMAGES, ocr_files
+from mailbrief.money.pdftext import total_from_pdf, total_from_text
 from mailbrief.net import _PUBLIC_TLS
 from mailbrief.storage import load_json, save_json
 from mailbrief.util import safe_name, write_once
@@ -84,6 +85,22 @@ def update_ledger(results):
                         r['amount_from'] = 'pdf'
                         months.add(r['date'][:7])
                         break
+    scans = {}                                                    # 🧾 still no amount: a scanned receipt — Windows reads it
+    for key, r in ledger.items():
+        if r['amount'] is None and not r.get('ocr_checked') and len(scans) < 20:
+            r['ocr_checked'] = True
+            for rel in r.get('files', []):
+                if rel.lower().endswith(('.pdf',) + IMAGES):
+                    scans.setdefault(key, []).append(os.path.join(config.RECEIPTS_DIR, rel))
+    if scans:
+        read = ocr_files([p for paths in scans.values() for p in paths])
+        for key, paths in scans.items():
+            for path in paths:
+                amount, currency = parse_amount(total_from_text(read.get(path, '')))
+                if amount is not None:
+                    ledger[key]['amount'], ledger[key]['currency'], ledger[key]['amount_from'] = amount, currency, 'scan'
+                    months.add(ledger[key]['date'][:7])
+                    break
         if r['currency'] in BOI_CODES and r['amount'] is not None and r.get('amount_ils') is None:
             rate = boi_rate(r['currency'], r['date'])
             if rate:

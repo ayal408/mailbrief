@@ -146,6 +146,11 @@ def total_from_pdf(data):
         text = pdf_text(data)
     except Exception:
         return ''
+    return total_from_text(text)
+
+
+def total_from_text(text):
+    """The same, from any text (a PDF's, or what Windows read off a scanned receipt)."""
     best = None
     for found in TOTAL.finditer(text):
         number = found.group('a1') or found.group('a2')

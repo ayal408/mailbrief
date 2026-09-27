@@ -1741,6 +1741,92 @@ class Batch9(Isolated):
         self.assertIn('#mb-imp-btn', extras.HTML)
 
 
+OCR_PNG = (   # "Invoice 4471 / Total 118.00 ILS", drawn in Arial — for the real Windows text-recognition test
+    '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')
+
+
+class ScannedReceipts(Isolated):
+    def test_windows_reads_a_picture(self):
+        import base64
+        from mailbrief.features import ocr
+        path = os.path.join(config.DATA, 'scan.png')
+        with open(path, 'wb') as f:
+            f.write(base64.b64decode(OCR_PNG))
+        text = ocr.ocr_file(path)
+        if not text:
+            self.skipTest('Windows text recognition is not available on this machine')
+        self.assertIn('4471', text)
+        self.assertIn('118.00', text)
+
+    def test_amount_of_a_scanned_receipt(self):
+        from mailbrief.money import ledger as ledger_mod
+        from mailbrief.money.pdftext import total_from_text
+        self.assertEqual(total_from_text('Invoice 4471\nTotal 118.00 ILS'), '₪118.00')
+        self.assertEqual(total_from_text("pn n'np"), '')
+        os.makedirs(os.path.join(config.RECEIPTS_DIR, '2026-09'))
+        with open(os.path.join(config.RECEIPTS_DIR, '2026-09', 'scan.jpg'), 'wb') as f:
+            f.write(b'fake')
+        rows = {'k': {'date': '2026-09-20', 'vendor': 'Shop', 'vendor_key': 'shop.co.il', 'subject': 'קבלה', 'amount': None, 'currency': '',
+                      'files': ['2026-09/scan.jpg'], 'book': 'אחר'}}
+        storage.save_json(config.LEDGER_FILE, rows)
+        found = {os.path.join(config.RECEIPTS_DIR, '2026-09/scan.jpg'): 'RECEIPT Total 118.00 ILS'}
+        with mock.patch.object(ledger_mod, 'ocr_files', return_value=found) as read,                 mock.patch.object(ledger_mod, 'write_month_xlsx', create=True):
+            result = ledger_mod.update_ledger([])
+        row = result['k']
+        self.assertEqual((row['amount'], row['currency'], row['amount_from']), (118.0, '₪', 'scan'))
+        read.assert_called_once()
+
+    def test_scans_are_searchable(self):
+        from mailbrief.features import pdfsearch
+        os.makedirs(config.RECEIPTS_DIR)
+        path = os.path.join(config.RECEIPTS_DIR, 'photo.jpg')
+        with open(path, 'wb') as f:
+            f.write(b'fake')
+        with mock.patch.object(pdfsearch, 'ocr_files', return_value={path: 'Invoice 4471 Total 118.00'}) as read:
+            hits = pdfsearch.search('4471')
+            pdfsearch.search('4471')
+        self.assertEqual([(h['name'], h['scan']) for h in hits], [('photo.jpg', True)])
+        read.assert_called_once()                                                        # read once, then from the index
+
+
 def message_b64(claims):
     import base64
     import json
