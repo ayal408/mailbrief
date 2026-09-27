@@ -26,9 +26,14 @@ def write_if_changed(path, text):
 
 
 if __name__ == '__main__':
-    # the sign-in illustration: the same picture as in the program's guide
-    if write_if_changed(os.path.join(ROOT, 'docs', 'google-signin.svg'), SVG + '\n'):
-        print('docs/google-signin.svg updated')
+    # the sign-in illustration, the same picture as in the program's guide — written into the page itself (filtered
+    # networks such as NetFree block .svg files, but not a picture that is part of the page)
+    page = os.path.join(ROOT, 'docs', 'index.html')
+    html = open(page, encoding='utf-8').read()
+    start, end = '<!--signin-svg-->', '<!--/signin-svg-->'
+    a, b = html.index(start) + len(start), html.index(end)
+    if write_if_changed(page, html[:a] + SVG + html[b:]):
+        print('docs/index.html: sign-in picture updated')
     path = os.path.join(ROOT, 'docs', 'features.json')
     text = json.dumps(data(), ensure_ascii=False, indent=1) + '\n'
     old = open(path, encoding='utf-8').read() if os.path.exists(path) else ''
