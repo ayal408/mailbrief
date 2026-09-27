@@ -102,7 +102,8 @@ def boxes_section():
 <form method="post" action="/run">{_t()}<button>▶ הרצה עכשיו{' — ' + e(view.current_account()) if view.current_account() else (' — כל התיבות' if len(accounts) > 1 else '')}</button></form>
 <h3>דוחות אחרונים</h3><ul>{rep}</ul></section>
 <section class="box"><h3 style="margin-top:0">➕ חיבור תיבה</h3>
-<p class="muted" style="margin-top:0">כמו „התחברות עם Google” באתרים: נפתח חלון התחברות, מאשרים — וזהו. בלי סיסמאות.</p>
+<p class="muted" style="margin-top:0">כמו „התחברות עם Google” באתרים: נפתח חלון התחברות, מאשרים — וזהו. בלי סיסמאות.
+<br><a href="/help#google">❓ מופיע „Google לא אימתה את האפליקציה”? זה צפוי — 3 לחיצות</a></p>
 <form method="post" action="/connect">{_t()}
 <button name="provider" value="google" {'' if google_ready else 'disabled title="קודם הגדרה חד-פעמית (בלשונית 🔌 חיבורים)"'}>🔵 חיבור עם Google</button>
 <button name="provider" value="microsoft" {'' if ms_ready else 'disabled title="קודם הגדרה חד-פעמית (בלשונית 🔌 חיבורים)"'}>🟦 חיבור עם Microsoft</button></form>

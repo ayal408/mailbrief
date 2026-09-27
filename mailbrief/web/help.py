@@ -5,6 +5,7 @@ from mailbrief.features.maintenance import health_checks, list_backups
 from mailbrief.util import e
 from mailbrief import __version__, config
 from mailbrief.profile import g
+from mailbrief.web import signin_help
 from mailbrief.web.layout import heading, page
 from mailbrief.web.token import TOKEN
 
@@ -89,6 +90,10 @@ def help_page(msg=''):
 <h3>מה יש כאן</h3>{guide}
 <h3>💾 גיבויים</h3><p class="muted">כל הריצה השבועית שומרת גיבוי של הכללים, האוטומציות, התבניות, הקבלות וההיסטוריה (10 אחרונים). לפני כל שחזור נשמר גיבוי נוסף.</p>
 <div class="scroll"><table><tbody>{backups}</tbody></table></div>
+<h3 id="google">🔐 מסך „Google לא אימתה את האפליקציה”</h3>
+<p class="muted">{e(signin_help.WHY)}</p>
+<div style="max-width:760px;margin:10px 0">{signin_help.SVG}</div>
+<ol style="line-height:1.9">{''.join(f'<li>{e(s)}</li>' for s in signin_help.STEPS)}</ol>
 <h3 id="report">📋 משהו לא עובד?</h3>
 <p class="muted">„דוח תקלה” שומר בשולחן העבודה קובץ zip עם הגרסה, פרטי Windows, בדיקת התקינות ויומן השגיאות — <b>בלי</b> תוכן של מיילים,
 סיסמאות או מפתחות, והכתובות מוסתרות (a***@gmail.com). שום דבר לא נשלח לבד: {g('את מחליטה', 'אתה מחליט', 'מחליטים')} אם ולמי לשלוח אותו.</p>

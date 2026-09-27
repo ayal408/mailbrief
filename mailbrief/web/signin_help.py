@@ -1,0 +1,43 @@
+"""❓ "Google hasn't verified this app" — why the screen appears on the first Google sign-in, and the 3 clicks past it.
+One illustration (a simple diagram, not a copy of Google's page) for the guide and for the website (tools/site_data.py)."""
+
+SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" role="img" aria-label="שלושה צעדים: מתקדם, המשך אל MailBrief, אישור ההרשאות" font-family="Rubik, Arial, sans-serif" direction="rtl">
+<style>.card{fill:#fff;stroke:#d9d2c9;stroke-width:1.5}.t{font-size:15px;fill:#1d1a24;font-weight:700}.s{font-size:12.5px;fill:#6b6475}
+.hit{fill:none;stroke:#7c3aed;stroke-width:3}.num{fill:#7c3aed}.n{font-size:17px;fill:#fff;font-weight:700}.cap{font-size:15px;fill:#1d1a24;font-weight:600}
+.link{font-size:13.5px;fill:#1a73e8;font-weight:600}.btn{fill:#1a73e8}.bt{font-size:13px;fill:#fff;font-weight:600}.warn{font-size:26px}</style>
+<rect width="960" height="330" rx="18" fill="#fbf7f2"/>
+<g transform="translate(650,20)"><rect class="card" width="290" height="230" rx="12"/>
+<text class="warn" x="258" y="42" text-anchor="start">⚠️</text>
+<text class="t" x="270" y="78" text-anchor="start">Google לא אימתה את האפליקציה</text>
+<text class="s" x="270" y="100" text-anchor="start">Google hasn’t verified this app</text>
+<text class="s" x="270" y="124" text-anchor="start">האפליקציה מבקשת גישה למידע רגיש…</text>
+<rect class="btn" x="20" y="176" width="120" height="34" rx="17"/><text class="bt" x="80" y="198" text-anchor="middle">חזרה</text>
+<text class="link" x="270" y="198" text-anchor="start">מתקדם · Advanced</text>
+<rect class="hit" x="150" y="178" width="128" height="30" rx="8"/></g>
+<g transform="translate(335,20)"><rect class="card" width="290" height="230" rx="12"/>
+<text class="s" x="270" y="44" text-anchor="start">מתקדם ▲</text>
+<text class="s" x="270" y="72" text-anchor="start">המשיכו רק אם אתם סומכים</text>
+<text class="s" x="270" y="92" text-anchor="start">על המפתח (כאן: קוד פתוח, רץ אצלכם)</text>
+<text class="link" x="270" y="140" text-anchor="start">המשך אל MailBrief (לא בטוח)</text>
+<text class="s" x="270" y="160" text-anchor="start">Go to MailBrief (unsafe)</text>
+<rect class="hit" x="40" y="120" width="240" height="50" rx="8"/></g>
+<g transform="translate(20,20)"><rect class="card" width="290" height="230" rx="12"/>
+<text class="t" x="270" y="44" text-anchor="start">MailBrief מבקש גישה</text>
+<text class="s" x="270" y="76" text-anchor="start">☑ קריאה ושליחה של מייל</text>
+<text class="s" x="270" y="98" text-anchor="start">☑ יומן ומשימות (אם ביקשתם)</text>
+<rect class="btn" x="120" y="176" width="150" height="34" rx="17"/><text class="bt" x="195" y="198" text-anchor="middle">המשך · Continue</text>
+<rect class="hit" x="114" y="171" width="162" height="44" rx="20"/></g>
+<g><circle class="num" cx="795" cy="283" r="16"/><text class="n" x="795" y="289" text-anchor="middle">1</text>
+<text class="cap" x="770" y="289" text-anchor="start">מתקדם</text>
+<circle class="num" cx="480" cy="283" r="16"/><text class="n" x="480" y="289" text-anchor="middle">2</text>
+<text class="cap" x="455" y="289" text-anchor="start">המשך אל MailBrief</text>
+<circle class="num" cx="165" cy="283" r="16"/><text class="n" x="165" y="289" text-anchor="middle">3</text>
+<text class="cap" x="140" y="289" text-anchor="start">המשך</text>
+<text class="s" x="940" y="318" text-anchor="start">איור להמחשה — המסך האמיתי של Google נראה מעט אחרת</text></g>
+</svg>'''
+
+WHY = ('בחיבור הראשון עם Google מופיע מסך „Google לא אימתה את האפליקציה הזו”. זה צפוי: כל תוכנה שקוראת מייל צריכה, לפי Google, '
+       'בדיקת אבטחה חיצונית בתשלום שנתי — ו-MailBrief הוא תוכנה חינמית שרצה רק אצלך, בלי שרת, והקוד שלה פתוח לכל אחד ב-GitHub. '
+       'ההתחברות עצמה היא ישירות מול Google, והסיסמה שלך לא עוברת דרך MailBrief. אפשר לבטל את הגישה בכל רגע ב-myaccount.google.com/permissions.')
+
+STEPS = ['לוחצים „מתקדם” (Advanced) בתחתית המסך', 'לוחצים „המשך אל MailBrief (לא בטוח)” — Go to MailBrief (unsafe)', 'מאשרים את ההרשאות ולוחצים „המשך”']
