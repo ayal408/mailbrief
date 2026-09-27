@@ -21,6 +21,20 @@ def _preview(choice):
         return ''
 
 
+def edit_form(m):
+    """✏️ Change a mail that still waits — who, what and when."""
+    field = 'font:inherit;font-size:14px;padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%'
+    at = dt.datetime.fromisoformat(m['send_at']).strftime('%Y-%m-%dT%H:%M')
+    return (f'<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px;color:var(--accent)">✏️ עריכה</summary>'
+            f'<form method="post" action="/schedule_edit" style="display:grid;gap:6px;margin-top:6px;min-width:280px">'
+            f'<input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="id" value="{e(m["id"])}">'
+            f'<input type="text" name="to" dir="ltr" value="{e(", ".join(m["to"]))}" style="{field}" aria-label="אל">'
+            f'<input type="text" name="subject" value="{e(m["subject"])}" style="{field}" aria-label="נושא">'
+            f'<textarea name="body" rows="5" style="{field}" aria-label="תוכן">{e(m["body"])}</textarea>'
+            f'<label style="margin:0;font-size:13px">מתי<input type="datetime-local" name="at" value="{at}" style="{field}"></label>'
+            f'<div><button style="margin:0;padding:6px 16px">💾 שמירה</button></div></form></details>')
+
+
 def compose_page(msg='', to='', subject='', body=''):
     accounts = load_json(config.ACCOUNTS_FILE, [])
     field = 'font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%'
@@ -29,8 +43,12 @@ def compose_page(msg='', to='', subject='', body=''):
     rows = ''.join(
         f'<tr><td dir="auto"><b>{e(m["subject"] or "(בלי נושא)")}</b><div class="muted" dir="ltr" style="font-size:12px;text-align:right">'
         f'{e(", ".join(m["to"]))}</div>' + (f'<div class="muted" style="font-size:12px">📎 {e(", ".join(m["files"]))}</div>' if m.get('files') else '')
-        + f'</td><td>{dt.datetime.fromisoformat(m["send_at"]):%d/%m %H:%M}</td><td>'
-        + ({'waiting': f'<form method="post" action="/schedule_cancel" style="margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+        + ('<div style="font-size:12px;color:var(--warn)">📡 ממתין לחיבור לאינטרנט — יישלח לבד כשיחזור</div>' if m.get('retry') and m['status'] == 'waiting' else '')
+        + (edit_form(m) if m['status'] == 'waiting' else '')
+        + f'</td><td>{dt.datetime.fromisoformat(m["send_at"]):%d/%m %H:%M}</td><td style="white-space:nowrap">'
+        + ({'waiting': f'<form method="post" action="/schedule_now" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                       f'<input type="hidden" name="id" value="{e(m["id"])}"><button class="ghost" style="margin:0;padding:5px 12px" title="לשלוח עכשיו במקום לחכות">📤 עכשיו</button></form> '
+                       f'<form method="post" action="/schedule_cancel" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
                        f'<input type="hidden" name="id" value="{e(m["id"])}"><button class="ghost" style="margin:0;padding:5px 12px">ביטול</button></form>',
             'sent': '<span style="color:var(--good)">✓ נשלח</span>', 'cancelled': '<span class="muted">בוטל</span>'}
            .get(m['status'], f'<span style="color:var(--bad)">⚠️ {e(m.get("error", ""))}</span>'))
@@ -59,6 +77,6 @@ b.value=v;s.value='';b.focus();}};}})();</script>
 <input type="datetime-local" name="custom" min="{minimum}" style="font:inherit;padding:6px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"></label>
 </div>
 <div><button>⏳ לתזמן</button> <a href="/greetings" style="margin-inline-start:12px">🗓️ ברכות חג ללקוחות ←</a></div></form>
-<h3>המיילים המתוזמנים</h3>
+<h3 id="queue">📤 המיילים המתוזמנים</h3>
 {f'<div class="scroll"><table><tbody>{rows}</tbody></table></div>' if rows else '<p class="muted">עוד אין</p>'}
 <p class="muted" style="font-size:13px">השליחה נעשית מהמחשב: כש-MailBrief פתוח (או ליד השעון) — תוך דקתיים מהזמן; אחרת בבדיקה השעתית הבאה.</p>''')

@@ -8,7 +8,7 @@ import secrets
 import shutil
 from email.message import EmailMessage
 
-from mailbrief import config
+from mailbrief import config, net
 from mailbrief.features.calendar import holy_windows, is_holy_time
 from mailbrief.mail import smtp
 from mailbrief.storage import load_json, save_json
@@ -88,6 +88,36 @@ def cancel(item_id):
     save_json(config.OUTBOX_FILE, items)
 
 
+def update(item_id, to=None, subject=None, body=None, send_at=None):
+    """Change a mail that still waits: recipients, subject, text or time (a Shabbat/Yom Tov time moves to its end)."""
+    items = outbox()
+    it = next((m for m in items if m['id'] == item_id and m['status'] == 'waiting'), None)
+    if not it:
+        raise ValueError('המייל כבר נשלח או בוטל')
+    if to is not None:
+        to = [a.strip() for a in re.split(r'[,;\s]+', to) if a.strip()]
+        if not to or not all(EMAIL.fullmatch(a) for a in to):
+            raise ValueError('כתובת הנמען לא נראית תקינה')
+        it['to'] = to
+    if subject is not None:
+        it['subject'] = subject.strip()[:300]
+    if body is not None:
+        it['body'] = body[:50000]
+    if send_at is not None:
+        it['send_at'] = out_of_holy(send_at).isoformat(timespec='minutes')
+    it.pop('retry', None)
+    save_json(config.OUTBOX_FILE, items)
+    return it
+
+
+def with_signature(body, acc):
+    """The mailbox's own signature at the end — unless the text already has it."""
+    sig = (acc.get('signature') or '').strip()
+    if not sig or sig in body:
+        return body
+    return body.rstrip() + '\n\n-- \n' + sig
+
+
 def build(item, acc):
     msg = EmailMessage()
     msg['From'], msg['To'], msg['Subject'] = acc['email'], ', '.join(item['to']), item['subject']
@@ -95,8 +125,9 @@ def build(item, acc):
     for header, key in (('In-Reply-To', 'in_reply_to'), ('References', 'references')):
         if (item.get('thread') or {}).get(key):
             msg[header] = item['thread'][key]
-    msg.set_content(item['body'])
-    msg.add_alternative(f'<div dir="auto" style="font-family:Arial;white-space:pre-wrap">{e(item["body"])}</div>', subtype='html')
+    body = with_signature(item['body'], acc)
+    msg.set_content(body)
+    msg.add_alternative(f'<div dir="auto" style="font-family:Arial;white-space:pre-wrap">{e(body)}</div>', subtype='html')
     for name in item.get('files', []):
         path = os.path.join(config.DATA, 'outbox-files', item['id'], name)
         with open(path, 'rb') as f:
@@ -110,6 +141,8 @@ def send_due(accounts=None, now=None):
     """Sends every scheduled mail whose time came (never during Shabbat / Yom Tov). Returns how many went out."""
     now = now or _now()
     if is_holy_time(now):
+        return 0
+    if not net.online():                               # no internet: everything simply waits, and goes out when it's back
         return 0
     accounts = load_json(config.ACCOUNTS_FILE, []) if accounts is None else accounts
     items, sent = outbox(), 0
@@ -125,7 +158,12 @@ def send_due(accounts=None, now=None):
             smtp.send_mail(acc, build(it, acc))
             it['status'], it['sent'] = 'sent', now.isoformat(timespec='minutes')
             sent += 1
+        except (OSError, TimeoutError) as exc:           # the connection dropped midway: try again next round
+            it['retry'] = f'{now.isoformat(timespec="minutes")} · {str(exc)[:120]}'
         except Exception as exc:
+            if str(exc) == net.OFFLINE:
+                it['retry'] = f'{now.isoformat(timespec="minutes")} · {net.OFFLINE}'
+                continue
             it['status'], it['error'] = 'failed', str(exc)[:200]
     for it in items:                                  # sent or cancelled: their copies of the files can go
         if it['status'] in ('sent', 'cancelled') and it.get('files'):

@@ -58,6 +58,24 @@ def clients_page():
  '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה בדף „📈 במספרים”.</p>'}''')
 
 
+def phone_card(key, g):
+    """📞 The number from the client's email signature — call or WhatsApp; can be typed or corrected by hand."""
+    from mailbrief.features.contacts import phone_of, pretty, whatsapp
+    senders = list(dict.fromkeys(h['sender'] for h in reversed(g['emails']) if h.get('sender')))
+    if not senders:
+        return ''
+    phone = phone_of(*senders)
+    buttons = (f'<a class="pill" style="font-size:15px;padding:5px 14px;text-decoration:none" href="tel:{phone}">📞 {pretty(phone)}</a>'
+               + (f' <a class="pill" style="font-size:15px;padding:5px 14px;text-decoration:none;color:#16a34a;border-color:#16a34a" '
+                  f'href="{whatsapp(phone)}" target="_blank">💬 WhatsApp</a>' if whatsapp(phone) else '')) if phone else         '<span class="muted">עוד לא נמצא מספר בחתימות של המיילים — אפשר להוסיף ידנית:</span>'
+    return (f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0">{buttons}'
+            f'<details style="display:inline-block"><summary style="cursor:pointer;font-size:13px;color:var(--muted)">✏️</summary>'
+            f'<form method="post" action="/client_phone" style="display:flex;gap:6px;margin-top:6px"><input type="hidden" name="t" value="{TOKEN}">'
+            f'<input type="hidden" name="key" value="{e(key)}"><input type="hidden" name="address" value="{e(senders[0])}">'
+            f'<input type="tel" name="phone" dir="ltr" value="{e(phone)}" placeholder="050-0000000" style="font:inherit;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:150px">'
+            f'<button style="margin:0;padding:6px 14px">💾</button></form></details></div>')
+
+
 def client_page(key):
     g = client_groups().get(key)
     if not g:
@@ -81,6 +99,7 @@ def client_page(key):
 <form method="post" action="/search_download" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="q" value="{e(g["query"])}">
 <button>📥 הורדת כל הקבצים</button></form>
 <a href="/client_summary?key={quote(key)}"><button type="button" class="ghost" style="background:transparent;color:var(--ink);border:1px solid var(--line)">📨 סיכום חודשי ללקוח</button></a></div>
+{phone_card(key, g)}
 <h3>📝 הערות</h3>
 <form method="post" action="/client_note"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="key" value="{e(key)}">
 <textarea name="note" rows="4" placeholder="מה חשוב לזכור על הלקוח: מחירים שסוכמו, איש קשר, העדפות…" style="width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{e(load_json(os.path.join(config.DATA, 'client-notes.json'), {}).get(key, ''))}</textarea>

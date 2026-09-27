@@ -43,7 +43,10 @@ th,td{text-align:start;padding:9px 12px;border-bottom:1px solid var(--line);font
 .hero .tag{color:var(--muted);font-size:18px;margin:0;min-height:28px}
 .caret{display:inline-block;width:2px;height:1em;background:var(--accent);vertical-align:-2px;margin-inline-start:2px;animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
-.hero .corner{position:absolute;top:14px;inset-inline-end:16px;display:flex;gap:6px;align-items:center}
+.hero .corner{position:absolute;top:14px;inset-inline-end:16px;display:flex;gap:8px;align-items:center}
+.hero .corner>:not(.fchip),.hero .corner>.fchip.on{height:32px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:5px;line-height:1}
+.hero .corner .kbtn{border-style:solid;background:var(--surface);font-size:13px;padding:0 12px}
+.hero .corner .fchip.on{padding:0 12px}.hero .corner .tbtn{width:32px}
 nav.tabs{position:sticky;top:0;z-index:5;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:10px 16px;margin:0 0 14px;transition:background-color .2s}
 nav.tabs.stuck{background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 1px 0 var(--line)}
 nav.tabs a{font-size:16px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 18px;border-radius:999px;text-decoration:none;
@@ -51,7 +54,7 @@ transition:.15s;white-space:nowrap}
 nav.tabs a:hover{border-color:var(--accent);transform:translateY(-1px)}
 nav.tabs a.on{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 35%,transparent)}
 .mbxs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:-4px 16px 16px}
-.mbx{font:inherit;font-size:13px;border:1px dashed var(--line);background:transparent;color:var(--muted);padding:4px 12px;border-radius:999px;cursor:pointer;margin:0}
+.mbx{font:inherit;font-size:13px;border:1px dashed var(--line);background:transparent;color:var(--muted);padding:4px 12px;border-radius:999px;cursor:pointer;margin:0;display:inline-flex;align-items:center}
 .mbx:hover{border-color:var(--accent);color:var(--ink);filter:none}.mbx.on{border-style:solid;border-color:var(--accent);color:var(--ink);background:var(--surface);font-weight:500}
 @media(max-width:760px){nav.tabs{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}nav.tabs::-webkit-scrollbar{display:none}
 .hero{padding-top:56px}.hero .gift{font-size:48px}.hero .tag{font-size:16px}}

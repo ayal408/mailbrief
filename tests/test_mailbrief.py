@@ -1216,6 +1216,85 @@ class Tls(unittest.TestCase):
             self.assertIn('TLS', inspect.getsource(module))
 
 
+class Batch4(Isolated):
+    def test_phone_from_signature(self):
+        from mailbrief.features import contacts
+        text = 'שלום, מצורף.\n\nבברכה,\nדנה כהן\nנייד: 050-123 4567\n\nOn Mon, someone wrote:\n> 052-9999999'
+        self.assertEqual(contacts.find_phone(text), '0501234567')                   # the quoted part is someone else's
+        self.assertEqual(contacts.find_phone('תודה\n+972-54-7654321'), '0547654321')
+        self.assertEqual(contacts.find_phone('הזמנה 123456789012'), '')
+        self.assertEqual(contacts.whatsapp('0501234567'), 'https://wa.me/972501234567')
+        self.assertEqual(contacts.whatsapp('031234567'), '')                          # a landline has no WhatsApp
+
+    def test_learn_keeps_a_number_typed_by_hand(self):
+        from mailbrief.features import contacts
+        msg = mk('Dana <dana@client.co.il>', 'פגישה', 'נדבר\nדנה\n050-1234567')
+        contacts.learn([({'cats': ['people'], 'sender': 'dana@client.co.il'}, msg)])
+        self.assertEqual(contacts.phone_of('Dana@client.co.il'), '0501234567')
+        contacts.set_phone('dana@client.co.il', '054-1111111')
+        contacts.learn([({'cats': ['people'], 'sender': 'dana@client.co.il'}, msg)])
+        self.assertEqual(contacts.phone_of('dana@client.co.il'), '0541111111')
+        contacts.learn([({'cats': ['newsletters'], 'sender': 'news@shop.com'}, mk('news@shop.com', 'x', 'call 050-2222222'))])
+        self.assertEqual(contacts.phone_of('news@shop.com'), '')
+
+    def _due(self):
+        from mailbrief.features import outbox
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@gmail.com', 'host': 'imap.gmail.com', 'signature': 'דנה · 050-1234567'}])
+        past = dt.datetime.now().astimezone() - dt.timedelta(minutes=5)
+        return outbox.schedule('me@gmail.com', 'a@b.co.il', 'שלום', 'גוף', past)
+
+    def test_outbox_waits_without_internet(self):
+        from mailbrief.features import outbox
+        item = self._due()
+        with mock.patch.object(outbox, 'is_holy_time', return_value=False), mock.patch.object(net, 'online', return_value=False), \
+                mock.patch.object(outbox.smtp, 'send_mail') as send:
+            self.assertEqual(outbox.send_due(), 0)
+            send.assert_not_called()
+        with mock.patch.object(outbox, 'is_holy_time', return_value=False), \
+                mock.patch.object(outbox.smtp, 'send_mail', side_effect=OSError('network is unreachable')):
+            self.assertEqual(outbox.send_due(), 0)                                  # dropped midway: tries again later
+        it = next(m for m in outbox.outbox() if m['id'] == item['id'])
+        self.assertEqual(it['status'], 'waiting')
+        self.assertIn('network', it['retry'])
+        with mock.patch.object(outbox, 'is_holy_time', return_value=False), mock.patch.object(outbox.smtp, 'send_mail') as send:
+            self.assertEqual(outbox.send_due(), 1)
+        body = send.call_args[0][1].get_body(('plain',)).get_content()
+        self.assertIn('-- \nדנה · 050-1234567', body)                              # the mailbox's signature
+
+    def test_outbox_edit(self):
+        from mailbrief.features import outbox
+        item = self._due()
+        later = dt.datetime.now().astimezone() + dt.timedelta(days=3)
+        with mock.patch.object(outbox, 'holy_windows', return_value=[]):
+            it = outbox.update(item['id'], 'x@y.com, z@y.com', 'חדש', 'טקסט', later)
+        self.assertEqual((it['to'], it['subject'], it['body']), (['x@y.com', 'z@y.com'], 'חדש', 'טקסט'))
+        with self.assertRaises(ValueError):
+            outbox.update(item['id'], to='not an address')
+        outbox.cancel(item['id'])
+        with self.assertRaises(ValueError):
+            outbox.update(item['id'], subject='x')
+        self.assertEqual(outbox.with_signature('שלום\n-- \nסיג', {'signature': 'סיג'}), 'שלום\n-- \nסיג')   # not twice
+
+    def test_month_report(self):
+        from mailbrief.web.month_report import month_report_page
+        storage.save_json(config.LEDGER_FILE, {'1': {'date': '2026-08-03', 'vendor': 'Bezeq', 'vendor_key': 'bezeq.co.il', 'amount': 118.0,
+                                                     'currency': '₪', 'subject': 'חשבונית', 'files': ['a.pdf']}})
+        html = month_report_page('2026-08')
+        self.assertIn('08/2026', html)
+        self.assertIn('Bezeq', html)
+        self.assertIn('₪18', html)                                                    # VAT inside 118
+        self.assertIn('window.print()', html)
+
+    def test_names_and_previews(self):
+        from mailbrief import view
+        from mailbrief.web.files import preview_page
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'a.b@gmail.com', 'host': 'imap.gmail.com', 'display_name': 'דנה'}])
+        self.assertIn('דנה', view.label('a.b@gmail.com'))
+        self.assertIn('a.b', view.label('a.b@gmail.com'))
+        self.assertIn('כבר לא זמינה', preview_page('../../etc'))
+        self.assertIn('כבר לא זמינה', preview_page('0123456789abcdef'))
+
+
 def message_b64(claims):
     import base64
     import json

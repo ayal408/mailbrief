@@ -83,7 +83,12 @@ def boxes_section():
           <button formaction="/test">בדיקת חיבור</button> <button formaction="/remove" class="ghost">הסרה</button></form>
           <form method="post" style="display:inline">{_t()}<input type="hidden" name="only" value="{e(a["email"])}">
           <button formaction="/check" class="ghost" title="בדיקה מהירה של היומיים האחרונים — רק לתיבה הזו">🔄 בדיקה</button>
-          <button formaction="/run" class="ghost" title="תדריך מלא לשבוע — רק לתיבה הזו">▶ תדריך לתיבה הזו</button></form></div>''')
+          <button formaction="/run" class="ghost" title="תדריך מלא לשבוע — רק לתיבה הזו">▶ תדריך לתיבה הזו</button></form>
+          <details style="margin-top:8px"><summary style="cursor:pointer;font-size:14px">✍️ חתימה{' ✓' if a.get('signature') else ''}</summary>
+          <form method="post" action="/signature" style="display:grid;gap:6px;margin-top:6px">{_t()}<input type="hidden" name="id" value="{e(a["id"])}">
+          <textarea name="signature" rows="4" dir="auto" placeholder="שם · תפקיד · טלפון" style="font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{e(a.get("signature", ""))}</textarea>
+          <div class="muted" style="font-size:12px">מתווספת בסוף כל מייל שיוצא מ-MailBrief מהתיבה הזו (מתוזמן, תשובה מהירה, ברכות, תודות). ריק = בלי חתימה.</div>
+          <div><button style="margin:0;padding:6px 16px">💾 שמירת חתימה</button></div></form></details></div>''')
     reports = sorted((f for f in os.listdir(config.REPORTS) if f.endswith('.html')), reverse=True)[:6] if os.path.isdir(config.REPORTS) else []
     rep = ''.join(f'<li><a href="/reports/{quote(f)}" target="_blank">{e(f[6:-5])}</a></li>' for f in reports) or '<li class="muted">אין עדיין</li>'
     return f'''
@@ -292,7 +297,8 @@ def money_section(month=''):
 <form method="post" action="/accountant_package" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">{_t()}
 <input type="month" name="month" value="{e(month)}" style="{FIELD}">
 <button name="action" value="zip" class="ghost" style="margin:0">📦 להכין חבילה</button>
-<button name="action" value="send" class="ghost" style="margin:0">📨 לשלוח עכשיו לרו״ח</button></form>
+<button name="action" value="send" class="ghost" style="margin:0">📨 לשלוח עכשיו לרו״ח</button>
+<button formmethod="get" formaction="/month_report" class="ghost" style="margin:0" title="דף מסודר עם הסיכומים וכל הקבלות — לשמירה כ-PDF">🧾 דוח PDF</button></form>
 <form method="post" action="/yearly" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">{_t()}
 <span class="muted">סיכום שנתי לפי סיווג וספק:</span>
 <select name="year" style="{FIELD}">{''.join(f'<option>{y}</option>' for y in range(this_year, this_year - 4, -1))}</select>

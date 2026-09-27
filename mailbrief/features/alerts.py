@@ -112,6 +112,11 @@ def check_alerts(only=None):
                     save_client_files(pairs, state)
                 except Exception:
                     pass
+                try:                                     # 📞 the phone number from each person's signature
+                    from mailbrief.features.contacts import learn
+                    learn(pairs)
+                except Exception:
+                    pass
                 for it, msg in pairs:
                     try:
                         note_away(msg, it['sender'], dt.date.fromisoformat(it['iso'][:10]))

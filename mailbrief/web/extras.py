@@ -210,6 +210,7 @@ HTML = """
     ['📎 כל הקבצים המצורפים', '/files'], ['📊 תקציב חודשי', '/?s=money#budget'], ['⚖️ מי זול יותר', '/?s=money#compare'],
     ['🧾 מסמכים להחזר מס', '/?s=money#tax'], ['⚡ קיצורי טקסט', '/?s=auto#snippets'], ['🔓 בדיקת דליפות', '/?s=me#leaks'],
     ['📋 דוח שבועי לשותף', '/?s=clients#share'], ['🖨️ הדפסת היום שלי', '/today?print=1'],
+    ['🧾 דוח חודשי לרו״ח (PDF)', '/month_report'], ['📤 מיילים מתוזמנים', '/compose#queue'], ['✍️ חתימה לכל תיבה', '/?s=boxes'],
     ['ℹ️ אודות וגרסה', '/about'], ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'], ['🎓 סיור היכרות', 'javascript:tour'],
     ['📅 Google Calendar', 'https://calendar.google.com/'], ['✅ Google Tasks', 'https://tasks.google.com/']
   ];

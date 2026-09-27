@@ -59,6 +59,15 @@ def avatar(address, size=22):
             f'color:#fff;font-weight:700;font-size:{int(size * .5)}px">{e(letter)}</span>')
 
 
+def label(address):
+    """The Google account's name next to the picture, and the address (before the @) beside it."""
+    name, short = account(address).get('display_name', '').strip(), e(address.split('@')[0])
+    if not name:
+        return short
+    return (f'<span dir="auto" style="font-weight:500;color:var(--ink)">{e(name)}</span>'
+            f'<span style="font-size:11.5px;opacity:.75;margin-inline-start:6px">{short}</span>')
+
+
 def switcher():
     """The chips under the tabs; hidden with a single mailbox."""
     from mailbrief.web.token import TOKEN
@@ -70,5 +79,5 @@ def switcher():
     chips = chip.format(value='', on=' on' if not current else '', mark='📬 ', label='כל התיבות') + ''.join(
         chip.format(value=e(m), on=' on' if m == current else '',
                     mark=f'<span style="margin-inline-end:6px">{avatar(m, 18)}</span>',
-                    label=e(m.split('@')[0])) for m in boxes)
+                    label=label(m)) for m in boxes)
     return (f'<form method="post" action="/view_account" class="mbxs"><input type="hidden" name="t" value="{TOKEN}">{chips}</form>')

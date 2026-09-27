@@ -137,3 +137,57 @@ def save_message_files(account, message_id):
     if not count:
         raise RuntimeError('לא נמצאו קבצים מצורפים')
     return folder
+
+
+PREVIEW_TYPES = {'pdf': 'application/pdf', 'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif',
+                 'webp': 'image/webp', 'bmp': 'image/bmp'}
+
+
+def preview_dir():
+    return os.path.join(config.DATA, 'preview')
+
+
+def preview_files(account, message_id):
+    """👁️ Opens one email's PDFs and pictures inside MailBrief, without saving them to Downloads. Kept for a day, then deleted.
+    Returns the preview key (16 hex)."""
+    import hashlib
+    import shutil
+    import time
+    from mailbrief.features.replies import _original
+    root = preview_dir()
+    if os.path.isdir(root):                                   # yesterday's previews go
+        for old in os.listdir(root):
+            path = os.path.join(root, old)
+            if os.path.isdir(path) and time.time() - os.path.getmtime(path) > 86400:
+                shutil.rmtree(path, ignore_errors=True)
+    key = hashlib.sha1(f'{account}|{message_id}'.encode()).hexdigest()[:16]
+    folder = os.path.join(root, key)
+    if os.path.isfile(os.path.join(folder, 'files.json')):
+        return key
+    accounts = load_json(config.ACCOUNTS_FILE, [])
+    acc = next((a for a in accounts if a['email'] == account), None)
+    if not acc or not message_id:
+        raise RuntimeError('ההודעה לא נמצאה')
+    m = imap.connect(acc)
+    try:
+        msg = _original(m, message_id)
+    finally:
+        m.logout()
+    shown, other = [], []
+    for part in msg.iter_attachments():
+        name = decode(part.get_filename()) or 'file'
+        ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+        data = part.get_payload(decode=True) or b''
+        if not data:
+            continue
+        if ext in PREVIEW_TYPES and not NOISE.search(name):
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, f'{len(shown)}.{ext}'), 'wb') as f:
+                f.write(data)
+            shown.append({'name': name, 'ext': ext})
+        else:
+            other.append(name)
+    if not shown:
+        raise RuntimeError('אין כאן PDF או תמונה להצגה' + (f' (יש: {", ".join(other[:3])} — אפשר להוריד עם ⬇️)' if other else ''))
+    save_json(os.path.join(folder, 'files.json'), {'files': shown, 'other': other, 'account': account, 'message_id': message_id})
+    return key

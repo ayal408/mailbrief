@@ -84,12 +84,13 @@ class Handler(BaseHTTPRequestHandler):
     def _host_ok(self):
         return self.headers.get('Host', '').lower() in allowed_hosts()
 
-    def _send(self, body, ctype='text/html; charset=utf-8', code=200):
+    def _send(self, body, ctype='text/html; charset=utf-8', code=200, frame='DENY'):
         data = body.encode('utf-8') if isinstance(body, str) else body
         self.send_response(code)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(data)))
-        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('X-Frame-Options', frame)
+        self.send_header('X-Content-Type-Options', 'nosniff')
         self.end_headers()
         self.wfile.write(data)
 
@@ -176,6 +177,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read(), 'text/plain; charset=utf-8')
             except OSError:
                 return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
+        if url.path == '/month_report':
+            from mailbrief.web.month_report import month_report_page
+            return self._send(month_report_page(parse_qs(url.query).get('month', [''])[0]))
+        if url.path == '/preview':
+            from mailbrief.web.files import preview_page
+            q = parse_qs(url.query)
+            n = q.get('n', ['0'])[0]
+            return self._send(preview_page(q.get('k', [''])[0], int(n) if n.isdigit() else 0))
+        if url.path.startswith('/preview_file/'):       # a PDF or picture from an email, shown inside the preview page only
+            from mailbrief.features.files import PREVIEW_TYPES, preview_dir
+            match = re.fullmatch(r'/preview_file/([0-9a-f]{16})/(\d{1,3})\.([a-z]{3,4})', url.path)
+            path = os.path.join(preview_dir(), match[1], f'{match[2]}.{match[3]}') if match and match[3] in PREVIEW_TYPES else ''
+            if path and os.path.isfile(path):
+                with open(path, 'rb') as f:
+                    return self._send(f.read(), PREVIEW_TYPES[match[3]], frame='SAMEORIGIN')
+            return self._send('not found', code=404)
         if url.path.startswith('/avatar/'):          # a mailbox's profile picture, kept on the computer
             name = url.path.rsplit('/', 1)[-1]
             path = os.path.join(config.DATA, 'avatars', name)
@@ -700,6 +717,40 @@ class Handler(BaseHTTPRequestHandler):
         self._send(result, 'text/plain; charset=utf-8')
         return None
 
+    def post_client_phone(self, f):
+        from mailbrief.features.contacts import set_phone
+        phone = set_phone(f.get('address', ''), f.get('phone', ''))
+        return (f'/client?key={quote(f.get("key", ""))}', None) if phone or not f.get('phone', '').strip() else 'המספר לא נראה תקין'
+
+    def post_signature(self, f):
+        accounts = load_json(config.ACCOUNTS_FILE, [])
+        acc = next((a for a in accounts if a['id'] == f.get('id')), None)
+        if not acc:
+            return 'התיבה לא נמצאה'
+        acc['signature'] = f.get('signature', '').strip()[:1000]
+        save_json(config.ACCOUNTS_FILE, accounts)
+        return f'✍️ החתימה של {acc["email"]} נשמרה' if acc['signature'] else f'החתימה של {acc["email"]} הוסרה'
+
+    def post_schedule_edit(self, f):
+        try:
+            at = dt.datetime.fromisoformat(f.get('at', '')).astimezone() if f.get('at') else None
+            item = outbox.update(f.get('id', ''), f.get('to', ''), f.get('subject', ''), f.get('body', ''), at)
+        except ValueError as exc:
+            return ('/compose?msg=' + quote(f'⚠️ {exc}') + '#queue', None)
+        when = dt.datetime.fromisoformat(item['send_at'])
+        return ('/compose?msg=' + quote(f'✓ נשמר · יישלח ב-{when:%d/%m %H:%M}') + '#queue', None)
+
+    def post_schedule_now(self, f):
+        now = dt.datetime.now().astimezone()
+        try:
+            item = outbox.update(f.get('id', ''), send_at=now)
+        except ValueError as exc:
+            return ('/compose?msg=' + quote(f'⚠️ {exc}') + '#queue', None)
+        if dt.datetime.fromisoformat(item['send_at']) > now + dt.timedelta(minutes=1):
+            return ('/compose?msg=' + quote(f'🕯️ עכשיו שבת/חג — יישלח במוצאי ({dt.datetime.fromisoformat(item["send_at"]):%d/%m %H:%M})') + '#queue', None)
+        sent = outbox.send_due()
+        return ('/compose?msg=' + quote('📤 נשלח' if sent else '📡 אין כרגע חיבור — יישלח לבד כשהאינטרנט יחזור') + '#queue', None)
+
     def post_schedule_cancel(self, f):
         outbox.cancel(f.get('id', ''))
         return ('/compose?msg=' + quote('המייל בוטל ולא יישלח'), None)
@@ -962,6 +1013,13 @@ class Handler(BaseHTTPRequestHandler):
     def post_files_scan(self, f):
         rows, errors = files.scan_files()
         return ('/files?msg=' + quote(f'📎 {len(rows)} קבצים ב-30 הימים האחרונים' + (' · ' + ' | '.join(errors) if errors else '')), None)
+
+    def post_file_preview(self, f):
+        try:
+            key = files.preview_files(f.get('account', ''), f.get('message_id', ''))
+        except RuntimeError as exc:
+            return ('/files?msg=' + quote(f'⚠️ {exc}'), None)
+        return (f'/preview?k={key}', None)
 
     def post_file_get(self, f):
         try:

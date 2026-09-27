@@ -1,5 +1,6 @@
 """📎 All attachments of the last month — filter by type and sender, download with one click."""
 import datetime as dt
+import re
 
 from mailbrief.features.files import KINDS, cached_files
 from mailbrief.util import e
@@ -27,6 +28,10 @@ def files_page(msg=''):
                   f'<form method="post" action="/file_get" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
                   f'<input type="hidden" name="account" value="{e(r["account"])}"><input type="hidden" name="message_id" value="{e(r["message_id"])}">'
                   f'<button class="ghost" style="margin:0;padding:4px 10px" title="הורדת כל הקבצים של המייל הזה">⬇️</button></form>'
+                  + (f' <form method="post" action="/file_preview" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+                     f'<input type="hidden" name="account" value="{e(r["account"])}"><input type="hidden" name="message_id" value="{e(r["message_id"])}">'
+                     f'<button class="ghost" style="margin:0;padding:4px 10px" title="הצגה כאן, בלי להוריד">👁️</button></form>'
+                     if r['kind'] in ('pdf', 'image') else '')
                   + (f' <a href="{e(r["link"])}" target="_blank" title="פתיחה ב-Gmail">↗</a>' if r.get('link') else '') + '</td></tr>')
     return page('קבצים מצורפים', f'''{heading('📎', 'כל הקבצים המצורפים')}{note}
 <p class="muted">כל הקבצים שהגיעו ב-{data.get("days", 30)} הימים האחרונים, בכל התיבות. רק שמות הקבצים נקראים — שום דבר לא יורד עד שלוחצים ⬇️.
@@ -43,3 +48,31 @@ tr.style.display=(!kind||tr.dataset.kind===kind)&&(!t||tr.dataset.text.indexOf(t
 document.querySelectorAll('.fchip').forEach(function(b){{b.onclick=function(){{kind=b.dataset.kind;
 document.querySelectorAll('.fchip').forEach(function(x){{x.style.background=x===b?'var(--accent)':'';x.style.color=x===b?'#fff':'';}});apply();}};}});
 q.oninput=apply;}})();</script>""" if rows else ('<p class="muted">לא נמצאו קבצים.</p>' if data else '')}''', '/search')
+
+
+def preview_page(key, n=0):
+    """👁️ One email's PDFs and pictures, shown right here."""
+    import os
+    from mailbrief.features.files import preview_dir
+    from mailbrief.storage import load_json
+    info = load_json(os.path.join(preview_dir(), key, 'files.json'), {}) if re.fullmatch(r'[0-9a-f]{16}', key) else {}
+    shown = info.get('files', [])
+    if not shown:
+        return page('תצוגה מקדימה', '<p><a href="/files">→ לכל הקבצים</a></p><p class="muted">התצוגה כבר לא זמינה — אפשר לפתוח שוב מרשימת הקבצים.</p>', '/search')
+    n = min(max(n, 0), len(shown) - 1)
+    f = shown[n]
+    src = f'/preview_file/{key}/{n}.{f["ext"]}'
+    viewer = (f'<iframe src="{src}" title="{e(f["name"])}" style="width:100%;height:76vh;border:1px solid var(--line);border-radius:12px;background:#fff"></iframe>'
+              if f['ext'] == 'pdf' else
+              f'<div style="text-align:center"><img src="{src}" alt="{e(f["name"])}" style="max-width:100%;max-height:76vh;border-radius:12px;border:1px solid var(--line)"></div>')
+    tabs = ''.join(f'<a class="pill" href="/preview?k={key}&n={i}" style="text-decoration:none;font-size:13px;padding:4px 12px;'
+                   f'{"background:var(--accent);color:#fff;border-color:var(--accent)" if i == n else ""}">'
+                   f'{"📄" if x["ext"] == "pdf" else "🖼️"} {e(x["name"][:40])}</a>' for i, x in enumerate(shown)) if len(shown) > 1 else ''
+    other = f'<p class="muted" style="font-size:13px">עוד במייל (להורדה): {e(", ".join(info["other"][:6]))}</p>' if info.get('other') else ''
+    return page('תצוגה מקדימה', f'''<p><a href="/files">→ לכל הקבצים</a></p>
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px">
+<h1 dir="auto" style="margin:0;font-size:20px">👁️ {e(f["name"])}</h1>
+<form method="post" action="/file_get" style="margin:0"><input type="hidden" name="t" value="{TOKEN}">
+<input type="hidden" name="account" value="{e(info.get("account", ""))}"><input type="hidden" name="message_id" value="{e(info.get("message_id", ""))}">
+<button style="margin:0;padding:7px 16px">⬇️ שמירה בהורדות</button></form></div>
+{f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">{tabs}</div>' if tabs else ''}{viewer}{other}''', '/search')
