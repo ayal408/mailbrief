@@ -35,7 +35,7 @@ def priority(s):
     score, why = 0.0, []
     if s['waiting']:
         score += 3 * s['waiting'] + min(s['oldest_wait'], 14) / 2
-        why.append(f'{s["waiting"]} מיילים מחכים לתשובה' + (f' (הוותיק {s["oldest_wait"]} ימים)' if s['oldest_wait'] > 1 else ''))
+        why.append(('מייל אחד מחכה לתשובה' if s['waiting'] == 1 else f'{s["waiting"]} מיילים מחכים לתשובה') + (f' (הוותיק {s["oldest_wait"]} ימים)' if s['oldest_wait'] > 1 else ''))
     if s['median_hours'] is not None and s['median_hours'] > 24 and s['per_week'] >= 1:
         score += 2
         why.append(f'בדרך כלל עונים אחרי {fmt_hours(s["median_hours"])}')
