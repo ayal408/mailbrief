@@ -117,6 +117,19 @@ def check_alerts(only=None):
                     learn(pairs)
                 except Exception:
                     pass
+                try:                                     # 💚 payment notices -> income (and a matching invoice -> paid)
+                    from mailbrief.features.income import learn as learn_income
+                    for row in learn_income(pairs, acc['email']):
+                        if row.get('debt'):
+                            alerts.append(('💚 תשלום התקבל', {'subject': f"{row['payer']} שילם/ה ₪{row['amount']:g} ב-{row['service']} — החשבונית סומנה כשולמה",
+                                                             'sender_name': row['service'], 'link': link('?s=money#income')}))
+                except Exception:
+                    pass
+                try:                                     # ⏰ "by 15/10" -> a deadline and a reminder the day before
+                    from mailbrief.features.deadlines import learn as learn_deadlines
+                    learn_deadlines(pairs, acc['email'], {a['email'].lower() for a in accounts})
+                except Exception:
+                    pass
                 for it, msg in pairs:
                     try:
                         note_away(msg, it['sender'], dt.date.fromisoformat(it['iso'][:10]))
@@ -175,9 +188,16 @@ def check_alerts(only=None):
     from mailbrief.features.meetings import meeting_followups
     from mailbrief.features.sharing import maybe_share
     from mailbrief.features.quotes import follow_up as quote_follow_up
-    jobs = (chase_due, greet_due,                         # queue first, so the outbox sends them in the same round
+    from mailbrief.features.recurring import run_recurring
+    from mailbrief.features.maintenance import check_backups
+
+    def backups_monthly():
+        ok, lines = check_backups(state)
+        if ok is False:
+            alerts.append(('🧪 בדיקת גיבוי', {'subject': ' · '.join(lines), 'sender_name': 'MailBrief', 'link': link('?s=data#backupcheck')}))
+    jobs = (chase_due, greet_due, run_recurring,          # queue first, so the outbox sends them in the same round
             lambda: maybe_send_daily(state, accounts), lambda: send_due(accounts), lambda: maybe_send_monthly(state, accounts), wake_due,
-            lambda: meeting_followups(state), lambda: maybe_share(state, accounts), quote_follow_up)
+            lambda: meeting_followups(state), lambda: maybe_share(state, accounts), quote_follow_up, backups_monthly)
     for job in (jobs if not only else ()):
         try:
             job()

@@ -53,6 +53,12 @@ def main():
         from mailbrief.features.setup import remove
         remove()
         return
+    if '--reset-pin' in sys.argv:                # forgot the PIN: whoever runs the program as this Windows user can clear it
+        from mailbrief.features import lock
+        lock.clear_pin()
+        from mailbrief.features.notify import toast
+        toast('🔓 הקוד בוטל', ['MailBrief נפתח עכשיו בלי קוד. אפשר להגדיר חדש בהגדרות → אישי.'], '')
+        return
     if '--replace' in sys.argv:                  # the downloaded update, finishing the swap
         finish_update(sys.argv[sys.argv.index('--replace') + 1])
         return

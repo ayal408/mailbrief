@@ -13,7 +13,8 @@ from mailbrief.features.cloud_backup import cloud_cfg, drive_account
 from mailbrief.features.daily import daily_cfg
 from mailbrief.features.google_apps import API_PAGES, gapps_account
 from mailbrief.features.maintenance import schedule_status
-from mailbrief.features.replies import reply_templates, vacation_active, VACATION_DEFAULT
+from mailbrief.features.replies import reply_templates, template_files, vacation_active, VACATION_DEFAULT
+from mailbrief.web.settings_more import backup_check_block, income_block, pin_block, recurring_block
 from mailbrief.mail.classify import TAG_PREFIX
 from mailbrief.mail.oauth import PROVIDERS, bundled_client
 from mailbrief.money.accountant import accountant_cfg, previous_month
@@ -40,7 +41,8 @@ SECTIONS = [('boxes', '📬', 'תיבות'), ('me', '👤', 'אישי והתרא
 ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'accountant': 'money', 'vendors': 'money', 'vat': 'money',
            'export': 'money', 'debts': 'clients', 'dates': 'clients', 'rules': 'auto', 'vacation': 'auto', 'templates': 'auto',
            'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect',
-           'simple': 'me', 'startup': 'me', 'quotes': 'clients', 'folders': 'clients', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money'}
+           'simple': 'me', 'startup': 'me', 'quotes': 'clients', 'folders': 'clients', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money',
+           'income': 'money', 'recurring': 'auto', 'pin': 'me', 'backupcheck': 'data'}
 
 FIELD = 'font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)'
 
@@ -179,6 +181,7 @@ def me_section():
 <p class="muted" style="margin:0;font-size:13px">בשבת ובחג אין התראות בכלל. בהתראה יש כפתורים: „⏰ להזכיר בעוד שעה” ו„📅 מחר בבוקר”.</p>
 <div><button style="margin:0">שמירה</button></div></form>
 
+{pin_block()}
 {_h('leaks', '🔓 בדיקת דליפות סיסמה')}
 <p class="muted">פעם בשבוע בודק אם הכתובות שלך הופיעו בדליפת מידע ידועה (Have I Been Pwned) — ואם כן, מתריע להחליף סיסמה.
 נשלחת רק הכתובת. השירות דורש מפתח (בתשלום, כ-4$ לחודש) מ-<a href="https://haveibeenpwned.com/API/Key" target="_blank">haveibeenpwned.com/API/Key</a>.
@@ -247,6 +250,7 @@ def money_section(month=''):
 <button formaction="/open_receipts" class="ghost" style="margin:0">📂 תיקיית הקבלות והאקסל</button>
 <button formaction="/import_receipts" class="ghost" style="margin:0" title="סורק 90 ימים אחורה, שומר קבלות ובונה את האקסל החודשי">⬇️ ייבוא קבלות מ-90 הימים האחרונים</button></form>
 
+{income_block()}
 {_h('missing', '🧾 חשבוניות שעוד לא הגיעו החודש')}
 <p class="muted">ספקים ששולחים חשבונית כל חודש — ועבר המועד הרגיל שלהם בלי שהגיעה. מופיע גם בסיכום היומי ובהתראה.</p>
 {gap_rows}
@@ -474,7 +478,8 @@ def auto_section():
         + '</td></tr>' for f in reversed(load_json(config.FORWARD_LOG, [])[-10:])) or '<tr><td class="muted">עוד לא הועבר כלום</td></tr>'
     vac = load_json(config.SETTINGS_FILE, {}).get('vacation') or {}
     tmpl_rows = ''.join(
-        f'<tr><td><b>{e(t["name"])}</b><div class="muted" style="font-size:13px;white-space:pre-line">{e(t["text"])}</div></td>'
+        f'<tr><td><b>{e(t["name"])}</b><div class="muted" style="font-size:13px;white-space:pre-line">{e(t["text"])}</div>'
+        + ''.join(f'<div style="font-size:13px">📎 {e(n)}</div>' for n, _ in template_files(t["id"])) + '</td>'
         f'<td><form method="post" action="/template_delete" style="margin:0">{_t()}'
         f'<input type="hidden" name="id" value="{e(t["id"])}"><button class="ghost" style="margin:0">מחיקה</button></form></td></tr>'
         for t in reply_templates())
@@ -506,13 +511,17 @@ def auto_section():
 <p class="muted">ב„היום שלי” ובמיון המהיר: בוחרים תבנית — והשדות מתמלאים לבד מהמייל: השם, מספר החשבונית או ההזמנה, הסכום, התאריך.
 <br>למשל: „שלום {{שם_פרטי}}, קיבלנו את חשבונית {{מספר_חשבונית}} על סך {{סכום}}, תודה!”</p>
 <div class="scroll"><table><tbody>{tmpl_rows}</tbody></table></div>
-<form method="post" action="/template_add" class="box" style="display:grid;gap:8px;margin-top:10px">{_t()}
+<form method="post" action="/template_add" enctype="multipart/form-data" class="box" style="display:grid;gap:8px;margin-top:10px">{_t()}
 <input type="text" name="name" required maxlength="40" placeholder="שם התבנית" style="{FIELD}">
 <textarea id="tmpl-text" name="text" rows="4" required placeholder="שלום {{שם_פרטי}}, ..." style="{FIELD}"></textarea>
 <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="font-size:13px">הוספת שדה:</span>{chips}</div>
+<label style="margin:0;font-size:14px">📎 קבצים שיצורפו תמיד לתבנית <span class="muted">(לא חובה — למשל מחירון)</span>
+<input type="file" name="files" multiple style="{FIELD};width:100%"></label>
 <div><button style="margin:0">➕ הוספת תבנית</button></div></form>
 <script>document.querySelectorAll('.chip').forEach(function(b){{b.onclick=function(){{var t=document.getElementById('tmpl-text'),s=t.selectionStart||t.value.length;
 t.value=t.value.slice(0,s)+b.dataset.field+t.value.slice(t.selectionEnd||s);t.focus();t.selectionStart=t.selectionEnd=s+b.dataset.field.length;}};}});</script>
+
+{recurring_block()}
 
 {_h('snippets', '⚡ קיצורי טקסט')}
 <p class="muted">כותבים <b dir="ltr">;קיצור</b> ורווח בכל תיבת טקסט ב-MailBrief (תשובה במיון המהיר, מייל מתוזמן, ברכות) — והוא הופך לפסקה המלאה.</p>
@@ -598,6 +607,7 @@ def data_section():
     prev_info = migrate.summary(prev) if prev else None
     root = load_json(config.SETTINGS_FILE, {}).get('projects_root', '')
     return f'''
+{backup_check_block()}
 {_h('cloud', '☁️ גיבוי מוצפן ל-Google Drive')}
 <p class="muted">למקרה שהמחשב מתקלקל או מוחלף: הכללים, ההגדרות, הקבלות וההיסטוריה — נעולים בסיסמה <b>שרק {g('את יודעת', 'אתה יודע', 'אתם יודעים')}</b>,
 ונשמרים בתיקייה „MailBrief גיבויים” ב-Drive. Google רואה רק קובץ נעול. MailBrief מקבל גישה רק לקבצים שהוא עצמו יצר.

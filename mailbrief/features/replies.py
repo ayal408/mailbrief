@@ -25,6 +25,25 @@ DEFAULT_TEMPLATES = [
 VACATION_DEFAULT = 'שלום {from_name},\nתודה על הפנייה. אני מחוץ למשרד עד {to} ואחזור בהקדם אחרי כן.\n\nבברכה'
 
 
+def template_dir(template_id):
+    import os
+    import re
+    return os.path.join(config.DATA, 'template-files', template_id if re.fullmatch(r'[0-9a-f]{8}', template_id or '') else '_')
+
+
+def template_files(template_id):
+    """📎 The files that go with a template: [(name, bytes)]."""
+    import os
+    folder = template_dir(template_id)
+    if not os.path.isdir(folder):
+        return []
+    out = []
+    for name in sorted(os.listdir(folder)):
+        with open(os.path.join(folder, name), 'rb') as f:
+            out.append((name, f.read()))
+    return out
+
+
 def reply_templates():
     return load_json(config.SETTINGS_FILE, {}).get('templates') or DEFAULT_TEMPLATES
 

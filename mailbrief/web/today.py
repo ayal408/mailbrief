@@ -77,6 +77,18 @@ def by_thread(rows, who='from'):
     return out
 
 
+def deadline_row(key, d):
+    """📌 "by 15/10" from an email: the date, what, from whom — ✓ when done."""
+    when = dt.date.fromisoformat(d['date'])
+    left = (when - dt.date.today()).days
+    tag = 'היום!' if left == 0 else 'מחר' if left == 1 else f'{when:%d/%m} · עוד {left} ימים'
+    title = f'<a href="{e(d["link"])}" target="_blank">{e(d["subject"][:60])}</a>' if d.get('link') else e(d['subject'][:60])
+    return (f'<li dir="auto"><b style="color:{"var(--bad)" if left <= 1 else "var(--ink)"}">{tag}</b> — {title} <span class="muted">· {e(d["from"])}</span>'
+            f'<div class="muted" style="font-size:13px">„{e(d["sentence"])}”</div>'
+            f'<form method="post" action="/deadline_done" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+            f'<input type="hidden" name="key" value="{e(key)}"><button style="{SMALL}" title="בוצע — להוריד מהרשימה">✓</button></form></li>')
+
+
 def dismiss_button(r):
     """✕ — take it off the list (it doesn't need an answer). Can be undone for a few minutes."""
     return (f'<form method="post" action="/dismiss" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
@@ -273,6 +285,8 @@ def today_page(msg='', show_all=False, print_now=False):
     gaps = missing_invoices()
     owed = [d for d in debts() if d['status'] == 'open' and d['due'] <= dt.date.today().isoformat()]
     soon_dates = upcoming_dates(days=7)
+    from mailbrief.features.deadlines import upcoming as upcoming_deadlines
+    due_soon = upcoming_deadlines(days=21)
     try:
         prep = holiday_prep()
     except Exception:
@@ -319,6 +333,7 @@ a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;b
 {card("📤 מחכה לתשובה מהם" + SORTER.format(list='list-awaiting'), f'<ul id="list-awaiting" class="sortable">{awaiting}</ul>') if want('replies') else ''}{invites_card if want('calendar') else ''}
 {card("💸 תשלומים קרובים", f'<ul style="margin:0;padding-inline-start:18px">{payments}</ul>') if want('money') else ''}
 {card("⏰ תזכורות", f'<ul style="margin:0;padding-inline-start:18px">{reminders}</ul>') if want('focus', 'replies') else ''}
+{card("📌 מועדים מהמיילים", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(deadline_row(k, d) for k, d in due_soon[:6]) + '</ul>') if due_soon else ''}
 {card("⭐ מאנשים חשובים", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">' + (f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:60])}</a>' if r.get('link') else e(r['subject'][:60])) + f' <span class="muted">— {e(r["from"])}</span></li>' for r in important[:6]) + '</ul>') if important else ''}
 {card(f"🕯️ לפני {e(prep['name'] or 'החג')} — מה לסגור", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{e(line)}</li>' for line in holiday_lines(prep)) + '</ul>') if prep and holiday_lines(prep) else ''}
 {card("📊 תקציב החודש", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto" style="{"color:var(--bad)" if b["over"] else ""}">{e(b["book"])}: ₪{b["spent"]:,.0f} מתוך ₪{b["budget"]:,.0f} ({b["pct"]}%)</li>' for b in over) + '</ul>') if want('money') and over else ''}

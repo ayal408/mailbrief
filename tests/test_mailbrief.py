@@ -1295,6 +1295,122 @@ class Batch4(Isolated):
         self.assertIn('כבר לא זמינה', preview_page('0123456789abcdef'))
 
 
+class Batch5(Isolated):
+    def test_income_from_payment_notices(self):
+        from mailbrief.features import income
+        got = income.parse('Bit <noreply@bit.co.il>', 'קיבלת כסף בביט', 'דנה כהן העבירה לך ₪350 בביט')
+        self.assertEqual((got['service'], got['amount'], got['currency'], got['payer']), ('Bit', 350.0, '₪', 'דנה כהן'))
+        got = income.parse('service@paypal.com', "You've received $120.00 USD", 'John Smith sent you $120.00 USD')
+        self.assertEqual((got['service'], got['amount'], got['currency']), ('PayPal', 120.0, '$'))
+        self.assertIsNone(income.parse('Bit <noreply@bit.co.il>', 'שילמת בביט', 'שילמת ₪50 לדנה'))        # money going out
+        self.assertIsNone(income.parse('shop@store.com', 'קיבלת הנחה', '₪20 הנחה'))                     # not a payment service
+
+    def test_income_marks_the_invoice_paid(self):
+        from mailbrief.features import clientcare, income, undo
+        d = clientcare.add_debt('me@gmail.com', 'dana@client.co.il', 'דנה כהן', '₪1,200', '101', '2026-09-01')
+        clientcare.add_debt('me@gmail.com', 'yossi@x.co.il', 'יוסי', '₪1,200', '102', '2026-09-01')
+        msg = mk('Bit <noreply@bit.co.il>', 'קיבלת כסף', 'דנה כהן העבירה לך ₪1,200 בביט')
+        rows = income.learn([({'sender': 'noreply@bit.co.il', 'subject': 'קיבלת כסף', 'iso': '2026-09-20T10:00:00+03:00'}, msg)], 'me@gmail.com')
+        self.assertEqual(rows[0]['debt'], d['id'])
+        self.assertEqual(next(x for x in clientcare.debts() if x['id'] == d['id'])['status'], 'paid')
+        self.assertEqual(next(x for x in clientcare.debts() if x['name'] == 'יוסי')['status'], 'open')    # same amount, other person
+        self.assertEqual(income.learn([({'sender': 'noreply@bit.co.il', 'subject': 'x'}, msg)], 'me@gmail.com'), [])  # once
+        self.assertEqual(income.month_total('2026-09'), (1200.0, {'Bit': 1200.0}))
+        undo.undo(undo.last()['id'])
+        self.assertEqual(next(x for x in clientcare.debts() if x['id'] == d['id'])['status'], 'open')
+
+    def test_recurring(self):
+        from mailbrief.features import outbox, recurring
+        with self.assertRaises(ValueError):
+            recurring.add('me@gmail.com', 'a@b.co.il', 'x', '', 'weekly', 6)                              # never Shabbat
+        r = recurring.add('me@gmail.com', 'a@b.co.il', 'תזכורת ל{חודש}', 'שלום, {היום}', 'monthly', 1, '09:00')
+        now = dt.datetime(2026, 10, 1, 8, 0, tzinfo=IL)
+        with mock.patch.object(outbox, 'holy_windows', return_value=[]):
+            self.assertEqual(recurring.run_recurring(now), 0)                                           # before its hour
+            self.assertEqual(recurring.run_recurring(now.replace(hour=10)), 1)
+            self.assertEqual(recurring.run_recurring(now.replace(hour=11)), 0)                          # once a day
+        sent = outbox.outbox()[-1]
+        self.assertEqual((sent['subject'], sent['body']), ('תזכורת לאוקטובר', 'שלום, 01/10/2026'))
+        recurring.set_item(r['id'], 'off')
+        self.assertFalse(recurring.items()[0]['on'])
+        self.assertEqual(recurring.when_text(r), 'כל 1 בחודש ב-09:00')
+
+    def test_deadlines(self):
+        from mailbrief.features import deadlines
+        today = dt.date(2026, 9, 27)                                                                     # a Sunday
+        self.assertEqual(deadlines.find_deadline('נא לשלוח עד 15/10. תודה', today)[0], dt.date(2026, 10, 15))
+        self.assertEqual(deadlines.find_deadline('צריך את זה עד יום חמישי', today)[0], dt.date(2026, 10, 1))
+        self.assertEqual(deadlines.find_deadline('Deadline: 3.11.2026', today)[0], dt.date(2026, 11, 3))
+        self.assertEqual(deadlines.find_deadline('עד סוף החודש בבקשה', today)[0], dt.date(2026, 9, 30))
+        self.assertIsNone(deadlines.find_deadline('נפגשנו ב-15/10 שעבר, מחיר 3.5', dt.date(2026, 10, 20))[0])
+        when, sentence = deadlines.find_deadline('שלום\nאפשר להגיש עד 15/10 לכל המאוחר\nתודה', today)
+        self.assertEqual(sentence, 'אפשר להגיש עד 15/10 לכל המאוחר')
+
+    def test_pin_lock(self):
+        from mailbrief.features import lock
+        self.assertFalse(lock.enabled())
+        with self.assertRaises(ValueError):
+            lock.set_pin('12a4')
+        lock.set_pin('4321', idle=10)
+        self.assertTrue(lock.enabled())
+        self.assertNotIn('4321', str(storage.load_json(config.SETTINGS_FILE, {})))                    # only a hash is kept
+        self.assertFalse(lock.check('1111'))
+        self.assertTrue(lock.check('4321'))
+        ticket = lock.ticket('k', now=1000)
+        self.assertTrue(lock.valid(ticket, 'k', now=1000 + 9 * 60))
+        self.assertFalse(lock.valid(ticket, 'k', now=1000 + 11 * 60))                                   # idle too long
+        self.assertFalse(lock.valid(ticket, 'other-run', now=1000))
+        self.assertFalse(lock.valid('1000.forged', 'k', now=1000))
+        for _ in range(5):
+            lock.check('0000')
+        with self.assertRaises(RuntimeError):                                                            # 5 wrong: wait
+            lock.check('4321')
+        lock._FAILS.update(count=0, until=0)
+        lock.clear_pin()
+        self.assertFalse(lock.enabled())
+
+    def test_backup_check(self):
+        from mailbrief.features import maintenance
+        self.assertFalse(maintenance.verify_backup()[0])                                                 # none yet
+        storage.save_json(config.SETTINGS_FILE, {'x': 1})
+        maintenance.make_backup('test')
+        ok, detail = maintenance.verify_backup()
+        self.assertTrue(ok, detail)
+        broken = os.path.join(config.BACKUP_DIR, 'mailbrief-2099-01-01-000000-bad.zip')
+        with open(broken, 'wb') as f:
+            f.write(b'not a zip')
+        self.assertFalse(maintenance.verify_backup()[0])
+        state = {}
+        with mock.patch.object(maintenance, 'verify_cloud', return_value=(None, '')):
+            ok, lines = maintenance.check_backups(state)
+            self.assertFalse(ok)                                                                         # the broken newest one...
+            self.assertIn('גם', ''.join(lines))                                                          # ...still sorts first
+            self.assertEqual(maintenance.check_backups(state), (None, []))                               # once a month
+
+    def test_contacts_and_template_files(self):
+        from mailbrief.features import contacts, replies
+        from mailbrief.web.contacts import contacts_page, export_csv, people
+        storage.save_json(config.HISTORY_FILE, {
+            '1': {'sender': 'dana@client.co.il', 'name': 'דנה', 'cats': ['people'], 'date': '2026-09-20', 'account': 'me@gmail.com'},
+            '2': {'sender': 'news@shop.com', 'name': 'Shop', 'cats': ['newsletters'], 'date': '2026-09-21', 'account': 'me@gmail.com'}})
+        contacts.set_phone('dana@client.co.il', '050-1234567')
+        rows = people()
+        self.assertEqual([(p['name'], p['phone']) for p in rows], [('דנה', '0501234567')])
+        self.assertIn('050-1234567', contacts_page())
+        with open(export_csv(), encoding='utf-8-sig') as f:
+            self.assertIn('דנה,dana@client.co.il,050-1234567', f.read())
+        os.makedirs(replies.template_dir('abcd1234'))
+        with open(os.path.join(replies.template_dir('abcd1234'), 'מחירון.pdf'), 'wb') as f:
+            f.write(b'%PDF')
+        self.assertEqual(replies.template_files('abcd1234'), [('מחירון.pdf', b'%PDF')])
+        self.assertEqual(replies.template_files('../../x'), [])
+
+    def test_new_settings_render(self):
+        from mailbrief.web.settings import settings_page
+        for sec, marker in (('money', 'id="income"'), ('auto', 'id="recurring"'), ('me', 'id="pin"'), ('data', 'id="backupcheck"')):
+            self.assertIn(marker, settings_page('', sec))
+
+
 def message_b64(claims):
     import base64
     import json

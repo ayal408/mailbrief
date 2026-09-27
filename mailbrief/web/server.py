@@ -60,7 +60,7 @@ from mailbrief.web.compose import compose_page
 from mailbrief.web.greetings import greetings_page
 from mailbrief.features import greetings, snooze
 from mailbrief.features.replies import reply_details, reply_now
-from mailbrief.features import migrate, outbox, triage
+from mailbrief.features import lock, migrate, outbox, triage
 from mailbrief.features.diag import log_error, problem_report
 from mailbrief.features import cleanup, clientcare, cloud_backup, files, quotes, security, sharing, toast_actions, undo
 from mailbrief.money import budget
@@ -91,13 +91,33 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(data)))
         self.send_header('X-Frame-Options', frame)
         self.send_header('X-Content-Type-Options', 'nosniff')
+        for header in getattr(self, '_extra', ()):
+            self.send_header(*header)
         self.end_headers()
         self.wfile.write(data)
 
     def _redirect(self, to):
         self.send_response(303)
         self.send_header('Location', to)
+        for header in getattr(self, '_extra', ()):
+            self.send_header(*header)
         self.end_headers()
+
+    def _unlocked(self):
+        """🔒 True when there is no PIN, or it was entered lately (the cookie is renewed on every page)."""
+        self._extra = []
+        if not lock.enabled():
+            return True
+        from http.cookies import SimpleCookie
+        jar = SimpleCookie()
+        try:
+            jar.load(self.headers.get('Cookie', ''))
+        except Exception:
+            return False
+        if lock.valid(jar[lock.COOKIE].value if lock.COOKIE in jar else '', TOKEN):
+            self._extra = [('Set-Cookie', f'{lock.COOKIE}={lock.ticket(TOKEN)}; Path=/; HttpOnly; SameSite=Strict')]
+            return True
+        return False
 
     def do_GET(self):
         try:
@@ -124,6 +144,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send('ok', 'text/plain')
         if url.path != '/oauth/callback' and self.headers.get('Host', '').lower() != nice:
             return self._redirect(base_url() + self.path)        # old 127.0.0.1:8765 links -> the nice address
+        if url.path not in ('/oauth/callback', '/toast_act') and not self._unlocked():
+            from mailbrief.web.lockpage import lock_page
+            return self._send(lock_page(self.path if url.path != '/' or url.query else '/today'))
         if url.path == '/welcome':
             return self._send(welcome_page())
         if not has_profile() and url.path in ('/', '/today', '/dashboard', '/stats', '/automations', '/clients', '/reading', '/search', '/help', '/insights', '/triage', '/compose', '/greetings'):
@@ -177,6 +200,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read(), 'text/plain; charset=utf-8')
             except OSError:
                 return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
+        if url.path == '/contacts':
+            from mailbrief.web.contacts import contacts_page
+            return self._send(contacts_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/month_report':
             from mailbrief.web.month_report import month_report_page
             return self._send(month_report_page(parse_qs(url.query).get('month', [''])[0]))
@@ -266,6 +292,8 @@ class Handler(BaseHTTPRequestHandler):
         if not secrets.compare_digest(form.get('t', ''), TOKEN):
             return self._redirect('/?msg=' + quote('הדף היה ישן (MailBrief עודכן או הופעל מחדש) — הפעולה לא בוצעה. אפשר לנסות שוב עכשיו.'))
         route = urlparse(self.path).path
+        if route != '/unlock' and not self._unlocked():
+            return self._redirect('/today')
         try:
             msg = getattr(self, 'post_' + route.strip('/'))(form)
         except AttributeError:
@@ -653,7 +681,9 @@ class Handler(BaseHTTPRequestHandler):
             return back('צריך לבחור תיבה לשליחה')
         try:
             when = outbox.when_for(f.get('when', 'after_holy'), f.get('custom', ''))
-            outbox.schedule(f['account'], f.get('to', ''), f.get('subject', ''), f.get('body', ''), when, files=f['_files'])
+            from mailbrief.features.replies import template_files
+            attached = [x for x in f['_files'] if x[1]] + template_files(f.get('template', ''))
+            outbox.schedule(f['account'], f.get('to', ''), f.get('subject', ''), f.get('body', ''), when, files=attached)
         except (ValueError, KeyError) as exc:
             return back(f'⚠️ {exc}')
         return back(f'✓ יישלח ב-{when:%d/%m} בשעה {when:%H:%M}')
@@ -716,6 +746,83 @@ class Handler(BaseHTTPRequestHandler):
             return None
         self._send(result, 'text/plain; charset=utf-8')
         return None
+
+    # ---- 🔒 PIN -------------------------------------------------------------------------------------------------------------
+    def post_unlock(self, f):
+        from mailbrief.web.lockpage import lock_page
+        target = f.get('next', '/today')
+        target = target if target.startswith('/') and not target.startswith('//') else '/today'
+        try:
+            ok = lock.check(f.get('pin', ''))
+        except RuntimeError as exc:
+            self._send(lock_page(target, str(exc)))
+            return None
+        if not ok:
+            self._send(lock_page(target, 'הקוד לא נכון'))
+            return None
+        self._extra = [('Set-Cookie', f'{lock.COOKIE}={lock.ticket(TOKEN)}; Path=/; HttpOnly; SameSite=Strict')]
+        self._redirect(target)
+        return None
+
+    def post_lock(self, f):
+        self._extra = [('Set-Cookie', f'{lock.COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict')]
+        self._redirect('/today')
+        return None
+
+    def post_pin_set(self, f):
+        if f.get('action') == 'off':
+            lock.clear_pin()
+            return 'הקוד בוטל — MailBrief נפתח בלי קוד'
+        idle = f.get('idle', '15')
+        if not f.get('pin') and lock.enabled():               # only the minutes changed
+            c = lock.cfg()
+            settings = load_json(config.SETTINGS_FILE, {})
+            settings['pin'] = dict(c, idle=max(1, min(int(idle) if idle.isdigit() else 15, 240)))
+            save_json(config.SETTINGS_FILE, settings)
+            return f'✓ ננעל אחרי {settings["pin"]["idle"]} דקות בלי שימוש'
+        try:
+            lock.set_pin(f.get('pin', ''), int(idle) if idle.isdigit() else 15)
+        except ValueError as exc:
+            return f'⚠️ {exc}'
+        self._extra = [('Set-Cookie', f'{lock.COOKIE}={lock.ticket(TOKEN)}; Path=/; HttpOnly; SameSite=Strict')]
+        return f'🔒 הקוד הופעל — ננעל אחרי {lock.idle_minutes()} דקות בלי שימוש'
+
+    # ---- 💚 income · 🔁 recurring · ⏰ deadlines · 🧪 backups · 📇 contacts -----------------------------------------------------
+    def post_income_remove(self, f):
+        from mailbrief.features import income
+        income.remove(f.get('key', ''))
+        return 'הוסר מההכנסות'
+
+    def post_recurring_add(self, f):
+        from mailbrief.features import recurring
+        freq = f.get('freq', 'monthly')
+        try:
+            r = recurring.add(f.get('account', ''), f.get('to', ''), f.get('subject', ''), f.get('body', ''), freq,
+                              f.get('mday' if freq == 'monthly' else 'wday', '1'), f.get('at', '09:00'))
+        except ValueError as exc:
+            return f'⚠️ {exc}'
+        return f'🔁 נשמר: „{r["subject"]}” — {recurring.when_text(r)}'
+
+    def post_recurring_set(self, f):
+        from mailbrief.features import recurring
+        recurring.set_item(f.get('id', ''), f.get('action', ''))
+        return {'on': '▶️ הופעל', 'off': '⏸️ הושהה', 'delete': 'נמחק'}.get(f.get('action', ''), 'עודכן')
+
+    def post_deadline_done(self, f):
+        from mailbrief.features import deadlines
+        deadlines.done(f.get('key', ''))
+        return ('/today', None)
+
+    def post_backup_check(self, f):
+        from mailbrief.features.maintenance import check_backups
+        ok, lines = check_backups(force=True)
+        return ('🧪 ' + ('הגיבוי תקין' if ok else 'נמצאה בעיה') + ' — ' + ' · '.join(lines))
+
+    def post_contacts_export(self, f):
+        from mailbrief.web.contacts import export_csv
+        path = export_csv()
+        os.startfile(os.path.dirname(path))
+        return ('/contacts?msg=' + quote(f'📥 נשמר: {os.path.basename(path)} (בתוך „הורדות”)'), None)
 
     def post_client_phone(self, f):
         from mailbrief.features.contacts import set_phone
@@ -1152,9 +1259,19 @@ class Handler(BaseHTTPRequestHandler):
         if not name or not text:
             return 'צריך שם ונוסח'
         settings = load_json(config.SETTINGS_FILE, {})
-        settings['templates'] = reply_templates() + [{'id': secrets.token_hex(4), 'name': name, 'text': text}]
+        tid = secrets.token_hex(4)
+        settings['templates'] = reply_templates() + [{'id': tid, 'name': name, 'text': text}]
         save_json(config.SETTINGS_FILE, settings)
-        return f'✓ התבנית „{name}” נוספה'
+        saved = [n for n, data in f['_files'] if data]
+        if saved:
+            from mailbrief.features.replies import template_dir
+            from mailbrief.util import safe_name
+            os.makedirs(template_dir(tid), exist_ok=True)
+            for n, data in f['_files']:
+                if data:
+                    with open(os.path.join(template_dir(tid), safe_name(n) or 'file'), 'wb') as out:
+                        out.write(data)
+        return f'✓ התבנית „{name}” נוספה' + (f' עם {len(saved)} קבצים' if saved else '')
 
     def post_template_delete(self, f):
         gone = next((t for t in reply_templates() if t['id'] == f.get('id')), None)

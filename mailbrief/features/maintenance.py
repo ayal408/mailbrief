@@ -99,3 +99,81 @@ def schedule_status(task=config.TASK_NAME):
         return f'מופעל — הריצה הבאה: {nxt.group(1).strip()}' if nxt else 'לא מתוזמן'
     except Exception:
         return 'לא ידוע'
+
+
+def verify_backup(name=None):
+    """🧪 Opens a backup the way a restore would (without restoring anything) and checks every file inside.
+    Returns (ok, detail). The newest one when no name is given."""
+    import json
+    names = list_backups()
+    name = name or (names[0] if names else '')
+    if not name:
+        return False, 'עוד אין גיבוי במחשב'
+    try:
+        with zipfile.ZipFile(os.path.join(config.BACKUP_DIR, name)) as z:
+            bad = z.testzip()
+            if bad:
+                return False, f'הקובץ {bad} בגיבוי פגום'
+            members = [m for m in z.namelist() if m.endswith('.json')]
+            for m in members:
+                json.loads(z.read(m).decode('utf-8'))
+            needed = {n for n in ('accounts.json', 'settings.json') if os.path.exists(os.path.join(config.DATA, n))}
+            missing = needed - set(members)
+            if missing:
+                return False, f'חסר בגיבוי: {", ".join(sorted(missing))}'
+    except (zipfile.BadZipFile, OSError, ValueError) as exc:
+        return False, f'לא הצלחתי לפתוח את הגיבוי: {exc}'
+    return True, f'{name} — {len(members)} קבצים, כולם נפתחים ותקינים'
+
+
+def verify_cloud():
+    """The newest encrypted copy in Google Drive: downloaded, unlocked with the saved password and checked — in memory only.
+    (None, reason) when there is nothing to check."""
+    import io
+    import json
+    from mailbrief.features import cloud_backup
+    from mailbrief.storage import decrypt
+    c = cloud_backup.cloud_cfg()
+    acc = cloud_backup.drive_account()
+    if not (c.get('auto') and c.get('password') and acc):
+        return None, 'גיבוי הענן לא פעיל עם סיסמה שמורה'
+    files = cloud_backup.remote_backups(acc)
+    if not files:
+        return False, 'אין עדיין גיבוי ב-Drive'
+    blob = cloud_backup._call(acc, 'GET', f'https://www.googleapis.com/drive/v3/files/{files[0]["id"]}?alt=media')
+    try:
+        data = cloud_backup.unseal(blob, decrypt(c['password']))
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            if z.testzip():
+                return False, 'הגיבוי ב-Drive פגום'
+            count = sum(1 for m in z.namelist() if m.endswith('.json') and json.loads(z.read(m).decode('utf-8')) is not None)
+    except Exception as exc:
+        return False, f'הגיבוי ב-Drive לא נפתח: {exc}'
+    return True, f'{files[0]["name"]} ב-Drive — {count} קבצים תקינים'
+
+
+def check_backups(state=None, force=False):
+    """Once a month (or on request): check the local and the cloud backup. A bad local one -> a fresh backup, checked again.
+    Saves the result for the settings page; returns (ok, lines)."""
+    month = dt.date.today().strftime('%Y-%m')
+    if state is not None and not force and state.get('_backup_check') == month:
+        return None, []
+    ok, detail = verify_backup()
+    lines = [('✓ ' if ok else '⚠️ ') + detail]
+    if not ok:
+        make_backup('checked')
+        ok, detail = verify_backup()
+        lines.append(('✓ גיבוי חדש נוצר ונבדק: ' if ok else '⚠️ גם גיבוי חדש נכשל: ') + detail)
+    try:
+        cloud_ok, cloud_detail = verify_cloud()
+    except Exception as exc:
+        cloud_ok, cloud_detail = False, f'בדיקת Drive נכשלה: {exc}'
+    if cloud_ok is not None:
+        lines.append(('✓ ' if cloud_ok else '⚠️ ') + cloud_detail)
+        ok = ok and cloud_ok
+    settings = load_json(config.SETTINGS_FILE, {})
+    settings['backup_check'] = {'at': dt.datetime.now().strftime('%d/%m/%Y %H:%M'), 'ok': ok, 'lines': lines}
+    save_json(config.SETTINGS_FILE, settings)
+    if state is not None:
+        state['_backup_check'] = month
+    return ok, lines
