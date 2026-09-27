@@ -1432,7 +1432,7 @@ class Batch6(Isolated):
         self.assertEqual((dana['name'], dana['emails'], dana['waiting'], dana['median_hours']), ('דנה', 8, 1, 30.0))
         self.assertEqual(yossi['median_hours'], 0.5)
         self.assertEqual(top_priorities(stats)[0]['name'], 'דנה')
-        self.assertIn('מחכים לתשובה', dana['why'])
+        self.assertIn('מייל אחד מחכה לתשובה', dana['why'])
         self.assertEqual((fmt_hours(0.5), fmt_hours(5), fmt_hours(72)), ('30 דק׳', '5 שע׳', '3 ימים'))
         from mailbrief.web.clients import client_page, client_stats_page
         html = client_stats_page()
