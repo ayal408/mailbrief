@@ -14,7 +14,7 @@ if ($LASTEXITCODE) { throw 'tests failed' }
 $data = @('--add-data', "$((Resolve-Path THIRD-PARTY-NOTICES.txt).Path);.")
 if (Test-Path google_client.json) { $data += @('--add-data', "$((Resolve-Path google_client.json).Path);."); Write-Host 'Built-in Google key: yes' }
 else { Write-Host 'Built-in Google key: no (each user sets up their own - see RELEASING.md)' }
-.\.venv\Scripts\pyinstaller.exe --onefile --noconsole --name MailBrief --icon (Resolve-Path assets\mailbrief.ico).Path @data `
+.\.venv\Scripts\python.exe -m PyInstaller --onefile --noconsole --name MailBrief --icon (Resolve-Path assets\mailbrief.ico).Path @data `
     --paths . --distpath dist --workpath build --specpath build --noconfirm --log-level WARN main.py
 Write-Host "Built: $(Resolve-Path dist\MailBrief.exe)"
 
