@@ -200,6 +200,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read(), 'text/plain; charset=utf-8')
             except OSError:
                 return self._send('THIRD-PARTY-NOTICES.txt is missing', 'text/plain', code=404)
+        if url.path == '/client_stats':
+            from mailbrief.web.clients import client_stats_page
+            return self._send(client_stats_page())
         if url.path == '/contacts':
             from mailbrief.web.contacts import contacts_page
             return self._send(contacts_page(parse_qs(url.query).get('msg', [''])[0]))
@@ -252,7 +255,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/clients':
             return self._send(clients_page())
         if url.path == '/client':
-            return self._send(client_page(parse_qs(url.query).get('key', [''])[0]))
+            q = parse_qs(url.query)
+            return self._send(client_page(q.get('key', [''])[0], q.get('msg', [''])[0]))
         if url.path == '/reading':
             return self._send(reading_page(parse_qs(url.query).get('msg', [''])[0]))
         if url.path == '/automations':
@@ -817,6 +821,20 @@ class Handler(BaseHTTPRequestHandler):
         from mailbrief.features.maintenance import check_backups
         ok, lines = check_backups(force=True)
         return ('🧪 ' + ('הגיבוי תקין' if ok else 'נמצאה בעיה') + ' — ' + ' · '.join(lines))
+
+    def post_client_docs(self, f):
+        from mailbrief.features.client_docs import client_zip
+        key = f.get('key', '')
+        back = f'/client?key={quote(key)}&msg='
+        try:
+            path, count, errors = client_zip(key)
+        except RuntimeError as exc:
+            return (back + quote(f'⚠️ {exc}'), None)
+        if not count:
+            return (back + quote('לא נמצאו מסמכים מהשנה האחרונה' + (' · ' + ' | '.join(errors) if errors else '')), None)
+        os.startfile(os.path.dirname(path))
+        return (back + quote(f'📦 {count} מסמכים נשמרו ב-„{os.path.basename(path)}” (בתוך „הורדות”)'
+                             + (' · ' + ' | '.join(errors) if errors else '')), None)
 
     def post_contacts_export(self, f):
         from mailbrief.web.contacts import export_csv

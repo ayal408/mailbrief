@@ -16,9 +16,12 @@ def update_history(results):
     history = load_json(config.HISTORY_FILE, {})
     for res in results:
         for it in res['items']:
-            history[item_key(res['email'], it)] = {'date': it['iso'][:10], 'hour': it['iso'][11:13], 'account': res['email'],
+            key = item_key(res['email'], it)
+            known = (history.get(key) or {}).get('reply_hours')
+            history[key] = {'date': it['iso'][:10], 'hour': it['iso'][11:13], 'account': res['email'],
                                                    'cats': it['cats'], 'rules': it.get('rules', []), 'sender': it['sender'],
                                                    'name': it['sender_name'], 'answered': it.get('answered'),
+                                                   'reply_hours': it['reply_hours'] if it.get('reply_hours') is not None else known,
                                                    'subject': it['subject'][:150], 'link': it.get('link', '')}
     cutoff = (dt.date.today() - dt.timedelta(days=400)).isoformat()
     save_json(config.HISTORY_FILE, {k: v for k, v in history.items() if v['date'] >= cutoff})

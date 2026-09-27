@@ -1411,6 +1411,70 @@ class Batch5(Isolated):
             self.assertIn(marker, settings_page('', sec))
 
 
+class Batch6(Isolated):
+    def _history(self):
+        today = dt.date.today()
+        day = lambda n: (today - dt.timedelta(days=n)).isoformat()
+        rows = {}
+        for i in range(8):                                     # Dana: many emails, slow answers, one waiting
+            rows[f'd{i}'] = {'sender': 'dana@client.co.il', 'name': 'דנה', 'cats': ['people'], 'date': day(i * 3), 'account': 'me@gmail.com',
+                             'answered': i != 0, 'reply_hours': 30.0 if i else None, 'rules': [], 'subject': f's{i}'}
+        for i in range(2):                                     # Yossi: few, fast
+            rows[f'y{i}'] = {'sender': 'yossi@x.co.il', 'name': 'יוסי', 'cats': ['people'], 'date': day(i * 10), 'account': 'me@gmail.com',
+                             'answered': True, 'reply_hours': 0.5, 'rules': [], 'subject': f'y{i}'}
+        storage.save_json(config.HISTORY_FILE, rows)
+
+    def test_client_stats(self):
+        from mailbrief.features.client_stats import client_stats, fmt_hours, top_priorities
+        self._history()
+        stats = client_stats()
+        dana, yossi = stats[0], stats[1]
+        self.assertEqual((dana['name'], dana['emails'], dana['waiting'], dana['median_hours']), ('דנה', 8, 1, 30.0))
+        self.assertEqual(yossi['median_hours'], 0.5)
+        self.assertEqual(top_priorities(stats)[0]['name'], 'דנה')
+        self.assertIn('מחכים לתשובה', dana['why'])
+        self.assertEqual((fmt_hours(0.5), fmt_hours(5), fmt_hours(72)), ('30 דק׳', '5 שע׳', '3 ימים'))
+        from mailbrief.web.clients import client_page, client_stats_page
+        html = client_stats_page()
+        self.assertIn('כדאי לתת עדיפות', html)
+        self.assertIn('דנה', html)
+        self.assertIn('/client_docs', client_page(dana['key']))
+
+    def test_reply_time_is_kept(self):
+        from mailbrief.features import history
+        from mailbrief.money.ledger import item_key
+        it = {'iso': '2026-09-20T10:00:00+03:00', 'cats': ['people'], 'sender': 'a@b.co.il', 'sender_name': 'A', 'subject': 's',
+              'message_id': '<1@x>', 'answered': True, 'reply_hours': 3.5}
+        history.update_history([{'email': 'me@gmail.com', 'items': [it]}])
+        history.update_history([{'email': 'me@gmail.com', 'items': [dict(it, reply_hours=None)]}])        # a later look without it
+        self.assertEqual(storage.load_json(config.HISTORY_FILE, {})[item_key('me@gmail.com', it)]['reply_hours'], 3.5)
+
+    def test_reply_hours_from_sent(self):
+        m = mock.Mock()
+        m.uid.return_value = ('OK', [b'5 (UID 5 INTERNALDATE "20-Sep-2026 15:30:00 +0300")'])
+        self.assertEqual(imap.reply_hours(m, b'5', '2026-09-20T10:00:00+03:00'), 5.5)
+        m.uid.return_value = ('NO', [None])
+        self.assertIsNone(imap.reply_hours(m, b'5', '2026-09-20T10:00:00+03:00'))
+
+    def test_client_zip(self):
+        import zipfile
+        from mailbrief.features import client_docs
+        self._history()
+        key = next(k for k, g in client_docs.client_groups().items() if g['name'] == 'דנה')
+        pdf = b'%PDF' + b'x' * 3000
+        mails = [('2026-09-01', 'חשבונית.pdf', pdf), ('2026-09-02', 'חשבונית.pdf', pdf),          # the same file twice
+                 ('2026-09-03', 'חשבונית.pdf', pdf + b'2')]                                      # same name, other content
+        with mock.patch.object(client_docs, '_mail_files', return_value=iter(mails)):
+            path, count, errors = client_docs.client_zip(key)
+        self.assertEqual((count, errors), (2, []))
+        with zipfile.ZipFile(path) as z:
+            self.assertEqual(sorted(z.namelist()), ['מהמייל/2026-09-01 חשבונית.pdf', 'מהמייל/2026-09-03 חשבונית.pdf'])
+        with mock.patch.object(client_docs, '_mail_files', side_effect=OSError('offline')):
+            path, count, errors = client_docs.client_zip(key)
+        self.assertEqual((path, count), ('', 0))
+        self.assertTrue(errors)
+
+
 def message_b64(claims):
     import base64
     import json

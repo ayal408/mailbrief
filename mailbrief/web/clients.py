@@ -54,6 +54,8 @@ def clients_page():
 <p class="muted">מהתוויות שלך (הכללים) ומהאנשים שיש לך קשר איתם בפועל ב-90 הימים האחרונים. לקוח חדש: כלל ב<a href="/?s=auto#rules">⚙️ הגדרות ← כללים</a>.
 מעקב תשלומים וימי הולדת: <a href="/?s=clients">⚙️ הגדרות ← לקוחות</a>.</p>
 <div class="kpis">{kpis}</div>
+<p><a href="/client_stats"><button type="button" class="ghost" style="margin:0">📊 סטטיסטיקות לכל לקוח — מי כותב הכי הרבה, כמה מהר עונים, למי לתת עדיפות</button></a>
+<a href="/contacts" style="margin-inline-start:10px">📇 אנשי קשר</a></p>
 {f'<div class="scroll"><table><thead><tr><th>לקוח</th><th>מיילים</th><th>ענית</th><th>קשר אחרון</th><th>ממתינים</th><th>לא שילמו</th><th>קבלות</th></tr></thead><tbody>{table}</tbody></table></div>' if table else
  '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה בדף „📈 במספרים”.</p>'}''')
 
@@ -76,7 +78,47 @@ def phone_card(key, g):
             f'<button style="margin:0;padding:6px 14px">💾</button></form></details></div>')
 
 
-def client_page(key):
+def client_stats_page():
+    """📊 Who writes most, how fast you answer each one, and who is worth your attention first."""
+    from mailbrief.features.client_stats import client_stats, fmt_hours, top_priorities
+    stats = client_stats(current=current_account())
+    top = top_priorities(stats)
+    focus = ''.join(f'<div class="item urgent"><div class="t"><a href="/client?key={quote(s["key"])}">{e(s["name"])}</a></div>'
+                    f'<div class="m">{e(s["why"])}</div></div>' for s in top)
+    hours = sorted(s['median_hours'] for s in stats if s['median_hours'] is not None)
+    overall = hours[len(hours) // 2] if hours else None
+    def row(s):
+        waiting = f'<b style="color:var(--warn)">⏳ {s["waiting"]}</b>' if s['waiting'] else '✓'
+        last = 'היום' if s['silent_days'] == 0 else f'לפני {s["silent_days"]} ימים'
+        answered = '—' if s['answered_pct'] is None else f'{s["answered_pct"]}%'
+        slow = 'color:var(--warn)' if (s['median_hours'] or 0) > 24 else ''
+        sort_hours = s['median_hours'] if s['median_hours'] is not None else 99999
+        return (f'<tr data-emails="{s["emails"]}" data-hours="{sort_hours}" data-score="{s["score"]}" data-wait="{s["waiting"]}">'
+                f'<td dir="auto"><a href="/client?key={quote(s["key"])}">{e(s["name"])}</a></td><td>{s["emails"]}</td><td>{s["per_week"]:g}</td>'
+                f'<td style="{slow}">{fmt_hours(s["median_hours"])}</td><td>{answered}</td><td>{waiting}</td><td>{last}</td></tr>')
+    rows = ''.join(row(s) for s in stats)
+    kpis = ''.join(f'<div class="kpi"><b>{v}</b><span>{label}</span></div>' for label, v in [
+        ('זמן תשובה חציוני', fmt_hours(overall)), ('לקוחות פעילים', len(stats)),
+        ('הכי הרבה מיילים', e(stats[0]['name']) if stats else '—'), ('מחכים לך עכשיו', sum(s['waiting'] for s in stats))])
+    return page('סטטיסטיקות לקוחות', f'''<p><a href="/clients">→ כל הלקוחות</a></p>{heading('📊', 'סטטיסטיקות לכל לקוח')}
+<p class="muted">90 הימים האחרונים{' · רק ' + e(current_account()) if current_account() else ''}. זמן התשובה נמדד מהרגע שהמייל הגיע עד שהתשובה שלך יצאה
+(נאסף מעכשיו והלאה בכל בדיקה — המספרים מתמלאים עם הזמן).</p>
+<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">{kpis}</div>
+{f'<h3>🎯 כדאי לתת עדיפות</h3>{focus}' if focus else ''}
+<h3>כל הלקוחות</h3>
+<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="muted" style="font-size:13px">מיון:</span>
+<button type="button" class="ghost s-by" data-by="emails" style="margin:0;padding:4px 12px">✉️ הכי הרבה מיילים</button>
+<button type="button" class="ghost s-by" data-by="score" style="margin:0;padding:4px 12px">🎯 עדיפות</button>
+<button type="button" class="ghost s-by" data-by="hours" style="margin:0;padding:4px 12px">🐢 תשובה איטית</button>
+<button type="button" class="ghost s-by" data-by="wait" style="margin:0;padding:4px 12px">⏳ מחכים</button></div>
+{f'<div class="scroll"><table id="s-table"><thead><tr><th>לקוח</th><th>מיילים</th><th>בשבוע</th><th>זמן תשובה</th><th>נענו</th><th>ממתינים</th><th>קשר אחרון</th></tr></thead><tbody>{rows}</tbody></table></div>' if rows else '<p class="muted">עוד אין מספיק היסטוריה.</p>'}
+<script>(function(){{var body=document.querySelector('#s-table tbody');if(!body)return;
+document.querySelectorAll('.s-by').forEach(function(b){{b.onclick=function(){{var by=b.dataset.by,rows=Array.prototype.slice.call(body.rows);
+rows.sort(function(x,y){{var a=parseFloat(x.dataset[by]),c=parseFloat(y.dataset[by]);return by==='hours'?(c===99999?-1:a===99999?1:c-a):c-a;}});
+rows.forEach(function(r){{body.appendChild(r);}});document.querySelectorAll('.s-by').forEach(function(x){{x.style.background=x===b?'var(--accent)':'';x.style.color=x===b?'#fff':'';}});}};}});}})();</script>''', '/clients')
+
+
+def client_page(key, msg=''):
     g = client_groups().get(key)
     if not g:
         return page('לקוח', '<h1>הלקוח לא נמצא</h1>', '/clients')
@@ -93,11 +135,18 @@ def client_page(key):
     kpis = ''.join(f'<div class="kpi"><b>{v}</b><span>{k}</span></div>' for k, v in [
         ('מיילים ב-90 יום', len(g['emails'])), ('ממתינים לתשובה', g['waiting']),
         ('קבלות', len(g['invoices'])), ('סה״כ ₪', money(sum(ils(r) or 0 for r in g['invoices'])))])
-    return page(g['name'], f'''<p><a href="/clients">→ כל הלקוחות</a></p><h1 dir="auto"><span class="g">{e(g["name"])}</span></h1>
+    from mailbrief.features.client_stats import client_stats, fmt_hours
+    mine_stats = next((s for s in client_stats() if s['key'] == key), None)
+    note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
+    return page(g['name'], f'''<p><a href="/clients">→ כל הלקוחות</a></p>{note}<h1 dir="auto"><span class="g">{e(g["name"])}</span></h1>
 <div class="kpis">{kpis}</div>
+{f'<p class="muted">⏱️ עונים בדרך כלל אחרי {fmt_hours(mine_stats["median_hours"])} · {mine_stats["per_week"]:g} מיילים בשבוע'
+  + (f' · 🎯 {e(mine_stats["why"])}' if mine_stats['why'] else '') + ' · <a href="/client_stats">השוואה לכולם</a></p>' if mine_stats else ''}
 <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/search?q={quote(g["query"])}"><button type="button">🔍 כל המיילים</button></a>
 <form method="post" action="/search_download" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="q" value="{e(g["query"])}">
 <button>📥 הורדת כל הקבצים</button></form>
+<form method="post" action="/client_docs" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><input type="hidden" name="key" value="{e(key)}">
+<button title="כל החשבוניות, הקבלות והקבצים מהשנה האחרונה — בקובץ ZIP אחד">📦 כל המסמכים מהשנה (ZIP)</button></form>
 <a href="/client_summary?key={quote(key)}"><button type="button" class="ghost" style="background:transparent;color:var(--ink);border:1px solid var(--line)">📨 סיכום חודשי ללקוח</button></a></div>
 {phone_card(key, g)}
 <h3>📝 הערות</h3>

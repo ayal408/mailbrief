@@ -104,6 +104,20 @@ def mark_unanswered(m, items):
         typ, data = m.uid('SEARCH', None, 'OR', 'HEADER', 'In-Reply-To', f'"{mid}"', 'HEADER', 'References', f'"{mid}"')
         it['answered'] = bool(typ == 'OK' and data and data[0].strip())
         it['waiting_days'] = 0 if it['answered'] else (now - dt.datetime.fromisoformat(it['iso'])).days
+        if it['answered']:
+            it['reply_hours'] = reply_hours(m, data[0].split()[0], it['iso'])
+
+
+def reply_hours(m, uid, received_iso):
+    """How long after the email the first reply went out (hours), from the reply's arrival time in Sent."""
+    try:
+        typ, rows = m.uid('FETCH', uid, '(INTERNALDATE)')
+        stamp = re.search(rb'INTERNALDATE "([^"]+)"', rows[0] if isinstance(rows[0], bytes) else rows[0][0])
+        sent = dt.datetime.strptime(stamp.group(1).decode(), '%d-%b-%Y %H:%M:%S %z')
+        hours = (sent - dt.datetime.fromisoformat(received_iso)).total_seconds() / 3600
+        return round(hours, 1) if hours >= 0 else None
+    except Exception:
+        return None
 
 
 def fetch_uids(m, uids, gmail):

@@ -211,7 +211,7 @@ HTML = """
     ['📎 כל הקבצים המצורפים', '/files'], ['📊 תקציב חודשי', '/?s=money#budget'], ['⚖️ מי זול יותר', '/?s=money#compare'],
     ['🧾 מסמכים להחזר מס', '/?s=money#tax'], ['⚡ קיצורי טקסט', '/?s=auto#snippets'], ['🔓 בדיקת דליפות', '/?s=me#leaks'],
     ['📋 דוח שבועי לשותף', '/?s=clients#share'], ['🖨️ הדפסת היום שלי', '/today?print=1'],
-    ['📇 אנשי קשר', '/contacts'], ['💚 הכנסות החודש', '/?s=money#income'], ['🔁 מיילים חוזרים', '/?s=auto#recurring'],
+    ['📇 אנשי קשר', '/contacts'], ['📊 סטטיסטיקות לקוחות', '/client_stats'], ['💚 הכנסות החודש', '/?s=money#income'], ['🔁 מיילים חוזרים', '/?s=auto#recurring'],
     ['🔒 קוד לפתיחה', '/?s=me#pin'], ['🧪 בדיקת גיבוי', '/?s=data#backupcheck'],
     ['🧾 דוח חודשי לרו״ח (PDF)', '/month_report'], ['📤 מיילים מתוזמנים', '/compose#queue'], ['✍️ חתימה לכל תיבה', '/?s=boxes'],
     ['ℹ️ אודות וגרסה', '/about'], ['♿ נגישות', 'javascript:a11y'], ['⌨️ קיצורי מקלדת', 'javascript:keys'], ['🎓 סיור היכרות', 'javascript:tour'],
