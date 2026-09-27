@@ -34,7 +34,7 @@ def month_report_page(month=''):
     lines = ''.join(
         f'<tr><td style="white-space:nowrap">{r["date"][8:10]}/{r["date"][5:7]}</td><td dir="auto">{e(r.get("vendor", ""))}</td>'
         f'<td dir="auto">{e((r.get("subject") or "")[:60])}</td><td>{e(book_for(r, cfg))}</td>'
-        f'<td dir="ltr" style="text-align:right;white-space:nowrap">{e(r.get("currency", ""))}{r["amount"] if r.get("amount") is not None else "—"}</td>'
+        f'<td dir="ltr" style="text-align:right;white-space:nowrap">{e(r.get("currency", ""))}{format(r["amount"], ",g") if r.get("amount") is not None else "—"}</td>'
         f'<td style="white-space:nowrap">{money(ils(r)) if ils(r) is not None else "—"}</td>'
         f'<td style="white-space:nowrap">{money(vat_of(r, cfg)) if ils(r) is not None else ""}</td>'
         f'<td>{"📎" if r.get("files") else ""}</td></tr>' for r in rows)
