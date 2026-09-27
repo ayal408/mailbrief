@@ -14,14 +14,16 @@ def hours():
     return int(cfg.get('start', 9)), int(cfg.get('end', 17)), int(cfg.get('length', 60))
 
 
-def busy_ranges(events):
-    """[(start, end)] from calendar rows (all-day events don't block)."""
+def busy_ranges(events, tz=None):
+    """[(start, end)] from calendar rows (all-day events don't block). Times are read in the calendar's zone (tz)."""
     out = []
     for ev in events:
         if not ev.get('day') or ev.get('time') in ('', 'כל היום') or not ev.get('end_iso'):
             continue
-        start = dt.datetime.fromisoformat(f'{ev["day"]}T{ev["time"]}').astimezone()
-        end = dt.datetime.fromisoformat(ev['end_iso']).astimezone()
+        start = dt.datetime.fromisoformat(f'{ev["day"]}T{ev["time"]}')
+        start = start.replace(tzinfo=tz) if tz else start.astimezone()
+        end = dt.datetime.fromisoformat(ev['end_iso'])
+        end = end if end.tzinfo else (end.replace(tzinfo=tz) if tz else end.astimezone())
         out.append((start, end))
     return out
 
@@ -32,15 +34,16 @@ def free_slots(events, now=None, days=7, count=6, holy=None):
     start_h, end_h, length = hours()
     now = now or dt.datetime.now().astimezone()
     holy = holy_windows() if holy is None else holy
-    busy = busy_ranges(events)
+    tz = now.tzinfo                                          # one zone for everything: the one "now" is in
+    busy = busy_ranges(events, tz)
     step, need = dt.timedelta(minutes=30), dt.timedelta(minutes=length)
     out = []
     for n in range(days + 1):
         day = (now + dt.timedelta(days=n)).date()
         if day.weekday() in (4, 5):                          # Friday, Shabbat
             continue
-        t = dt.datetime.combine(day, dt.time(start_h)).astimezone()
-        close = dt.datetime.combine(day, dt.time(end_h)).astimezone()
+        t = dt.datetime.combine(day, dt.time(start_h), tzinfo=tz)
+        close = dt.datetime.combine(day, dt.time(end_h), tzinfo=tz)
         today_count = 0
         while t + need <= close and today_count < 2 and len(out) < count:
             end = t + need
