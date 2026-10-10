@@ -56,6 +56,8 @@ nav.tabs a.on{background:var(--accent);color:#fff;border-color:var(--accent);box
 .mbxs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:-4px 16px 16px}
 .mbx{font:inherit;font-size:13px;border:1px dashed var(--line);background:transparent;color:var(--muted);padding:4px 12px;border-radius:999px;cursor:pointer;margin:0;display:inline-flex;align-items:center}
 .mbx:hover{border-color:var(--accent);color:var(--ink);filter:none}.mbx.on{border-style:solid;border-color:var(--accent);color:var(--ink);background:var(--surface);font-weight:500}
+/* Windows 11 hides scrollbars until the mouse is on them ("there's no scrollbar"): a scrollbar style keeps them always shown */
+*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 55%,transparent) transparent}
 @media(max-width:760px){nav.tabs{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}nav.tabs::-webkit-scrollbar{display:none}
 .hero{padding-top:56px}.hero .gift{font-size:48px}.hero .tag{font-size:16px}}
 button{transition:filter .15s,transform .1s}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.97)}

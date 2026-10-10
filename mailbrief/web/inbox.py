@@ -769,7 +769,7 @@ function drawHome(){
     }).join('') + '</div>' + (d.latest.length ? '<h3>✉️ אחרונים שלא נקראו</h3><div class="ib-late">' + d.latest.map(function(r){
       return '<div data-goopen="' + esc(r.account) + '\u0001' + r.uid + '">' + (multi ? '<span style="color:' + color(r.account) + '">●</span> ' : '') + '<b dir="auto">' + esc(r.from.name || r.from.email) + '</b> · ' + when(r.at) + ' — <span dir="auto">' + esc(r.subject || '(ללא נושא)') + '</span></div>';
     }).join('') + '</div>' : '<p class="muted">🎉 אין מיילים שלא נקראו</p>') +
-      '<p class="muted" style="font-size:12px;margin-top:18px">' + new Date().toLocaleDateString('he-IL-u-ca-hebrew', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}) + ' · ' + new Date().toLocaleDateString('he-IL', {day: 'numeric', month: 'long', year: 'numeric'}) + '</p></div>';
+      '<p class="muted" style="font-size:12px;margin-top:18px">' + new Date().toLocaleDateString('he-IL', {weekday: 'long'}) + ', ' + hebDate(new Date()) + ' · ' + new Date().toLocaleDateString('he-IL', {day: 'numeric', month: 'long', year: 'numeric'}) + '</p></div>';
     $('ib-read').innerHTML = html;
   }).catch(function(e){ if (seq === homeSeq && !S.open) $('ib-read').innerHTML = '<div class="ib-none">⚠️ ' + esc(e.message) + '</div>'; });
 }
@@ -790,6 +790,9 @@ function folderOptions(acc){
   return '<select id="ib-move" title="העברה לתיקייה"><option value="">📁 העברה ל…</option>' + l.filter(function(f){ return f.id !== S.open.folder; }).map(function(f){ return '<option value="' + esc(f.id) + '">' + esc(f.icon + ' ' + (f.path || f.name)) + '</option>'; }).join('') + '</select>';
 }
 function people(list){ return list.map(function(p){ return '<span title="' + esc(p.email) + '">' + esc(p.name || p.email) + '</span>'; }).join(', '); }
+function hebDate(d){                                   // כ״ז בתשרי תשפ״ז, as the date picker writes it
+  return window.HebPicker ? HebPicker.hebText(d) : d.toLocaleDateString('he-IL-u-ca-hebrew', {day: 'numeric', month: 'long', year: 'numeric'});
+}
 function drawMessage(){
   var m = S.open, c = m.contact, ref = 'a=' + encodeURIComponent(m.account) + '&f=' + encodeURIComponent(m.folder) + '&u=' + m.uid;
   var tools = '<button class="ib-ic ib-back" type="button" data-m="back">→ חזרה</button>' +
@@ -807,7 +810,7 @@ function drawMessage(){
   var meta = '<div class="ib-meta">' + avatar(m.from.name, m.from.email) + '<div style="flex:1;min-width:0"><b dir="auto">' + esc(m.from.name || m.from.email) + '</b> <span dir="ltr">&lt;' + esc(m.from.email) + '&gt;</span><br>' +
     'אל: ' + people(m.to) + (m.cc.length ? ' · עותק: ' + people(m.cc) : '') + (multi ? ' · <span style="color:' + color(m.account) + '">●</span> ' + esc(m.account) : '') + '</div>' +
     '<div style="white-space:nowrap;text-align:end">' + (m.date ? new Date(m.date).toLocaleString('he-IL', {dateStyle: 'medium', timeStyle: 'short'}) +
-      '<br><span style="font-size:12px">' + new Date(m.date).toLocaleDateString('he-IL-u-ca-hebrew', {day: 'numeric', month: 'long', year: 'numeric'}) + '</span>' : '') + '</div></div>';
+      '<br><span style="font-size:12px">' + hebDate(new Date(m.date)) + '</span>' : '') + '</div></div>';
   var card = '';
   if (c && (c.emails || c.docs || c.client)) {
     card = '<div class="ib-card">👤' + (c.client ? '<span>לקוח: <a href="/client?key=' + encodeURIComponent(c.client.key) + '">' + esc(c.client.name) + '</a></span>' : '') +
@@ -1136,10 +1139,17 @@ var timer = setInterval(function(){
   if (!$('ibx')) return stop();
   api('/inbox_poll.json').then(function(d){ if (S.v >= 0 && d.v !== S.v) { loadList({quiet: 1}); loadAllFolders(true); } S.v = d.v; }).catch(function(){});
 }, 8000);
-function stop(){ clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.removeEventListener('message', fitFrame); window.__ibx = null; }
+function fitBox(){                                     // 📐 the inbox fills the window below the tabs: the list and the email scroll, not the page
+  var box = $('ibx'); if (!box) return;
+  if (window.innerWidth <= 820) { box.style.height = box.style.minHeight = ''; return; }
+  var top = box.getBoundingClientRect().top + window.scrollY;
+  box.style.minHeight = '420px'; box.style.height = Math.max(420, window.innerHeight - top - 14) + 'px';
+}
+function stop(){ window.removeEventListener('resize', fitBox); clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.removeEventListener('message', fitFrame); window.__ibx = null; }
 function unload(){ if (S.comp) saveDraft(true); }
 window.addEventListener('keydown', keys); window.addEventListener('beforeunload', unload); document.addEventListener('mousedown', outside); window.addEventListener('message', fitFrame);
 window.__ibx = {stop: stop};
+window.addEventListener('resize', fitBox); fitBox(); setTimeout(fitBox, 300);
 
 applyLook(); drawFolders(); loadAllFolders(false); if (S.acc !== '*') loadFolders(S.acc, true);
 if (!B.uid) drawHome();

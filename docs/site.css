@@ -41,3 +41,4 @@ footer{border-top:1px solid var(--line);padding:24px 0 40px;margin-top:48px;colo
 footer a{margin:0 6px}
 [dir=ltr]{text-align:left}
 @media (max-width:640px){.shots{grid-template-columns:1fr}.panel{padding:18px}}
+.hebcal{display:flex;gap:24px;align-items:center;flex-wrap:wrap}.hebcal img{width:300px;max-width:100%;border-radius:16px;border:1px solid var(--line);box-shadow:var(--shadow)}.hebcal>div{flex:1;min-width:240px}
