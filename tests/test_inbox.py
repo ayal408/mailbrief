@@ -56,7 +56,14 @@ class FakeIMAP:
         return 'OK', [str(len(self.boxes[name])).encode()]
 
     def response(self, code):
+        if code == 'COPYUID':                                # UIDPLUS: told once, after a MOVE
+            said, self.copyuid = getattr(self, 'copyuid', None), None
+            return code, [said]
         return code, [b'7']
+
+    def expunge(self):
+        self.boxes[self.current] = [m for m in self.boxes[self.current] if '\\Deleted' not in m['flags']]
+        return 'OK', [b'']
 
     def list(self, *args):
         rows = {'INBOX': '\\HasNoChildren', '[Gmail]/All Mail': '\\All', '[Gmail]/Sent Mail': '\\Sent', '[Gmail]/Trash': '\\Trash',
@@ -137,7 +144,15 @@ class FakeIMAP:
         if cmd == 'MOVE':
             moving = self._pick(args[0])
             self.boxes[self.current] = [m for m in box if m not in moving]
-            self.boxes[self._q(args[1])] += moving
+            target = self.boxes[self._q(args[1])]
+            old, new = [], []
+            for m in moving:                                 # a new UID there when the old one is taken, like a real server
+                taken = {x['uid'] for x in target}
+                old.append(m['uid'])
+                m = dict(m, uid=m['uid'] if m['uid'] not in taken else max(taken) + 1)
+                new.append(m['uid'])
+                target.append(m)
+            self.copyuid = f'7 {",".join(map(str, old))} {",".join(map(str, new))}'.encode()
             return 'OK', [b'']
         if cmd == 'EXPUNGE':
             self.boxes[self.current] = [m for m in box if '\\Deleted' not in m['flags']]
@@ -314,6 +329,31 @@ class Review(InboxBase):
         self.assertNotIn(acc['id'], mailbox._POOL)
 
 
+class LikeAMailbox(InboxBase):
+    def test_undo_mark_all_read_and_empty(self):
+        from mailbrief.mail import mailbox
+        self.boxes['[Gmail]/Trash'].append(dict(self.boxes['INBOX'][0], uid=1))      # uid 1 is taken in the trash
+        target, new = mailbox.delete('me@gmail.com', 'INBOX', [1])
+        self.assertEqual((target, new), ('[Gmail]/Trash', [2]))                     # the server's new UID, for ↩️
+        mailbox.move('me@gmail.com', target, new, 'INBOX')                          # ↩️ undo: back where it was
+        self.assertIn(b'm1@example.com', b''.join(m['raw'] for m in self.boxes['INBOX']))
+        self.assertEqual(mailbox.mark_all_read('me@gmail.com', 'INBOX'), 2)
+        self.assertTrue(all('\\Seen' in m['flags'] for m in self.boxes['INBOX']))
+        self.assertEqual(mailbox.empty('me@gmail.com', '[Gmail]/Trash'), 1)
+        self.assertEqual(self.boxes['[Gmail]/Trash'], [])
+        with self.assertRaises(ValueError):
+            mailbox.empty('me@gmail.com', 'INBOX')                                   # only the trash and spam
+        self.assertEqual(mailbox.uid_list('3,5:7'), [3, 5, 6, 7])
+
+    def test_print_page_templates_and_block(self):
+        from mailbrief.web import inbox
+        doc = inbox.print_document('me@gmail.com', 'INBOX', 1, 'n0nce')
+        self.assertIn('<script nonce="n0nce">', doc)
+        self.assertEqual(doc.count('<script'), 1)                                   # the email's own script is gone
+        self.assertIn('quote.pdf', doc)
+        self.assertNotIn('track.example', doc)
+
+
 class SafeBody(InboxBase):
     def test_email_html_is_cleaned(self):
         from mailbrief.mail import mailbox, sanitize
@@ -449,6 +489,24 @@ class InboxServer(InboxBase):
         self.assertEqual(storage.load_json(config.REMINDERS_FILE, [])[-1]['subject'], 'הצעת מחיר')
         resp, data = self.post('/inbox_tool', {'a': 'me@gmail.com', 'f': 'INBOX', 'u': '1', 'tool': 'remind_at', 'at': '2020-01-01T09:00'})
         self.assertEqual(resp.status, 400)                                          # the past is refused
+
+    def test_undo_print_templates_block(self):
+        resp, data = self.post('/inbox_act', {'a': 'me@gmail.com', 'f': 'INBOX', 'uids': '2', 'act': 'archive'})
+        self.assertEqual(data['undo'], {'folder': '[Gmail]/All Mail', 'uids': [2], 'back': 'INBOX'})
+        resp, data = self.post('/inbox_act', {'a': 'me@gmail.com', 'f': data['undo']['folder'], 'uids': '2', 'act': 'move', 'to': 'INBOX'})
+        self.assertTrue(data['ok'])
+        self.assertIn(2, [m['uid'] for m in self.boxes['INBOX']])
+        resp, body = self.get('/inbox_print?a=me@gmail.com&f=INBOX&u=1')
+        policy = resp.getheader('Content-Security-Policy')
+        self.assertIn("script-src 'nonce-", policy)
+        self.assertNotIn('unsafe-inline\'; img-src https', policy)
+        resp, body = self.get('/inbox_templates.json')
+        self.assertTrue(json.loads(body)['templates'][0]['text'])
+        resp, data = self.post('/inbox_tool', {'a': 'me@gmail.com', 'f': 'INBOX', 'u': '2', 'tool': 'block'})
+        self.assertIn('news@shop.example', data['msg'])
+        self.assertIn('news@shop.example', [b['who'] for b in storage.load_json(config.SETTINGS_FILE, {})['blocked']])
+        resp, data = self.post('/inbox_act', {'a': 'me@gmail.com', 'f': 'INBOX', 'uids': '', 'act': 'readall'})
+        self.assertEqual(data['count'], 2)
 
     def test_the_whole_page(self):
         resp, body = self.get('/inbox')

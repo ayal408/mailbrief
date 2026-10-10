@@ -563,26 +563,88 @@ def set_flag(address, folder, uids, flag, on):
     _set_cached_flags(address.lower(), folder, uids, flag, on)
 
 
+def uid_list(text):
+    """'3,5:7' -> [3, 5, 6, 7] (an IMAP sequence set)."""
+    out = []
+    for part in (text or '').split(','):
+        a, _, b = part.partition(':')
+        if a.isdigit() and (not b or b.isdigit()):
+            out += list(range(int(a), int(b or a) + 1)) if not b or int(b) >= int(a) else list(range(int(b), int(a) + 1))
+    return out
+
+
+def _copyuid(m, data):
+    """The new UIDs in the target folder (UIDPLUS: [COPYUID validity old new]), in the order of the old ones — or []."""
+    texts = [d.decode('utf-8', 'replace') for d in (data or []) if isinstance(d, bytes)]
+    texts += [d.decode('utf-8', 'replace') if isinstance(d, bytes) else str(d) for d in (m.response('COPYUID')[1] or []) if d]
+    for text in texts:
+        found = re.search(r'(?:COPYUID )?(\d+) ([\d:,]+) ([\d:,]+)', text)
+        if found:
+            old, new = uid_list(found.group(2)), uid_list(found.group(3))
+            if len(old) == len(new):
+                return [n for _, n in sorted(zip(old, new))]
+    return []
+
+
 def move(address, folder, uids, target):
-    """MOVE when the server knows it (almost all do); otherwise COPY + delete."""
+    """MOVE when the server knows it (almost all do); otherwise COPY + delete.
+    Returns the messages' new UIDs in the target folder (for ↩️ undo), or [] when the server doesn't say."""
     if not target or target == folder:
         raise ValueError('צריך לבחור תיקייה אחרת')
     acc = account(address)
     with session(acc, folder) as m:
         ids = _uidset(uids)
+        m.response('COPYUID')                            # forget an old answer
         if 'MOVE' in m.capabilities:
-            typ, _ = m.uid('MOVE', ids, quoted(target))
+            typ, data = m.uid('MOVE', ids, quoted(target))
         else:
-            typ, _ = m.uid('COPY', ids, quoted(target))
+            typ, data = m.uid('COPY', ids, quoted(target))
             if typ == 'OK':
                 m.uid('STORE', ids, '+FLAGS.SILENT', '(\\Deleted)')
                 if 'UIDPLUS' in m.capabilities:
                     m.uid('EXPUNGE', ids)
                 else:
                     m.expunge()
+        new = _copyuid(m, data) if typ == 'OK' else []
     if typ != 'OK':
         raise RuntimeError('השרת לא אישר את ההעברה')
     _forget(address.lower(), folder, uids)
+    return new
+
+
+def mark_all_read(address, folder):
+    """✓ Everything in the folder as read."""
+    acc = account(address)
+    with session(acc, folder) as m:
+        typ, data = m.uid('SEARCH', None, 'UNSEEN')
+        uids = (data[0] or b'').split() if typ == 'OK' and data else []
+        for i in range(0, len(uids), 500):
+            m.uid('STORE', b','.join(uids[i:i + 500]), '+FLAGS.SILENT', r'(\Seen)')
+    with _DB_LOCK, contextlib.closing(_db()) as db, db:
+        rows = db.execute('SELECT uid, data FROM heads WHERE acc=? AND folder=?', (address.lower(), folder)).fetchall()
+        for uid, raw in rows:
+            data = json.loads(raw)
+            data['flags'] = sorted(set(data.get('flags', [])) | {'\\Seen'})
+            db.execute('UPDATE heads SET data=? WHERE acc=? AND folder=? AND uid=?', (json.dumps(data, ensure_ascii=False), address.lower(), folder, uid))
+    return len(uids)
+
+
+def empty(address, folder):
+    """🗑️ Empty the trash or the spam folder — gone for good. Only those two."""
+    role = next((f['role'] for f in folders(address, fresh=False) if f['id'] == folder), '')
+    if role not in ('trash', 'junk'):
+        raise ValueError('אפשר לרוקן רק את האשפה ואת הספאם')
+    acc = account(address)
+    with session(acc, folder) as m:
+        typ, data = m.uid('SEARCH', None, 'ALL')
+        uids = (data[0] or b'').split() if typ == 'OK' and data else []
+        for i in range(0, len(uids), 500):
+            m.uid('STORE', b','.join(uids[i:i + 500]), '+FLAGS.SILENT', r'(\Deleted)')
+        m.expunge()
+    with _DB_LOCK, contextlib.closing(_db()) as db, db:
+        db.execute('DELETE FROM heads WHERE acc=? AND folder=?', (address.lower(), folder))
+        db.execute('DELETE FROM bodies WHERE acc=? AND folder=?', (address.lower(), folder))
+    return len(uids)
 
 
 def archive(address, folder, uids):
@@ -590,7 +652,7 @@ def archive(address, folder, uids):
     target = folder_of(address, 'all' if imap.is_gmail(account(address)) else 'archive')
     if not target:
         raise RuntimeError('לא נמצאה תיקיית ארכיון בתיבה הזו — אפשר להעביר לתיקייה אחרת')
-    move(address, folder, uids, target)
+    return target, move(address, folder, uids, target)
 
 
 def delete(address, folder, uids):
@@ -598,7 +660,7 @@ def delete(address, folder, uids):
     trash = folder_of(address, 'trash')
     role = next((f['role'] for f in folders(address, fresh=False) if f['id'] == folder), '')
     if trash and folder != trash and role != 'junk':
-        return move(address, folder, uids, trash)
+        return trash, move(address, folder, uids, trash)
     acc = account(address)
     with session(acc, folder) as m:
         ids = _uidset(uids)
@@ -608,13 +670,14 @@ def delete(address, folder, uids):
         else:
             m.expunge()
     _forget(address.lower(), folder, uids)
+    return None, []
 
 
 def spam(address, folder, uids, back=False):
     target = 'INBOX' if back else folder_of(address, 'junk')
     if not target:
         raise RuntimeError('לא נמצאה תיקיית ספאם בתיבה הזו')
-    move(address, folder, uids, target)
+    return target, move(address, folder, uids, target)
 
 
 def append(address, role, message, flags=r'(\Seen)'):

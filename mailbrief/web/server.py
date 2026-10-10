@@ -867,6 +867,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(mailbox.list_messages(q.get('a', ''), q.get('f', 'INBOX'), page_no, q.get('q', ''), bool(q.get('unread'))))
             if url.path == '/inbox_msg.json' and uid:
                 return self._json(inbox.message_info(q.get('a', ''), q.get('f', 'INBOX'), uid))
+            if url.path == '/inbox_templates.json':
+                return self._json({'templates': [{'id': t.get('id', ''), 'name': t.get('name', ''), 'text': t.get('text', '')}
+                                                 for t in reply_templates()]})
+            if url.path == '/inbox_print' and uid:             # 🖨️ the message on a plain page that prints itself
+                nonce = secrets.token_urlsafe(12)
+                doc = inbox.print_document(q.get('a', ''), q.get('f', 'INBOX'), uid, nonce)
+                self._extra = list(getattr(self, '_extra', [])) + [
+                    ('Content-Security-Policy', f"default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-{nonce}'"),
+                    ('Referrer-Policy', 'no-referrer'), ('Cache-Control', 'no-store')]
+                return self._send(doc)
             if url.path == '/inbox_people.json':
                 return self._json({'people': inbox.people()})
             if url.path == '/inbox_compose.json':
@@ -911,16 +921,24 @@ class Handler(BaseHTTPRequestHandler):
             flags = {'read': ('\\Seen', True), 'unread': ('\\Seen', False), 'star': ('\\Flagged', True), 'unstar': ('\\Flagged', False)}
             if what in flags:
                 mailbox.set_flag(address, folder, uids, *flags[what])
-            elif what == 'archive':
-                mailbox.archive(address, folder, uids)
-            elif what == 'delete':
-                mailbox.delete(address, folder, uids)
+            elif what in ('archive', 'delete', 'spam', 'notspam', 'move'):
+                if what == 'archive':
+                    target, new = mailbox.archive(address, folder, uids)
+                elif what == 'delete':
+                    target, new = mailbox.delete(address, folder, uids)
+                elif what == 'move':
+                    target = f.get('to', '')
+                    new = mailbox.move(address, folder, uids, target)
+                else:
+                    target, new = mailbox.spam(address, folder, uids, back=what == 'notspam')
+                live.bump()
+                return {'ok': True, 'undo': {'folder': target, 'uids': new, 'back': folder} if target and new else None}
+            elif what == 'readall':
+                return {'ok': True, 'count': mailbox.mark_all_read(address, folder)}
+            elif what == 'empty':
+                return {'ok': True, 'count': mailbox.empty(address, folder)}
             elif what == 'delete_draft':
                 mailbox.delete_for_good(address, folder, uids)
-            elif what in ('spam', 'notspam'):
-                mailbox.spam(address, folder, uids, back=what == 'notspam')
-            elif what == 'move':
-                mailbox.move(address, folder, uids, f.get('to', ''))
             else:
                 raise ValueError('פעולה לא מוכרת')
             live.bump()
@@ -1082,6 +1100,10 @@ class Handler(BaseHTTPRequestHandler):
                     write_once(folder_path, safe_name(fname), part.get_payload(decode=True) or b'')
                 os.startfile(folder_path)
                 return {'msg': f'💾 {len(chosen)} קבצים נשמרו בהורדות'}
+            if tool == 'block':                                # 🚫 their next emails go to the archive by themselves
+                from mailbrief.features.blocking import block
+                who = block(who)
+                return {'msg': f'🚫 {who} נחסם — המיילים הבאים ממנו יעברו לארכיון לבד (ביטול: הגדרות ← חסומים)'}
             if tool == 'images':
                 settings = load_json(config.SETTINGS_FILE, {})
                 allowed = settings.setdefault('images_from', [])
