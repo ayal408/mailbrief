@@ -89,6 +89,8 @@ def token_request(provider, fields, client_id=None):
 
 def access_token(acc):
     fields = {'grant_type': 'refresh_token', 'refresh_token': decrypt(acc['refresh'])}
+    if acc['auth'] == 'microsoft':              # without a scope Microsoft may hand a token for another service, which IMAP refuses
+        fields['scope'] = PROVIDERS['microsoft']['scope']
     if acc.get('client_id'):
         data = token_request(acc['auth'], fields, acc['client_id'])
     else:                                       # connected before MailBrief remembered the key: find the one that works

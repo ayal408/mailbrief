@@ -87,6 +87,10 @@ def friendly_error(exc, acc):
     if isinstance(exc, RuntimeError):
         return text
     if isinstance(exc, imaplib.IMAP4.error) and re.search(r'auth|login|credential|password', text, re.I):
+        if acc.get('auth') == 'microsoft':
+            return ('Microsoft דחתה את הכניסה ל-IMAP. ב-Outlook.com / Hotmail הגישה ב-IMAP כבויה לפעמים: outlook.live.com ← ⚙️ הגדרות ← '
+                    'דואר ← העברה ו-IMAP ← להפעיל „אפשר להתקנים ולאפליקציות להשתמש ב-IMAP” ← שמירה, ואז להתחבר שוב. '
+                    f'(תשובת השרת: {text[:120]})')
         if acc.get('auth') in PROVIDERS:
             return 'השרת דחה את ההרשאה — צריך להתחבר מחדש לתיבה הזו'
         domain = acc['email'].rsplit('@', 1)[-1].lower()
