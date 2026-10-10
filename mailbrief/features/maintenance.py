@@ -51,7 +51,7 @@ def health_checks():
     rows = []
     accounts = load_json(config.ACCOUNTS_FILE, [])
     if not accounts:
-        rows.append(('תיבות מייל', False, 'אין תיבה מחוברת — „חיבור עם Google” בדף הראשי'))
+        rows.append(('תיבות מייל', False, 'אין תיבה מחוברת — ״חיבור עם Google״ בדף הראשי'))
     for acc in accounts:
         started = dt.datetime.now()
         try:

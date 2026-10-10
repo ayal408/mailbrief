@@ -86,7 +86,7 @@ def meeting_button(r):
     return (f'<form method="post" action="/meeting_add" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
             f'<input type="hidden" name="start" value="{e(m["start"])}"><input type="hidden" name="who" value="{e(r.get("from", ""))}">'
             f'<input type="hidden" name="sender" value="{e(r.get("sender", ""))}"><input type="hidden" name="subject" value="{e(r.get("subject", ""))}">'
-            f'<button style="{SMALL};border-color:var(--accent);color:var(--accent)" title="„{e(m["sentence"])}”">'
+            f'<button style="{SMALL};border-color:var(--accent);color:var(--accent)" title="״{e(m["sentence"])}״">'
             f'📅 {start:%d/%m} {start:%H:%M} — ליומן</button></form>')
 
 
@@ -149,7 +149,7 @@ def deadline_row(key, d):
     tag = 'היום!' if left == 0 else 'מחר' if left == 1 else f'{when:%d/%m} · עוד {left} ימים'
     title = f'<a href="{e(d["link"])}" target="_blank">{e(d["subject"][:60])}</a>' if d.get('link') else e(d['subject'][:60])
     return (f'<li dir="auto"><b style="color:{"var(--bad)" if left <= 1 else "var(--ink)"}">{tag}</b> — {title} <span class="muted">· {e(d["from"])}</span>'
-            f'<div class="muted" style="font-size:13px">„{e(d["sentence"])}”</div>'
+            f'<div class="muted" style="font-size:13px">״{e(d["sentence"])}״</div>'
             f'<form method="post" action="/deadline_done" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
             f'<input type="hidden" name="key" value="{e(key)}"><button style="{SMALL}" title="בוצע — להוריד מהרשימה">✓</button></form></li>')
 

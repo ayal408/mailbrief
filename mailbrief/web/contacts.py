@@ -51,7 +51,7 @@ def contacts_page(msg=''):
 <input type="search" id="c-q" placeholder="🔍 חיפוש לפי שם, כתובת או טלפון…" style="flex:1;min-width:220px;font:inherit;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
 <form method="post" action="/contacts_export" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><button style="margin:0;padding:8px 16px">📥 ייצוא ל-Excel</button></form>
 <form method="post" action="/contacts_vcf" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><button class="ghost" style="margin:0;padding:8px 16px" title="קובץ vCard — לייבוא לטלפון או ל-Google Contacts">📱 לטלפון</button></form></div>
-{f'<div class="scroll"><table id="c-table"><thead><tr><th>שם</th><th>כתובת</th><th>טלפון</th><th>אחרון</th><th>מיילים</th></tr></thead><tbody>{body}</tbody></table></div>' if rows else '<p class="muted">עוד אין — הרשימה נבנית מההיסטוריה (אפשר „בניית היסטוריה” במדריך).</p>'}
+{f'<div class="scroll"><table id="c-table"><thead><tr><th>שם</th><th>כתובת</th><th>טלפון</th><th>אחרון</th><th>מיילים</th></tr></thead><tbody>{body}</tbody></table></div>' if rows else '<p class="muted">עוד אין — הרשימה נבנית מההיסטוריה (אפשר ״בניית היסטוריה״ במדריך).</p>'}
 <script>(function(){{var q=document.getElementById('c-q');if(!q)return;q.oninput=function(){{var t=q.value.trim().toLowerCase();
 document.querySelectorAll('#c-table tbody tr').forEach(function(tr){{tr.style.display=!t||tr.dataset.text.indexOf(t)>=0?'':'none';}});}};}})();</script>''', '/clients')
 

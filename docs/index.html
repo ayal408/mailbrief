@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MailBrief — עוזר מייל מקומי</title>
-<meta name="description" content="MailBrief: עוזר מייל מקומי ל-Windows. תדריך שבועי, היום שלי, קבלות ואקסל, אוטומציות וזיהוי פישינג — בלי AI ובלי ענן. A local, rule-based mail assistant for Windows.">
+<meta name="description" content="MailBrief: עוזר מייל מקומי ל-Windows. תיבת דואר מלאה, תדריך שבועי, היום שלי, קבלות ואקסל, לוח שנה עברי, אוטומציות וזיהוי פישינג — בלי AI ובלי ענן. A local, rule-based mail assistant for Windows.">
 <link rel="icon" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -20,14 +20,14 @@
 <div class="hero">
   <img src="icon.png" alt="MailBrief">
   <h1><span class="g">MailBrief</span></h1>
-  <p class="lead">עוזר מייל שרץ על המחשב שלך: מה דחוף, מי מחכה לתשובה, קבלות לאקסל ואוטומציות —
+  <p class="lead">תיבת דואר מלאה ועוזר מייל שרץ על המחשב שלך: כל התיבות במקום אחד, מה דחוף, מי מחכה לתשובה, קבלות לאקסל ואוטומציות —
   <b>בלי AI, בלי ענן, והמייל לא יוצא מהמחשב.</b></p>
   <div class="cta">
     <a class="btn main" id="dl" href="https://github.com/ayal408/mailbrief/releases/latest">⬇️ הורדה ל-Windows</a>
     <a class="btn" href="https://github.com/ayal408/mailbrief">קוד פתוח ב-GitHub</a>
   </div>
   <p class="muted" style="font-size:14px"><span id="ver"></span>או בשורת הפקודה: <code dir="ltr">winget install mailbrief</code> · חינם · Windows 10 / 11</p>
-  <div class="chips"><span>🔒 מקומי לגמרי</span><span>🚫 בלי AI</span><span>🕯️ לא פועל בשבת ובחג</span><span>📬 Gmail · Outlook · כל IMAP</span>
+  <div class="chips"><span>🔒 מקומי לגמרי</span><span>🚫 בלי AI</span><span>🕯️ לא פועל בשבת ובחג</span><span>📬 Gmail · Outlook · Hotmail · כל IMAP</span><span>📥 תיבת דואר מלאה</span><span>📅 לוח שנה עברי</span>
   <span>🧾 אקסל ומע״מ לרו״ח</span><span>♿ נגיש</span><span>🔄 מתעדכן לבד</span></div>
 </div>
 
@@ -40,6 +40,8 @@
   <h2>מה הוא עושה</h2>
   <p class="muted" id="count">הרשימה מתעדכנת לבד עם כל גרסה.</p>
   <div class="grid" id="feature-grid">
+    <div class="card"><b>📥 דואר נכנס</b><p>קוראים, עונים ומנהלים את כל התיבות בלי לפתוח את Gmail: שיחות כמו ב-Gmail, תיקיות ותוויות, חיפוש, טיוטות ושליחה מתוזמנת.</p></div>
+    <div class="card"><b>📅 לוח שנה עברי</b><p>כל שדה תאריך פותח לוח עברי: התאריך העברי והלועזי בכל יום, וכל החגים והצומות כפי שבארץ.</p></div>
     <div class="card"><b>☀️ היום שלי</b><p>נפתח כשנכנסים למחשב: דחוף, מחכים לתשובה, יומן ומשימות, תשלומים קרובים וזמני שבת.</p></div>
     <div class="card"><b>⚡ מיון מהיר</b><p>מייל אחרי מייל: בוצע, תזכורת, טיוטה, משימה, נודניק או תשובה — במקש אחד.</p></div>
     <div class="card"><b>🧾 קבלות ואקסל</b><p>כל קבלה נשמרת לפי חודש, עם אקסל חודשי, מע״מ, ייצוא לחשבשבת וחבילה לרו״ח.</p></div>
@@ -56,7 +58,7 @@
 </section>
 
 <section id="google">
-  <h2>🔐 בחיבור הראשון: „Google לא אימתה את האפליקציה”</h2>
+  <h2>🔐 בחיבור הראשון: ״Google לא אימתה את האפליקציה״</h2>
   <div class="panel">
     <p>זה צפוי ובטוח. כל תוכנה שקוראת מייל צריכה, לפי Google, בדיקת אבטחה חיצונית בתשלום שנתי — ו-MailBrief היא תוכנה חינמית
     שרצה רק אצלך, בלי שרת, והקוד שלה פתוח לכל אחד. ההתחברות היא ישירות מול Google, והסיסמה לא עוברת דרך MailBrief.</p>
@@ -95,11 +97,20 @@
 <text class="s" x="940" y="318" text-anchor="start">איור להמחשה — המסך האמיתי של Google נראה מעט אחרת</text></g>
 </svg><!--/signin-svg--></div>
     <ol>
-      <li>לוחצים <b>„מתקדם”</b> (Advanced) בתחתית המסך</li>
-      <li>לוחצים <b>„המשך אל MailBrief (לא בטוח)”</b> — Go to MailBrief (unsafe)</li>
-      <li>מאשרים את ההרשאות ולוחצים <b>„המשך”</b></li>
+      <li>לוחצים <b>״מתקדם״</b> (Advanced) בתחתית המסך</li>
+      <li>לוחצים <b>״המשך אל MailBrief (לא בטוח)״</b> — Go to MailBrief (unsafe)</li>
+      <li>מאשרים את ההרשאות ולוחצים <b>״המשך״</b></li>
     </ol>
     <p class="muted">אפשר לבטל את הגישה בכל רגע ב-<a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</p>
+  </div>
+</section>
+
+<section id="outlook">
+  <h2>🟦 Outlook / Hotmail / Office 365</h2>
+  <div class="panel">
+    <p>לוחצים <b>״🟦 חיבור עם Microsoft״</b>, מתחברים ומאשרים — בלי שום הגדרה מראש.</p>
+    <p class="muted">ב-Outlook.com / Hotmail הגישה ב-IMAP כבויה לפעמים. אם החיבור נכשל: <a href="https://outlook.live.com/mail/0/options/mail/forwarding">outlook.live.com</a>
+    ← ⚙️ הגדרות ← דואר ← העברה ו-IMAP ← להפעיל ״אפשר להתקנים ולאפליקציות להשתמש ב-IMAP״ ← שמירה, ולהתחבר שוב.</p>
   </div>
 </section>
 
@@ -119,7 +130,7 @@
   <h2>English</h2>
   <div class="panel">
     <p><b>MailBrief</b> is a free, open-source mail assistant for Windows. It connects to your mailboxes (Gmail, Microsoft, or any IMAP server)
-    and runs entirely on your computer: a weekly brief, a "My day" page, receipts to Excel, reminders for unanswered mail, scheduled mail,
+    and runs entirely on your computer: a full inbox for all your mailboxes (conversations, folders and labels, search, drafts, scheduled sending), a Hebrew-calendar date picker, a weekly brief, a "My day" page, receipts to Excel, reminders for unanswered mail, scheduled mail,
     rule-based automations and phishing warnings. There is no AI and no MailBrief server — your mail goes only from your mail provider to your own computer.</p>
     <p><a href="https://github.com/ayal408/mailbrief/releases/latest">Download for Windows</a> ·
     <a href="privacy.html#english">Privacy policy</a> · <a href="terms.html#english">Terms of use</a> ·

@@ -135,7 +135,7 @@ def dashboard_page():
         f'<td>{sum(1 for h in history.values() if label in h.get("rules", []) and h["date"].startswith(month))}</td>'
         f'<td>{sum(1 for r in this_month if label in r.get("rules", []))}</td>'
         f'<td dir="ltr">{money(sum(ils(r) for r in this_month if label in r.get("rules", []) and ils(r)))}</td></tr>'
-        for label in all_labels) or '<tr><td colspan="4" class="muted">מגדירים לקוחות דרך „הכללים שלי” (למשל: השולח מכיל @client.co.il ← תווית „לקוח כהן”)</td></tr>'
+        for label in all_labels) or '<tr><td colspan="4" class="muted">מגדירים לקוחות דרך ״הכללים שלי״ (למשל: השולח מכיל @client.co.il ← תווית ״לקוח כהן״)</td></tr>'
 
     sub_rows = ''.join(
         f'<tr><td dir="auto">{e(s["vendor"])}{" <span class=\"pill bad\">חדש</span>" if s["new"] else ""}</td>'

@@ -31,7 +31,7 @@ def latest_release():
     """{'version', 'url', 'size', 'sha256', 'notes', 'page'} of the newest release with MailBrief.exe, or None (offline)."""
     if time.time() - _FAILED[0] < 30 * 60:
         return None
-    data = net.cached_json('release', f'https://api.github.com/repos/{REPO}/releases/latest', 6 * 60)
+    data = net.cached_json('release', f'https://api.github.com/repos/{REPO}/releases/latest', 30)   # GitHub allows 60 an hour
     if not data or not data.get('tag_name'):
         _FAILED[0] = time.time()
         return None

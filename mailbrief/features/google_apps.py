@@ -63,7 +63,7 @@ def api(acc, method, path, params=None, body=None):
             raise RuntimeError(f'צריך להפעיל את {which} API בפרויקט ב-Google Cloud (הקישור בדף ההגדרות)') from None
         if exc.code in (401, 403):
             _TOKENS.pop(acc['email'], None)
-            raise RuntimeError(f'אין הרשאה ל-{which} — צריך ללחוץ שוב „חיבור יומן ומשימות”') from None
+            raise RuntimeError(f'אין הרשאה ל-{which} — צריך ללחוץ שוב ״חיבור יומן ומשימות״') from None
         raise RuntimeError(f'{which}: שגיאה {exc.code}') from None
 
 

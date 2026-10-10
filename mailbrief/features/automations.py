@@ -56,7 +56,7 @@ ACTIONS = {                                     # type: (label, parameter hint, 
     'forward': ('↪️ העברה לכתובת', 'כתובת מייל', False),
     'draft_reply': ('📝 טיוטת תשובה ב-Gmail', 'נוסח התשובה', True),
     'auto_reply': ('🤖 תשובה אוטומטית', 'נוסח התשובה', False),
-    'save_attachments': ('📎 שמירת הקבצים המצורפים', 'תיקייה (ריק = „יומני אוטומציה”)', False),
+    'save_attachments': ('📎 שמירת הקבצים המצורפים', 'תיקייה (ריק = ״יומני אוטומציה״)', False),
     'log_excel': ('📊 רישום שורה באקסל', 'שם הקובץ (ריק = שם האוטומציה)', False),
     'webhook': ('🔗 Webhook (למשל n8n)', 'כתובת URL', False),
     'email_me': ('✉️ מייל אליי', 'נוסח המייל', False),
@@ -267,7 +267,7 @@ def run_action(a, wf, acc, ctx, m=None, it=None, msg=None, state=None):
 def google_action(kind, label, param, wf, ctx):
     g = google_apps.gapps_account()
     if not g:
-        raise RuntimeError('היומן והמשימות לא מחוברים — „📅 חיבור יומן ומשימות” בדף ההגדרות')
+        raise RuntimeError('היומן והמשימות לא מחוברים — ״📅 חיבור יומן ומשימות״ בדף ההגדרות')
     title = fill(param, ctx) if param else (ctx.get('subject') or wf['name'])
     notes = '\n'.join(x for x in (
         f"{ctx.get('from_name', '')} <{ctx['from']}>" if ctx.get('from') else '',
@@ -401,7 +401,7 @@ def describe(wf):
         sched = wf.get('schedule') or {}
         names = [n for n, d in WEEKDAYS if d in sched.get('days', [])]
         trig += f' — {", ".join(names) or "אף יום"} ב-{int(sched.get("hour", 9)):02d}:00'
-    conds = ' וגם '.join(f'{COND_FIELDS.get(c["field"], c["field"])} {COND_OPS.get(c["op"], c["op"])} „{c["value"]}”'
+    conds = ' וגם '.join(f'{COND_FIELDS.get(c["field"], c["field"])} {COND_OPS.get(c["op"], c["op"])} ״{c["value"]}״'
                          for c in wf.get('conditions', []))
     acts = ' ← '.join(ACTIONS.get(a['type'], (a['type'],))[0] + (f' ({a["param"][:40]})' if a.get('param') else '')
                       for a in wf['actions'])

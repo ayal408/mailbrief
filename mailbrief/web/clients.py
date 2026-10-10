@@ -57,7 +57,7 @@ def clients_page():
 <p><a href="/client_stats"><button type="button" class="ghost" style="margin:0">📊 סטטיסטיקות לכל לקוח — מי כותב הכי הרבה, כמה מהר עונים, למי לתת עדיפות</button></a>
 <a href="/contacts" style="margin-inline-start:10px">📇 אנשי קשר</a></p>
 {f'<div class="scroll"><table><thead><tr><th>לקוח</th><th>מיילים</th><th>ענית</th><th>קשר אחרון</th><th>ממתינים</th><th>לא שילמו</th><th>קבלות</th></tr></thead><tbody>{table}</tbody></table></div>' if table else
- '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה בדף „📈 במספרים”.</p>'}''')
+ '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה בדף ״📈 במספרים״.</p>'}''')
 
 
 def phone_card(key, g):

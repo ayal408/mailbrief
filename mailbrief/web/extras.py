@@ -174,7 +174,7 @@ HTML = """
     ev.preventDefault(); ev.stopImmediatePropagation(); f.dataset.attachOk = '1';
     var note = f.querySelector('.mb-attach-note') || document.createElement('div');
     note.className = 'mb-attach-note item urgent'; note.setAttribute('role', 'alert');
-    note.textContent = '📎 כתוב „מצורף” — אבל לא נבחר קובץ. אפשר לצרף עכשיו, או ללחוץ שוב כדי לשלוח בלי.';
+    note.textContent = '📎 כתוב ״מצורף״ — אבל לא נבחר קובץ. אפשר לצרף עכשיו, או ללחוץ שוב כדי לשלוח בלי.';
     (ev.submitter && ev.submitter.parentNode ? ev.submitter.parentNode : f).insertAdjacentElement('beforebegin', note);
     note.scrollIntoView({block: 'center', behavior: 'smooth'});
   }, true);
@@ -241,7 +241,7 @@ HTML = """
   function render(){
     var text = q.value.trim(), t = norm(text);
     shown = ITEMS.filter(function(i){ return !t || norm(i[0]).indexOf(t) >= 0; });
-    if (text) shown.push(['🔍 חיפוש בכל התיבות: „' + text + '”', '/search?q=' + encodeURIComponent(text)]);
+    if (text) shown.push(['🔍 חיפוש בכל התיבות: ״' + text + '״', '/search?q=' + encodeURIComponent(text)]);
     sel = Math.min(sel, shown.length - 1); if (sel < 0) sel = 0;
     list.innerHTML = '';
     shown.forEach(function(i, n){
@@ -683,10 +683,10 @@ HTML += """
 (function(){
   if (window.__mbTour) return; window.__mbTour = true;
   var STEPS = [
-    ['#mb-tabs a[href="/"]', '📬 מתחילים כאן', 'בהגדרות מחברים את תיבת המייל — כפתור „חיבור עם Google” ואישור. בלי סיסמאות, והמייל נשאר רק במחשב שלך.'],
+    ['#mb-tabs a[href="/"]', '📬 מתחילים כאן', 'בהגדרות מחברים את תיבת המייל — כפתור ״חיבור עם Google״ ואישור. בלי סיסמאות, והמייל נשאר רק במחשב שלך.'],
     ['#mb-tabs a[href="/today"]', '☀️ היום שלי', 'מה דחוף, מי מחכה לתשובה, מה לתשלום ומה ביומן — בדף אחד. נפתח לבד כשנכנסים למחשב.'],
     ['#mb-imp-btn', '🎯 רק חשוב', 'יום עמוס? הכפתור הזה משאיר רק דחוף, VIP, לקוחות ותזכורות — וכל השאר מוסתר. לחיצה נוספת מחזירה הכול.'],
-    ['#mb-tabs a[href="/today"]', '⚡ מיון מהיר ו-✍️ תשובה', 'ליד כל מייל שמחכה: ✍️ תשובה מכאן (עם ↩️ ביטול שליחה), ✕ להוריד מהרשימה, 🚫 לחסום שולח. „מיון מהיר” — מייל אחרי מייל במקש אחד.'],
+    ['#mb-tabs a[href="/today"]', '⚡ מיון מהיר ו-✍️ תשובה', 'ליד כל מייל שמחכה: ✍️ תשובה מכאן (עם ↩️ ביטול שליחה), ✕ להוריד מהרשימה, 🚫 לחסום שולח. ״מיון מהיר״ — מייל אחרי מייל במקש אחד.'],
     ['#mb-tabs a[href="/clients"]', '👥 לקוחות', 'כל לקוח: טלפון מהחתימה ו-WhatsApp, סטטיסטיקות (כמה מהר עונים), מעקב תשלומים עם קישור Bit, וכל המסמכים שלו בקובץ ZIP אחד.'],
     ['.kbtn', '⌨️ מוצאים הכול', 'Ctrl+K (או /) פותח חיפוש מהיר של כל דף ופעולה. בהגדרות יש גם 🔎 חיפוש משלהן. ? מציג את כל קיצורי המקלדת.'],
     ['#mb-a11y-btn', '♿ נגישות', 'טקסט גדול, ניגודיות, הקראה בקול ועוד — מהכפתור בצד המסך, בכל דף. זהו, אפשר להתחיל! 🎉']

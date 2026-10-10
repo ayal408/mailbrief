@@ -54,7 +54,7 @@ def finish_oauth(query):
     if extra_scope and not acc['gapps']:
         return f'{address} חוברה, אבל בלי גישה ליומן ולמשימות — צריך לסמן את שתי תיבות הסימון בחלון של Google'
     if extra_scope:
-        return f'✓ היומן והמשימות של {address} מחוברים — מופיעים עכשיו ב„היום שלי”'
+        return f'✓ היומן והמשימות של {address} מחוברים — מופיעים עכשיו ב״היום שלי״'
     return f'✓ {address} חוברה בהצלחה'
 
 
@@ -89,12 +89,12 @@ def friendly_error(exc, acc):
     if isinstance(exc, imaplib.IMAP4.error) and re.search(r'auth|login|credential|password', text, re.I):
         if acc.get('auth') == 'microsoft':
             return ('Microsoft דחתה את הכניסה ל-IMAP. ב-Outlook.com / Hotmail הגישה ב-IMAP כבויה לפעמים: outlook.live.com ← ⚙️ הגדרות ← '
-                    'דואר ← העברה ו-IMAP ← להפעיל „אפשר להתקנים ולאפליקציות להשתמש ב-IMAP” ← שמירה, ואז להתחבר שוב. '
+                    'דואר ← העברה ו-IMAP ← להפעיל ״אפשר להתקנים ולאפליקציות להשתמש ב-IMAP״ ← שמירה, ואז להתחבר שוב. '
                     f'(תשובת השרת: {text[:120]})')
         if acc.get('auth') in PROVIDERS:
             return 'השרת דחה את ההרשאה — צריך להתחבר מחדש לתיבה הזו'
         domain = acc['email'].rsplit('@', 1)[-1].lower()
         if domain in MICROSOFT or domain in ('gmail.com', 'googlemail.com'):
-            return 'לחשבון הזה צריך להשתמש בכפתור „חיבור עם Google / Microsoft” ולא בסיסמה.'
+            return 'לחשבון הזה צריך להשתמש בכפתור ״חיבור עם Google / Microsoft״ ולא בסיסמה.'
         return 'ההתחברות נכשלה — כדאי לבדוק את הסיסמה ושהגישה ב-IMAP מופעלת בהגדרות התיבה.'
     return f'{type(exc).__name__}: {text[:200]}'

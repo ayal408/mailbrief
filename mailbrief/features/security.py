@@ -56,7 +56,7 @@ def attachment_risks(msg):
     for part in msg.iter_attachments():
         name = decode(part.get_filename()) or ''
         if MACROS.search(name):
-            why.append(f'קובץ Office עם מאקרו ({name}) — לא לפתוח ולא „לאפשר תוכן”')
+            why.append(f'קובץ Office עם מאקרו ({name}) — לא לפתוח ולא ״לאפשר תוכן״')
         elif re.search(r'\.[a-z0-9]{2,4}\.[a-z0-9]{2,4}$', name, re.I) and RISKY_INSIDE.search(name):
             why.append(f'סיומת כפולה מטעה ({name})')
         if name.lower().endswith('.zip'):

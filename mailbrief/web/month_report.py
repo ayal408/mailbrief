@@ -45,7 +45,7 @@ def month_report_page(month=''):
 <form method="get" action="/month_report" style="margin:0;display:flex;gap:6px;align-items:center">
 <select name="month" onchange="this.form.submit()" style="font:inherit;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{picker}</select></form>
 <button type="button" onclick="window.print()" style="margin:0;padding:8px 18px">🖨️ שמירה כ-PDF / הדפסה</button>
-<span class="muted" style="font-size:13px">בחלון ההדפסה בוחרים „Microsoft Print to PDF” או „שמירה כ-PDF”.</span></div>
+<span class="muted" style="font-size:13px">בחלון ההדפסה בוחרים ״Microsoft Print to PDF״ או ״שמירה כ-PDF״.</span></div>
 <h1 style="margin:0">🧾 דוח הוצאות — {mon:02d}/{year}</h1>
 <p class="muted" style="margin:4px 0 0">{e(who) + ' · ' if who else ''}הופק ב-{dt.date.today():%d/%m/%Y} · MailBrief · לפי הקבלות שהגיעו במייל</p>
 <div class="kpis"><div class="kpi"><b>{money(s["total"])}</b><span>סה״כ הוצאות</span></div>
@@ -57,4 +57,4 @@ def month_report_page(month=''):
 {f'<div class="scroll"><table><thead><tr><th>סיווג</th><th>סה״כ</th><th>מע״מ</th><th>לפני מע״מ</th></tr></thead><tbody>{books}</tbody></table></div>' if books else '<p class="muted">אין</p>'}
 <h3>כל הקבלות</h3>
 {f'<div class="scroll"><table><thead><tr><th>תאריך</th><th>ספק</th><th>נושא</th><th>סיווג</th><th>סכום</th><th>בש״ח</th><th>מע״מ</th><th></th></tr></thead><tbody>{lines}</tbody></table></div>' if lines else '<p class="muted">לא נמצאו קבלות בחודש הזה.</p>'}
-<p class="muted" style="font-size:12px;margin-top:18px">המע״מ מחושב לפי {VAT_RATE:g}% מהסכום הכולל, חוץ מספקים שסומנו „בלי מע״מ” ומטבע זר. הקבצים עצמם — בחבילה לרו״ח (ZIP).</p>''', '/')
+<p class="muted" style="font-size:12px;margin-top:18px">המע״מ מחושב לפי {VAT_RATE:g}% מהסכום הכולל, חוץ מספקים שסומנו ״בלי מע״מ״ ומטבע זר. הקבצים עצמם — בחבילה לרו״ח (ZIP).</p>''', '/')

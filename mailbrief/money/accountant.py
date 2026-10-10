@@ -62,7 +62,7 @@ def send_package(month, acc, to, name=''):
     msg['X-MailBrief-Forwarded'] = '1'
     greeting = f'שלום {name},' if name else 'שלום,'
     text = (f'{greeting}\n\nמצורפות הקבלות והחשבוניות של {month[5:]}/{month[:4]}: {len(rows)} מסמכים, סה״כ {money(total)} (בש״ח, לפי שער יציג).\n'
-            'בקובץ האקסל — כל השורות עם תאריך, ספק, סכום, מטבע וסיווג מוצע; בתיקייה „קבצים” — המסמכים עצמם.\n\nתודה!')
+            'בקובץ האקסל — כל השורות עם תאריך, ספק, סכום, מטבע וסיווג מוצע; בתיקייה ״קבצים״ — המסמכים עצמם.\n\nתודה!')
     msg.set_content(text)
     msg.add_alternative(f'<div dir="rtl" style="font-family:Arial">{e(text).replace(chr(10), "<br>")}</div>', subtype='html')
     big = os.path.getsize(path) > MAX_ATTACH

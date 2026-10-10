@@ -38,7 +38,7 @@ def income_block():
     services = ' · '.join(f'{e(s)} ₪{v:,.0f}' for s, v in sorted(by.items(), key=lambda kv: -kv[1]))
     left = total - spent
     return f'''{_h('income', '💚 הכנסות החודש')}
-<p class="muted">הודעות תשלום מ-Bit, PayBox, PayPal והבנקים („העביר/ה לך ₪350”) נאספות לבד בבדיקה השעתית. כשהסכום והשם מתאימים
+<p class="muted">הודעות תשלום מ-Bit, PayBox, PayPal והבנקים (״העביר/ה לך ₪350״) נאספות לבד בבדיקה השעתית. כשהסכום והשם מתאימים
 לחשבונית פתוחה במעקב התשלומים — היא מסומנת כשולמה (אפשר לבטל ב-↩️).</p>
 <div class="kpis"><div class="kpi"><b style="color:var(--good)">₪{total:,.0f}</b><span>נכנס החודש</span></div>
 <div class="kpi"><b>₪{spent:,.0f}</b><span>יצא החודש (קבלות)</span></div>
@@ -111,8 +111,8 @@ def blocked_block():
         f'<td><form method="post" action="/unblock" style="margin:0">{_t()}<input type="hidden" name="who" value="{e(b["who"])}">'
         f'<button class="ghost" style="margin:0;padding:4px 10px">ביטול החסימה</button></form></td></tr>' for b in blocked())
     return f'''{_h('blocked', '🚫 שולחים חסומים')}
-<p class="muted">מיילים חדשים מהם יוצאים לבד מהדואר הנכנס (נשארים בתיבה, בארכיון) ולא מופיעים ב„היום שלי” ובהתראות.
-חוסמים בלחיצה על 🚫 ליד מייל ב„היום שלי”, או כאן. אפשר כתובת או דומיין שלם (@shop.com).</p>
+<p class="muted">מיילים חדשים מהם יוצאים לבד מהדואר הנכנס (נשארים בתיבה, בארכיון) ולא מופיעים ב״היום שלי״ ובהתראות.
+חוסמים בלחיצה על 🚫 ליד מייל ב״היום שלי״, או כאן. אפשר כתובת או דומיין שלם (@shop.com).</p>
 {f'<div class="scroll"><table><tbody>{rows}</tbody></table></div>' if rows else ''}
 <form method="post" action="/block" style="display:flex;gap:8px;margin-top:8px">{_t()}
 <input type="text" name="who" dir="ltr" required placeholder="spam@example.com או @example.com" style="flex:1;{FIELD}">

@@ -53,7 +53,7 @@ def phishing_score(msg, sender_name, sender, text):
     for brand, allowed in BRANDS.items():
         if re.search(rf'(?<![\w]){re.escape(brand)}(?![\w])', name) and not _domain_ok(domain, allowed):
             score += 3
-            why.append(f'מתחזה ל„{brand}” אבל נשלח מ-{domain}')
+            why.append(f'מתחזה ל״{brand}״ אבל נשלח מ-{domain}')
             break
     reply_to = parseaddr(decode(msg.get('Reply-To')))[1].lower()
     if reply_to and reply_to.rsplit('@', 1)[-1] != domain and reply_to.rsplit('@', 1)[-1] in FREE_MAIL:
@@ -91,5 +91,5 @@ def phishing_score(msg, sender_name, sender, text):
     pressure = PRESSURE.findall(f'{decode(msg.get("Subject"))} {text[:3000]}')
     if pressure:
         score += min(2, len(pressure))
-        why.append('לחץ / בקשה לפרטים („' + pressure[0][:30] + '”)')
+        why.append('לחץ / בקשה לפרטים (״' + pressure[0][:30] + '״)')
     return score, why

@@ -71,7 +71,7 @@ def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=
         raise ValueError('צריך לכתוב לפחות נמען אחד')
     bad = [a for a in to + cc + bcc if not EMAIL.fullmatch(a)]
     if bad:
-        raise ValueError(f'הכתובת „{bad[0]}” לא נראית תקינה')
+        raise ValueError(f'הכתובת ״{bad[0]}״ לא נראית תקינה')
     if not subject.strip() and not body.strip():
         raise ValueError('המייל ריק')
     item = {'id': secrets.token_hex(4), 'account': account, 'to': to, 'subject': subject.strip()[:300], 'body': body[:50000],

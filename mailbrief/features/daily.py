@@ -93,7 +93,7 @@ def build_daily(now=None):
             + (f'<a href="{e(url)}" style="color:#7c3aed;font-weight:bold;text-decoration:none">{e(t[:90])}</a>' if url.startswith('https://') else f'<b>{e(t[:90])}</b>')
             + f'<div style="color:#6b6475;font-size:13px">{e(sub)}</div></div>' for t, sub, url in rows))
     html.append(f'<p style="color:#6b6475;font-size:12px;text-align:center;margin-top:24px">נשלח מ-MailBrief שבמחשב שלך · '
-                f'<a href="{e(link("today"))}" style="color:#7c3aed">פתיחת „היום שלי”</a> (במחשב)</p></div>')
+                f'<a href="{e(link("today"))}" style="color:#7c3aed">פתיחת ״היום שלי״</a> (במחשב)</p></div>')
     return subject, '\n'.join(text), ''.join(html)
 
 

@@ -101,7 +101,7 @@ def _call(acc, method, url, data=None, ctype='application/json'):
         if exc.code == 403 and ('accessNotConfigured' in detail or 'has not been used' in detail):
             raise RuntimeError('צריך להפעיל את Google Drive API בפרויקט ב-Google Cloud') from None
         if exc.code in (401, 403):
-            raise RuntimeError('אין הרשאה ל-Google Drive — צריך ללחוץ שוב „חיבור ל-Google Drive”') from None
+            raise RuntimeError('אין הרשאה ל-Google Drive — צריך ללחוץ שוב ״חיבור ל-Google Drive״') from None
         raise RuntimeError(f'Google Drive: שגיאה {exc.code}') from None
     return raw
 

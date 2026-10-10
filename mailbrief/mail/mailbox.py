@@ -755,7 +755,7 @@ def create_folder(address, name, parent=''):
     with session(acc) as m:
         sep = _separator(m)
         if sep and sep in name:
-            raise ValueError(f'אי אפשר להשתמש בתו „{sep}” בשם')
+            raise ValueError(f'אי אפשר להשתמש בתו ״{sep}״ בשם')
         full = f'{parent}{sep}{imap.utf7(name)}' if parent else imap.utf7(name)
         typ, _ = m.create(quoted(full))
     if typ != 'OK':
@@ -774,7 +774,7 @@ def rename_folder(address, folder, new_name):
     with session(acc) as m:
         sep = _separator(m)
         if sep and sep in new_name:
-            raise ValueError(f'אי אפשר להשתמש בתו „{sep}” בשם')
+            raise ValueError(f'אי אפשר להשתמש בתו ״{sep}״ בשם')
         parent = folder.rsplit(sep, 1)[0] + sep if sep and sep in folder else ''
         target = parent + imap.utf7(new_name)
         typ, _ = m.rename(quoted(folder), quoted(target))

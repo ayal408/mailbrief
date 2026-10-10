@@ -84,7 +84,7 @@ kbd{{display:inline-block;font:12px ui-monospace,monospace;border:1px solid var(
     if (!it) {{
       document.getElementById('tri-count').textContent = '';
       card.innerHTML = '<div style="font-size:56px">🎉</div><div class="who">' + (total ? '{g("סיימת", "סיימת", "סיימנו")}! הכול מטופל' : 'אין מה למיין — הכול נענה ✨') + '</div>' +
-        '<p class="muted">נתונים מהבדיקה האחרונה. <a href="/today">☀️ ל„היום שלי”</a></p>';
+        '<p class="muted">נתונים מהבדיקה האחרונה. <a href="/today">☀️ ל״היום שלי״</a></p>';
       if (total && window.MB && MB.confetti) MB.confetti(160);
       return;
     }}

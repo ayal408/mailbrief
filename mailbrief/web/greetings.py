@@ -49,9 +49,9 @@ def greetings_page(msg=''):
 <span><input type="search" id="gr-find" placeholder="חיפוש…" style="font:inherit;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:180px">
 <button type="button" class="ghost" id="gr-all" style="margin:0;padding:6px 12px">הכול</button>
 <button type="button" class="ghost" id="gr-none" style="margin:0;padding:6px 12px">אף אחד</button></span></div>
-<div class="people">{rows or '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה ב„מדריך ← בניית היסטוריה”.</p>'}</div>
+<div class="people">{rows or '<p class="muted">עוד אין מספיק היסטוריה — אפשר לבנות אותה ב״מדריך ← בניית היסטוריה״.</p>'}</div>
 <div class="item" id="gr-preview" style="white-space:pre-wrap" dir="auto"></div>
-<div><button>🗓️ לתזמן את הברכות</button> <span class="muted" style="font-size:13px">עד {MAX_RECIPIENTS} בפעם אחת · אפשר לבטל כל אחת ב„מייל מתוזמן”</span></div>
+<div><button>🗓️ לתזמן את הברכות</button> <span class="muted" style="font-size:13px">עד {MAX_RECIPIENTS} בפעם אחת · אפשר לבטל כל אחת ב״מייל מתוזמן״</span></div>
 </form>
 <script>(function(){{
   var P = {json.dumps(presets, ensure_ascii=False)}, people = {json.dumps({p['email']: p for p in people}, ensure_ascii=False)};

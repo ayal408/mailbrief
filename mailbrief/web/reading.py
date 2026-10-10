@@ -48,14 +48,14 @@ def reading_page(msg=''):
 <div class="kpi"><b>{sum(1 for u in unsubs.values() if u.get('done'))}</b><span>כבר בוטלו</span></div></div>
 
 <h3>✂️ ביטול מנויים</h3>
-<p class="muted">דרך הקישור הרשמי של השולח. ⚡ = ביטול מיידי מכאן; „↗” = נפתח דף הביטול של השולח לאישור.</p>
+<p class="muted">דרך הקישור הרשמי של השולח. ⚡ = ביטול מיידי מכאן; ״↗״ = נפתח דף הביטול של השולח לאישור.</p>
 <div class="scroll"><table><thead><tr><th>שולח</th><th>הודעות</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>
 
 <h3>📥 פחות רעש בתיבה</h3>
 <form method="post" style="display:flex;gap:8px;flex-wrap:wrap"><input type="hidden" name="t" value="{TOKEN}">
 <button formaction="/news_archive_now">📥 להעביר לארכיון עכשיו ניוזלטרים בני 3+ ימים (Gmail)</button>
 <button formaction="/news_auto" class="ghost">{'✓ ארכוב אוטומטי פעיל — לכבות' if auto else 'להפעיל ארכוב אוטומטי שבועי'}</button></form>
-<p class="muted" style="font-size:13px">ארכיון ב-Gmail = יציאה מתיבת הדואר הנכנס בלבד. לא נמחק כלום, והכול נשאר ב„כל הדואר” ובחיפוש.</p>
+<p class="muted" style="font-size:13px">ארכיון ב-Gmail = יציאה מתיבת הדואר הנכנס בלבד. לא נמחק כלום, והכול נשאר ב״כל הדואר״ ובחיפוש.</p>
 
 <h3>📚 רשימת קריאה — השבוע</h3>
 <p class="muted">כל הניוזלטרים מהשבוע האחרון במקום אחד — לקרוא כשנוח, בלי שהם יסתירו את המיילים החשובים.</p>

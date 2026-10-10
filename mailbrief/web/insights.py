@@ -41,7 +41,7 @@ def insights_page(msg='', run=False):
         + f' <span class="muted">— {e(w["from"])} · {w["days"]} ימים</span></li>' for w in data['waiting'])
     tip = ('💡 הכי משתלם להתחיל מהניוזלטרים: כמה לחיצות — ותיבה שקטה יותר מחר בבוקר.' if len(letters) >= 5 else
            '💡 כדאי להציץ ברשימת המנויים — לפעמים יש שם משהו ששכחנו.' if data['subs'] else
-           '💡 התיבה שלך די מסודרת! אפשר להגדיר אוטומציה ראשונה בלשונית „אוטומציות”.')
+           '💡 התיבה שלך די מסודרת! אפשר להגדיר אוטומציה ראשונה בלשונית ״אוטומציות״.')
     return page('30 הימים שלך', f'''{heading('🔎', '30 הימים שלך במבט אחד')}{note}
 <p class="muted">{data["days"]} הימים האחרונים · עודכן {e(data["at"])}</p>
 <div class="kpis">
@@ -59,4 +59,4 @@ def insights_page(msg='', run=False):
 <h3>⏳ מחכים לתשובה ממך</h3>
 <ul>{waiting_rows or '<li class="muted">אין — הכול נענה ✨</li>'}</ul>
 <form method="post" action="/first_look" style="margin-top:24px"><input type="hidden" name="t" value="{TOKEN}">
-<button class="ghost">🔄 לרענן את הסקירה</button> <a href="/today" style="margin-inline-start:10px">☀️ להמשיך ל„היום שלי” ←</a></form>''')
+<button class="ghost">🔄 לרענן את הסקירה</button> <a href="/today" style="margin-inline-start:10px">☀️ להמשיך ל״היום שלי״ ←</a></form>''')

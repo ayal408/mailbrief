@@ -95,7 +95,7 @@ def html_to_pdf(html):
 
 
 def make_quote(account, client, items, vat=True, notes='', valid_days=30):
-    """Creates the PDF in „הצעות מחיר”. Returns (path, number, total)."""
+    """Creates the PDF in ״הצעות מחיר״. Returns (path, number, total)."""
     if not any(d.strip() and q > 0 for d, q, p in items):
         raise ValueError('צריך לפחות פריט אחד')
     number = next_number()

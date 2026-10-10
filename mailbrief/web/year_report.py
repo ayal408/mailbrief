@@ -78,4 +78,4 @@ def year_report_page(year=''):
 <div><h3>🏷️ הספקים הגדולים</h3>{f'<table><tbody>{top_rows(vendors)}</tbody></table>' if vendors else '<p class="muted">אין</p>'}</div>
 <div><h3>💚 מי שילם הכי הרבה</h3>{f'<table><tbody>{top_rows(payers)}</tbody></table>' if payers else '<p class="muted">עוד לא זוהו תשלומים</p>'}</div></div>
 <p class="muted" style="font-size:12px;margin-top:18px">הכנסות — רק מה שזוהה מהודעות Bit, PayBox, PayPal והבנקים. המע״מ לפי {VAT_RATE:g}% מהסכום הכולל,
-חוץ מספקים שסומנו „בלי מע״מ” ומטבע זר. זה סיכום עזר — הדוח השנתי עצמו נעשה עם רואה החשבון.</p>''', '/')
+חוץ מספקים שסומנו ״בלי מע״מ״ ומטבע זר. זה סיכום עזר — הדוח השנתי עצמו נעשה עם רואה החשבון.</p>''', '/')

@@ -30,7 +30,7 @@ def merge_page(msg=''):
     loaded = load_json(draft_path(), {}).get('rows', [])
     book = [(p['email'], p['name']) for p in people()]
     rows = loaded or book
-    source = f'מהקובץ „{e(load_json(draft_path(), {}).get("name", ""))}”' if loaded else 'מאנשי הקשר'
+    source = f'מהקובץ ״{e(load_json(draft_path(), {}).get("name", ""))}״' if loaded else 'מאנשי הקשר'
     accounts = ''.join(f'<option>{e(a["email"])}</option>' for a in load_json(config.ACCOUNTS_FILE, []))
     checks = ''.join(f'<label class="m-row" data-text="{e((n + " " + a).lower())}" style="display:flex;gap:8px;align-items:center;margin:0;font-weight:400;padding:4px 0">'
                      f'<input type="checkbox" name="to" value="{e(a)}"{" checked" if loaded else ""}> <b dir="auto">{e(n)}</b> '

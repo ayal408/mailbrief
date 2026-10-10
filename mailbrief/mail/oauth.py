@@ -69,7 +69,7 @@ def token_request(provider, fields, client_id=None):
     """client_id: the key a mailbox was connected with — a refresh token only works with that same key."""
     known = dict(clients(provider))
     if client_id and client_id not in known:
-        raise RuntimeError('התיבה חוברה עם מפתח התחברות אחר — צריך להתחבר מחדש לתיבה הזו (כפתור „חיבור עם Google”)')
+        raise RuntimeError('התיבה חוברה עם מפתח התחברות אחר — צריך להתחבר מחדש לתיבה הזו (כפתור ״חיבור עם Google״)')
     client_id, secret = (client_id, known[client_id]) if client_id else client_for(provider)
     fields = {'client_id': client_id, **fields}
     if secret:
@@ -85,7 +85,7 @@ def token_request(provider, fields, client_id=None):
             raise RuntimeError(netfree_block(exc)) from None
         detail = exc.read().decode('utf-8', 'replace')
         if 'invalid_grant' in detail or 'unauthorized_client' in detail:
-            raise RuntimeError('ההרשאה פגה, בוטלה או ניתנה למפתח אחר — צריך להתחבר מחדש לתיבה הזו (כפתור „חיבור עם Google”)') from None
+            raise RuntimeError('ההרשאה פגה, בוטלה או ניתנה למפתח אחר — צריך להתחבר מחדש לתיבה הזו (כפתור ״חיבור עם Google״)') from None
         raise RuntimeError(f'שגיאת התחברות מול {PROVIDERS[provider]["name"]}: {detail[:200]}') from None
 
 

@@ -52,7 +52,7 @@ def render_account(res):
             + f'<td>{"📎" if i.get("files") else ""}'
             + (f' <span class="pill bad">⚠️ כפול? גם ב-{e(i["duplicate"])}</span>' if i.get('duplicate') else '') + '</td></tr>'
             for i in by['receipts'])
-        out.append('<h3>🧾 קבלות וחיובים</h3><p class="muted" style="font-size:13px">📎 = נשמר בתיקיית „קבלות” ונכנס לאקסל החודשי.</p>'
+        out.append('<h3>🧾 קבלות וחיובים</h3><p class="muted" style="font-size:13px">📎 = נשמר בתיקיית ״קבלות״ ונכנס לאקסל החודשי.</p>'
                    '<div class="scroll"><table><thead><tr><th>ספק</th><th>נושא</th>'
                    f'<th>סכום</th><th>סיווג מוצע</th><th>תאריך</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>')
     if by['security']:
@@ -76,7 +76,7 @@ def render_account(res):
             + (f'<a href="{link("unsub")}?id={unsub_id(res["email"], addr)}" target="_blank">ביטול מנוי</a>'
                if s['unsub'] else '<span class="muted">—</span>') + '</td></tr>'
             for addr, s in sorted(senders.items(), key=lambda kv: -kv[1]['count']))
-        out.append('<h3>📰 ניוזלטרים</h3><p class="muted" style="font-size:13px">„ביטול מנוי” עובד כש-MailBrief פתוח.</p>'
+        out.append('<h3>📰 ניוזלטרים</h3><p class="muted" style="font-size:13px">״ביטול מנוי״ עובד כש-MailBrief פתוח.</p>'
                    '<div class="scroll"><table><thead><tr><th>שולח</th><th>כמה</th><th></th></tr></thead>'
                    f'<tbody>{rows}</tbody></table></div>')
     if not any(by.values()) and not labels:

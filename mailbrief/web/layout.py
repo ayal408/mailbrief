@@ -139,7 +139,7 @@ def update_banner():
 
 
 def undo_banner():
-    """„↩️ ביטול” for the last action, while it can still be taken back (10 seconds)."""
+    """״↩️ ביטול״ for the last action, while it can still be taken back (10 seconds)."""
     from mailbrief.features.undo import last, seconds_left
     from mailbrief.web.token import TOKEN
     item = last()

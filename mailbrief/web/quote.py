@@ -19,7 +19,7 @@ def quote_page(msg='', to='', name=''):
            '<td style="width:110px" class="q-sum muted">—</td></tr>')
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
     return page('הצעת מחיר', f'''{heading('📝', 'הצעת מחיר')}{note}
-<p class="muted">ממלאים — ומקבלים PDF מסודר עם הלוגו והפרטים שלך (הלוגו מהחתימה של התיבה). „שליחה” מצרפת אותו למייל ללקוח
+<p class="muted">ממלאים — ומקבלים PDF מסודר עם הלוגו והפרטים שלך (הלוגו מהחתימה של התיבה). ״שליחה״ מצרפת אותו למייל ללקוח
 ומוסיפה למעקב הצעות המחיר (תזכורת אחרי שבוע בלי תשובה). זו הצעת מחיר ולא חשבונית מס.</p>
 <form method="post" action="/quote_make" style="display:grid;gap:10px"><input type="hidden" name="t" value="{TOKEN}">
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">

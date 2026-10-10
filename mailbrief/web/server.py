@@ -141,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self._send(f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>תקלה</title>{FONT}<style>{STYLE}</style></head>'
                            '<body><main><h1>😕 משהו השתבש בדף הזה</h1><p>התקלה נרשמה ביומן השגיאות. אפשר לחזור <a href="/today">להיום שלי</a>, '
-                           'ואם זה חוזר — ב<a href="/help#report">מדריך</a> יש כפתור „📋 דוח תקלה” שמכין קובץ לשליחה.</p></main></body></html>', code=500)
+                           'ואם זה חוזר — ב<a href="/help#report">מדריך</a> יש כפתור ״📋 דוח תקלה״ שמכין קובץ לשליחה.</p></main></body></html>', code=500)
             except Exception:
                 pass
 
@@ -421,9 +421,9 @@ class Handler(BaseHTTPRequestHandler):
         forward_to = f.get('forward_to', '').strip()
         label = (f.get('label', '').strip() or (f'העברה ל-{forward_to.split("@")[0]}' if forward_to else '')).replace('/', '-')[:40]
         if not contains or not label:
-            return 'צריך למלא „מכיל”, וגם תווית או כתובת להעברה'
+            return 'צריך למלא ״מכיל״, וגם תווית או כתובת להעברה'
         if forward_to and not re.fullmatch(r'[^@\s<>",;]+@[^@\s<>",;]+\.[^@\s<>",;]+', forward_to):
-            return f'הכתובת „{forward_to}” לא נראית תקינה'
+            return f'הכתובת ״{forward_to}״ לא נראית תקינה'
         own = {a['email'].lower() for a in load_json(config.ACCOUNTS_FILE, [])}
         rules = load_json(config.RULES_FILE, [])
         rules.append({'id': secrets.token_hex(4), 'field': f.get('field') if f.get('field') in FIELD_NAMES else 'any',
@@ -458,7 +458,7 @@ class Handler(BaseHTTPRequestHandler):
         gone = next((r for r in rules if r['id'] == f.get('id')), None)
         save_json(config.RULES_FILE, [r for r in rules if r['id'] != f.get('id')])
         if gone:
-            undo.record('rule', f'הכלל „{gone["contains"]}” נמחק', gone)
+            undo.record('rule', f'הכלל ״{gone["contains"]}״ נמחק', gone)
         return 'הכלל נמחק (תוויות קיימות ב-Gmail נשארות)'
 
     def post_nudge(self, f):
@@ -478,7 +478,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             return (('/today?msg=' + quote(f'⚠️ {exc}')), None)
         return ('/today?msg=' + quote(f'📨 תזכורת מנומסת ל{f.get("name", "")} תצא בעוד דקה ({dt.datetime.fromisoformat(item["send_at"]):%d/%m %H:%M}). '
-                                      'אפשר לבטל ב„מייל מתוזמן”.'), None)
+                                      'אפשר לבטל ב״מייל מתוזמן״.'), None)
 
     def post_search_save(self, f):
         q = f.get('q', '').strip()[:200]
@@ -563,7 +563,7 @@ class Handler(BaseHTTPRequestHandler):
         save_json(config.SETTINGS_FILE, settings)
         if settings['client_folders']:
             os.makedirs(config.CLIENTS_DIR, exist_ok=True)
-        return ('📁 מעכשיו קבצים מלקוחות נשמרים בתיקייה „לקוחות”' if settings['client_folders'] else 'שמירת הקבצים לתיקיות לקוחות כובתה')
+        return ('📁 מעכשיו קבצים מלקוחות נשמרים בתיקייה ״לקוחות״' if settings['client_folders'] else 'שמירת הקבצים לתיקיות לקוחות כובתה')
 
     def post_open_clients(self, f):
         os.makedirs(config.CLIENTS_DIR, exist_ok=True)
@@ -574,7 +574,7 @@ class Handler(BaseHTTPRequestHandler):
         """✕ next to an email that waits: it doesn't need an answer (can be undone)."""
         key = f.get('key', '')[:400]
         triage.dismiss(key)
-        undo.record('dismiss', f'„{f.get("subject", "")[:50]}” הוסר מהרשימה', {'key': key})
+        undo.record('dismiss', f'״{f.get("subject", "")[:50]}״ הוסר מהרשימה', {'key': key})
         return ('/today', None)
 
     def post_simple(self, f):
@@ -641,7 +641,7 @@ class Handler(BaseHTTPRequestHandler):
     def _gapps_or_back(self):
         acc = google_apps.gapps_account()
         if not acc:
-            raise RuntimeError('היומן והמשימות לא מחוברים — „📅 חיבור יומן ומשימות” בדף ההגדרות')
+            raise RuntimeError('היומן והמשימות לא מחוברים — ״📅 חיבור יומן ומשימות״ בדף ההגדרות')
         return acc
 
     def _today_back(self, msg=''):
@@ -745,7 +745,7 @@ class Handler(BaseHTTPRequestHandler):
         if not rows:
             return ('/merge?msg=' + quote('⚠️ לא מצאתי כתובות מייל בקובץ — צריך עמודה של כתובות (ואפשר גם עמודת שם)'), None)
         save_json(draft_path(), {'name': os.path.basename(name), 'rows': rows[:300]})
-        return ('/merge?msg=' + quote(f'📥 נטענו {len(rows[:300])} נמענים מ-„{os.path.basename(name)}”'), None)
+        return ('/merge?msg=' + quote(f'📥 נטענו {len(rows[:300])} נמענים מ-״{os.path.basename(name)}״'), None)
 
     def post_merge_clear(self, f):
         from mailbrief.web.merge import draft_path
@@ -1139,7 +1139,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_snooze_wake(self, f):
         item = snooze.wake_now(f.get('id', ''))
-        return ('/today?msg=' + quote(f'💤 „{item["subject"]}” חזר לתיבה' if item else 'כבר חזר'), None)
+        return ('/today?msg=' + quote(f'💤 ״{item["subject"]}״ חזר לתיבה' if item else 'כבר חזר'), None)
 
     def post_reply_now(self, f):
         """From quick sorting: answer now, or schedule the answer (after Shabbat, tomorrow morning), with files."""
@@ -1216,7 +1216,7 @@ class Handler(BaseHTTPRequestHandler):
                               f.get('mday' if freq == 'monthly' else 'wday', '1'), f.get('at', '09:00'))
         except ValueError as exc:
             return f'⚠️ {exc}'
-        return f'🔁 נשמר: „{r["subject"]}” — {recurring.when_text(r)}'
+        return f'🔁 נשמר: ״{r["subject"]}״ — {recurring.when_text(r)}'
 
     def post_recurring_set(self, f):
         from mailbrief.features import recurring
@@ -1251,7 +1251,7 @@ class Handler(BaseHTTPRequestHandler):
             return back(f'⚠️ {exc}')
         if f.get('action') != 'send':
             os.startfile(path)
-            return back(f'📄 הצעת מחיר {number} נוצרה (₪{total:,.2f}) — בתיקייה „הצעות מחיר”')
+            return back(f'📄 הצעת מחיר {number} נוצרה (₪{total:,.2f}) — בתיקייה ״הצעות מחיר״')
         from mailbrief.profile import profile
         me = profile().get('business') or profile().get('name') or ''
         subject = f'הצעת מחיר {number}' + (f' — {me}' if me else '')
@@ -1277,7 +1277,7 @@ class Handler(BaseHTTPRequestHandler):
         from mailbrief.web.contacts import export_vcf
         path, count = export_vcf()
         os.startfile(os.path.dirname(path))
-        return ('/contacts?msg=' + quote(f'📱 {count} אנשי קשר נשמרו ב-„{os.path.basename(path)}” — מעבירים לטלפון (או מייבאים ב-contacts.google.com)'), None)
+        return ('/contacts?msg=' + quote(f'📱 {count} אנשי קשר נשמרו ב-״{os.path.basename(path)}״ — מעבירים לטלפון (או מייבאים ב-contacts.google.com)'), None)
 
     def post_email_note(self, f):
         from mailbrief.features.email_notes import set_note
@@ -1303,14 +1303,14 @@ class Handler(BaseHTTPRequestHandler):
         if not count:
             return (back + quote('לא נמצאו מסמכים מהשנה האחרונה' + (' · ' + ' | '.join(errors) if errors else '')), None)
         os.startfile(os.path.dirname(path))
-        return (back + quote(f'📦 {count} מסמכים נשמרו ב-„{os.path.basename(path)}” (בתוך „הורדות”)'
+        return (back + quote(f'📦 {count} מסמכים נשמרו ב-״{os.path.basename(path)}״ (בתוך ״הורדות״)'
                              + (' · ' + ' | '.join(errors) if errors else '')), None)
 
     def post_contacts_export(self, f):
         from mailbrief.web.contacts import export_csv
         path = export_csv()
         os.startfile(os.path.dirname(path))
-        return ('/contacts?msg=' + quote(f'📥 נשמר: {os.path.basename(path)} (בתוך „הורדות”)'), None)
+        return ('/contacts?msg=' + quote(f'📥 נשמר: {os.path.basename(path)} (בתוך ״הורדות״)'), None)
 
     def post_client_phone(self, f):
         from mailbrief.features.contacts import set_phone
@@ -1362,7 +1362,7 @@ class Handler(BaseHTTPRequestHandler):
             return ('/compose?msg=' + quote(f'⚠️ {exc}') + '#queue', None)
         if dt.datetime.fromisoformat(item['send_at']) > now + dt.timedelta(minutes=1):
             return ('/compose?msg=' + quote(f'🕯️ עכשיו שבת/חג — יישלח במוצאי ({dt.datetime.fromisoformat(item["send_at"]):%d/%m %H:%M})') + '#queue', None)
-        undo.record('send', f'📤 „{item["subject"][:40]}” יוצא בעוד 10 שניות', {'ids': [item['id']]})
+        undo.record('send', f'📤 ״{item["subject"][:40]}״ יוצא בעוד 10 שניות', {'ids': [item['id']]})
         send_soon()
         return ('/compose?msg=' + quote('📤 יוצא בעוד 10 שניות (↩️ אפשר לבטל למעלה)') + '#queue', None)
 
@@ -1406,7 +1406,7 @@ class Handler(BaseHTTPRequestHandler):
             return 'שנה לא תקינה'
         path, count = accountant.yearly_report(int(year))
         os.startfile(os.path.dirname(path))
-        return f'📊 הסיכום השנתי ל-{year} מוכן ({count} מסמכים) — „סיכום שנתי {year}.xlsx” בתיקיית הקבלות'
+        return f'📊 הסיכום השנתי ל-{year} מוכן ({count} מסמכים) — ״סיכום שנתי {year}.xlsx״ בתיקיית הקבלות'
 
     def post_quiet(self, f):
         settings = load_json(config.SETTINGS_FILE, {})
@@ -1415,7 +1415,7 @@ class Handler(BaseHTTPRequestHandler):
         vip = [v.strip() for v in re.split(r'[\s,;]+', f.get('vip', '')) if '.' in v.strip()][:100]
         settings['quiet'] = {'on': f.get('action') != 'off', 'from': start, 'to': end, 'vip': vip}
         save_json(config.SETTINGS_FILE, settings)
-        return f'🔕 שעות שקטות: {start:02d}:00–{end:02d}:00 — בלי התראות קופצות (הכול עדיין מופיע ב„היום שלי”)' if settings['quiet']['on'] else '🔔 שעות שקטות כבויות'
+        return f'🔕 שעות שקטות: {start:02d}:00–{end:02d}:00 — בלי התראות קופצות (הכול עדיין מופיע ב״היום שלי״)' if settings['quiet']['on'] else '🔔 שעות שקטות כבויות'
 
     def post_migrate(self, f):
         try:
@@ -1440,7 +1440,7 @@ class Handler(BaseHTTPRequestHandler):
         folder, count, errors = download_search_attachments(query)
         if count:
             os.startfile(folder)
-        return (f'✓ נשמרו {count} קבצים בתיקייה „{os.path.basename(folder)}” (בתוך „הורדות”)' if count else 'לא נמצאו קבצים מצורפים')\
+        return (f'✓ נשמרו {count} קבצים בתיקייה ״{os.path.basename(folder)}״ (בתוך ״הורדות״)' if count else 'לא נמצאו קבצים מצורפים')\
             + (' · ' + ' | '.join(errors) if errors else '')
 
     def post_health(self, f):
@@ -1469,7 +1469,7 @@ class Handler(BaseHTTPRequestHandler):
             return 'חודש לא תקין'
         path, count = books.export_month(month)
         subprocess.Popen(['explorer', '/select,', path])
-        return f'✓ נוצר „{os.path.basename(path)}” עם {count} שורות (בתיקיית הקבלות של החודש)'
+        return f'✓ נוצר ״{os.path.basename(path)}״ עם {count} שורות (בתיקיית הקבלות של החודש)'
 
     # ---- clients ------------------------------------------------------------------------------------------------------
     def _first_account(self, f):
@@ -1482,7 +1482,7 @@ class Handler(BaseHTTPRequestHandler):
                                     f.get('text', ''))
         except ValueError as exc:
             return f'⚠️ {exc}'
-        return f'✓ {d["name"]} במעקב — תזכורת ראשונה ב-{d["due"][8:10]}/{d["due"][5:7]} אם לא יסומן „שולם”'
+        return f'✓ {d["name"]} במעקב — תזכורת ראשונה ב-{d["due"][8:10]}/{d["due"][5:7]} אם לא יסומן ״שולם״'
 
     def post_debt_set(self, f):
         status = f.get('status', '')
@@ -1642,7 +1642,7 @@ class Handler(BaseHTTPRequestHandler):
         except RuntimeError as exc:
             return ('/files?msg=' + quote(f'⚠️ {exc}'), None)
         os.startfile(folder)
-        return ('/files?msg=' + quote(f'⬇️ נשמר בתיקייה „{os.path.basename(folder)}” (בתוך „הורדות”)'), None)
+        return ('/files?msg=' + quote(f'⬇️ נשמר בתיקייה ״{os.path.basename(folder)}״ (בתוך ״הורדות״)'), None)
 
     # ---- Google Drive backup ------------------------------------------------------------------------------------------
     def post_drive_connect(self, f):
@@ -1728,7 +1728,7 @@ class Handler(BaseHTTPRequestHandler):
             return 'קודם צריך לחבר תיבת מייל'
         subject = send_daily(acc)
         save_json(config.ACCOUNTS_FILE, accounts)
-        return f'✓ נשלח ל-{acc["email"]}: „{subject}” — אפשר לבדוק בטלפון'
+        return f'✓ נשלח ל-{acc["email"]}: ״{subject}״ — אפשר לבדוק בטלפון'
 
     def post_profile(self, f):
         me = save_profile(f.get('name', ''), f.get('form', ''), f['_lists'].get('goal', []))
@@ -1737,7 +1737,7 @@ class Handler(BaseHTTPRequestHandler):
     def post_projects_root(self, f):
         root = f.get('root', '').strip().strip('"')
         if root and not os.path.isdir(root):
-            return f'התיקייה „{root}” לא נמצאה'
+            return f'התיקייה ״{root}״ לא נמצאה'
         settings = load_json(config.SETTINGS_FILE, {})
         settings['projects_root'] = root
         save_json(config.SETTINGS_FILE, settings)
@@ -1779,12 +1779,12 @@ class Handler(BaseHTTPRequestHandler):
                 if data:
                     with open(os.path.join(template_dir(tid), safe_name(n) or 'file'), 'wb') as out:
                         out.write(data)
-        return f'✓ התבנית „{name}” נוספה' + (f' עם {len(saved)} קבצים' if saved else '')
+        return f'✓ התבנית ״{name}״ נוספה' + (f' עם {len(saved)} קבצים' if saved else '')
 
     def post_template_delete(self, f):
         gone = next((t for t in reply_templates() if t['id'] == f.get('id')), None)
         if gone:
-            undo.record('template', f'התבנית „{gone["name"]}” נמחקה', gone)
+            undo.record('template', f'התבנית ״{gone["name"]}״ נמחקה', gone)
         settings = load_json(config.SETTINGS_FILE, {})
         settings['templates'] = [t for t in reply_templates() if t['id'] != f.get('id')]
         save_json(config.SETTINGS_FILE, settings)
@@ -1810,9 +1810,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._wf_back('צריך שם ולפחות פעולה אחת')
         for a in actions:
             if a['type'] in ('forward', 'webhook', 'draft_reply', 'auto_reply') and not a['param']:
-                return self._wf_back(f'לפעולה „{ACTIONS[a["type"]][0]}” צריך למלא את השדה שלידה')
+                return self._wf_back(f'לפעולה ״{ACTIONS[a["type"]][0]}״ צריך למלא את השדה שלידה')
             if a['type'] == 'forward' and not re.fullmatch(r'[^@\s<>",;]+@[^@\s<>",;]+\.[^@\s<>",;]+', a['param']):
-                return self._wf_back(f'הכתובת „{a["param"]}” לא נראית תקינה')
+                return self._wf_back(f'הכתובת ״{a["param"]}״ לא נראית תקינה')
         if trigger == 'schedule':
             bad = [ACTIONS[a['type']][0] for a in actions if a['type'] not in SCHEDULE_ACTIONS]
             if bad:
@@ -1826,7 +1826,7 @@ class Handler(BaseHTTPRequestHandler):
             wf['schedule'] = {'days': days or [6], 'hour': max(7, min(23, int(f.get('hour') or 9)))}
         save_json(config.WF_FILE, workflows() + [wf])
         warn = f' {g("שימי לב", "שים לב", "לתשומת לב")}: תשובה אוטומטית נשלחת לאנשים אמיתיים.' if any(a['type'] == 'auto_reply' for a in actions) else ''
-        return self._wf_back(f'✓ האוטומציה „{name}” נשמרה ופעילה. אפשר ללחוץ 🧪 כדי לראות מה היא הייתה תופסת.{warn}')
+        return self._wf_back(f'✓ האוטומציה ״{name}״ נשמרה ופעילה. אפשר ללחוץ 🧪 כדי לראות מה היא הייתה תופסת.{warn}')
 
     def post_wf_recipe(self, f):
         try:
@@ -1836,7 +1836,7 @@ class Handler(BaseHTTPRequestHandler):
         wf = json.loads(json.dumps(recipe)) | {'id': secrets.token_hex(4), 'enabled': True,
                                                'created': dt.datetime.now().astimezone().isoformat()}
         save_json(config.WF_FILE, workflows() + [wf])
-        return self._wf_back(f'✓ נוסף: „{wf["name"]}”. אפשר לבדוק אותו עם 🧪 או להשבית.')
+        return self._wf_back(f'✓ נוסף: ״{wf["name"]}״. אפשר לבדוק אותו עם 🧪 או להשבית.')
 
     def post_wf_toggle(self, f):
         items = workflows()
@@ -1928,7 +1928,7 @@ class Handler(BaseHTTPRequestHandler):
             setup.remove()
             return 'התזמונים הוסרו — MailBrief ירוץ רק כשפותחים אותו. אפשר להחזיר באותו כפתור.'
         setup.install()
-        return '✓ התזמונים נרשמו: תדריך ביום ראשון 8:00, בדיקה כל שעה 7:00–23:00, „היום שלי” בכניסה ל-Windows'
+        return '✓ התזמונים נרשמו: תדריך ביום ראשון 8:00, בדיקה כל שעה 7:00–23:00, ״היום שלי״ בכניסה ל-Windows'
 
     def post_pause(self, f):
         until = pause_for(f.get('mode', 'off'))

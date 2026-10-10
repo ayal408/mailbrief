@@ -106,16 +106,16 @@ def boxes_section():
 {f'<b style="color:var(--warn)">⏸️ מושהה עד {paused_until():%d/%m %H:%M}</b><button name="mode" value="off" style="margin:0">▶️ ביטול השהיה</button>' if paused_until() else
  '<span class="muted">⏸️ השהיית אוטומציות והתראות:</span><button name="mode" value="2h" class="ghost" style="margin:0">לשעתיים</button><button name="mode" value="tomorrow" class="ghost" style="margin:0">עד מחר בבוקר</button>'}</form>
 <div class="grid"><section>
-<h3>התיבות שלי</h3>{"".join(cards) or '<p class="muted">עוד לא הוספת תיבה — מתחילים בכפתור „🔵 חיבור עם Google”.</p>'}
+<h3>התיבות שלי</h3>{"".join(cards) or '<p class="muted">עוד לא הוספת תיבה — מתחילים בכפתור ״🔵 חיבור עם Google״.</p>'}
 <form method="post" action="/run">{_t()}<button>▶ הרצה עכשיו{' — ' + e(view.current_account()) if view.current_account() else (' — כל התיבות' if len(accounts) > 1 else '')}</button></form>
 <h3>דוחות אחרונים</h3><ul>{rep}</ul></section>
 <section class="box"><h3 style="margin-top:0">➕ חיבור תיבה</h3>
-<p class="muted" style="margin-top:0">כמו „התחברות עם Google” באתרים: נפתח חלון התחברות, מאשרים — וזהו. בלי סיסמאות.
-<br><a href="/help#google">❓ מופיע „Google לא אימתה את האפליקציה”? זה צפוי — 3 לחיצות</a></p>
+<p class="muted" style="margin-top:0">כמו ״התחברות עם Google״ באתרים: נפתח חלון התחברות, מאשרים — וזהו. בלי סיסמאות.
+<br><a href="/help#google">❓ מופיע ״Google לא אימתה את האפליקציה״? זה צפוי — 3 לחיצות</a></p>
 <form method="post" action="/connect">{_t()}
 <button name="provider" value="google" {'' if google_ready else 'disabled title="קודם הגדרה חד-פעמית (בלשונית 🔌 חיבורים)"'}>🔵 חיבור עם Google</button>
 <button name="provider" value="microsoft" {'' if ms_ready else 'disabled title="קודם הגדרה חד-פעמית (בלשונית 🔌 חיבורים)"'}>🟦 חיבור עם Microsoft</button></form>
-{'<p class="muted" style="font-size:13px">אם Google מציג „Google hasn’t verified this app” — לוחצים <b>Advanced</b> ← <b>Go to MailBrief</b>. הגישה נשארת רק במחשב שלך.</p>' if built_in and not google_id else ''}
+{'<p class="muted" style="font-size:13px">אם Google מציג ״Google hasn’t verified this app״ — לוחצים <b>Advanced</b> ← <b>Go to MailBrief</b>. הגישה נשארת רק במחשב שלך.</p>' if built_in and not google_id else ''}
 {'' if ms_ready else '<p class="muted" style="font-size:13px">ל-Outlook / Hotmail: הגדרה חד-פעמית בלשונית <a href="/?s=connect#keys">🔌 חיבורים</a>.</p>'}
 <details style="margin-top:12px"><summary><b>✉️ תיבה אחרת עם סיסמה</b> (מייל של עבודה, ספקים ישראליים ועוד)</summary>
 <form method="post" action="/add">{_t()}
@@ -147,20 +147,20 @@ def me_section():
 <form method="post" action="/profile" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">{_t()}
 <input type="text" name="name" value="{e(me.get('name', ''))}" maxlength="30" placeholder="השם שלך" style="flex:1;min-width:160px;{FIELD}">
 <select name="form" style="{FIELD}">{form_opts}</select><button style="margin:0">שמירה</button>
-<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><span class="muted">מה מוצג ב„היום שלי”:</span>
+<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><span class="muted">מה מוצג ב״היום שלי״:</span>
 {''.join(f'<label style="font-weight:400;margin:0;display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 10px">'
          f'<input type="checkbox" name="goal" value="{k}"{" checked" if k in goals() else ""}> {icon} {e(title)}</label>' for k, (icon, title, _) in GOALS.items())}
 </div></form>
 
 {_h('simple', '🌱 מצב פשוט')}
-<p class="muted">רק מה שצריך: „היום שלי”, תיבות, חיפוש ומדריך. הכלים המתקדמים (תקציב, ייצוא לחשבשבת, אוטומציות, לקוחות ועוד)
+<p class="muted">רק מה שצריך: ״היום שלי״, תיבות, חיפוש ומדריך. הכלים המתקדמים (תקציב, ייצוא לחשבשבת, אוטומציות, לקוחות ועוד)
 מוסתרים מהתפריט — וזמינים תמיד דרך Ctrl+K. אפשר לחזור לתצוגה המלאה בכל רגע.</p>
 <form method="post" action="/simple">{_t()}{'<button name="on" value="0" class="ghost" style="margin:0">להציג את הכול</button>' if simple_mode() else
  '<button name="on" value="1" style="margin:0">🌱 להפעיל מצב פשוט</button>'}</form>
 
 {_h('daily', '✉️ סיכום יומי במייל')}
 <p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if daily['on'] else ''}כל בוקר מגיע לתיבה שלך מייל קצר: מה דחוף, מה ביומן, מה לתשלום, חשבוניות שלא הגיעו ומי מחכה לתשובה.
-ביום ראשון — גם „השבוע שלך במספרים”. נוח לקרוא בטלפון. לא נשלח בשבת ובחג.</p>
+ביום ראשון — גם ״השבוע שלך במספרים״. נוח לקרוא בטלפון. לא נשלח בשבת ובחג.</p>
 <form method="post" action="/daily" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">{_t()}
 <span>לשלוח ל</span><select name="account" style="{FIELD}">{_account_options(daily['account'])}</select>
 <span>בשעה</span><select name="hour" style="{FIELD}">{hour_opts}</select>
@@ -170,7 +170,7 @@ def me_section():
 
 {_h('quiet', '🔕 שעות שקטות')}
 <p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if quiet.get('on') else ''}בשעות האלה לא קופצות התראות — חוץ מאנשים חשובים (VIP) שבוחרים כאן.
-שום דבר לא הולך לאיבוד: הכול מחכה ב„היום שלי”. בשבת ובחג אין התראות בכלל.</p>
+שום דבר לא הולך לאיבוד: הכול מחכה ב״היום שלי״. בשבת ובחג אין התראות בכלל.</p>
 <form method="post" action="/quiet" style="display:grid;gap:8px">{_t()}
 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>מ-</span><select name="from" style="{FIELD}">{hours(int(quiet.get('from', 22)))}</select>
 <span>עד</span><select name="to" style="{FIELD}">{hours(int(quiet.get('to', 7)))}</select></div>
@@ -183,11 +183,11 @@ def me_section():
 <form method="post" action="/prefs" style="display:grid;gap:8px;max-width:640px">{_t()}
 <label style="margin:0">כשנכנסים ל-Windows
 <select name="startup" style="width:100%;{FIELD}">{''.join(f'<option value="{k}"{" selected" if (load_json(config.SETTINGS_FILE, {}).get("startup") or "page") == k else ""}>{v}</option>'
-  for k, v in (('page', '☀️ לפתוח את „היום שלי”'), ('toast', '🔔 רק התראה קצרה: כמה דחופים, תשלומים והפגישה הראשונה'), ('none', '🤫 כלום')))}</select></label>
+  for k, v in (('page', '☀️ לפתוח את ״היום שלי״'), ('toast', '🔔 רק התראה קצרה: כמה דחופים, תשלומים והפגישה הראשונה'), ('none', '🤫 כלום')))}</select></label>
 <label style="margin:0">צליל בהתראות
 <select name="sound" style="width:100%;{FIELD}">{''.join(f'<option value="{k}"{" selected" if (load_json(config.SETTINGS_FILE, {}).get("sound") or "urgent") == k else ""}>{v}</option>'
   for k, v in (('urgent', '🔔 רק לדחוף, לאבטחה ולאנשים חשובים (VIP)'), ('all', '🔊 לכל התראה'), ('off', '🔇 בלי צליל')))}</select></label>
-<p class="muted" style="margin:0;font-size:13px">בשבת ובחג אין התראות בכלל. בהתראה יש כפתורים: „⏰ להזכיר בעוד שעה” ו„📅 מחר בבוקר”.</p>
+<p class="muted" style="margin:0;font-size:13px">בשבת ובחג אין התראות בכלל. בהתראה יש כפתורים: ״⏰ להזכיר בעוד שעה״ ו״📅 מחר בבוקר״.</p>
 <div><button style="margin:0">שמירה</button></div></form>
 
 {pin_block()}
@@ -228,7 +228,7 @@ def money_section(month=''):
         f'<label style="margin:0;font-weight:400;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" name="no_vat"{" checked" if v["no_vat"] else ""}> בלי מע״מ</label>'
         f'<input type="text" name="account" value="{e(v["account"])}" placeholder="כרטיס ספק" dir="ltr" style="width:110px;{FIELD}">'
         f'<button class="ghost" style="margin:0">שמירה</button></form></td></tr>'
-        for v in vendors()[:40]) or '<tr><td class="muted">עוד אין קבלות — „⬇️ ייבוא קבלות” למטה</td></tr>'
+        for v in vendors()[:40]) or '<tr><td class="muted">עוד אין קבלות — ״⬇️ ייבוא קבלות״ למטה</td></tr>'
     vat_rows = ''.join(f'<tr><td>{e(b)}</td><td>{money(total)}</td><td>{money(v)}</td></tr>'
                        for b, (total, v) in sorted(vat['books'].items(), key=lambda kv: -kv[1][0]))
     gap_rows = ''.join(f'<div class="item"><div class="t">🧾 {e(m["vendor"])}</div><div class="m">מגיעה בדרך כלל עד ה-{m["day"]} לחודש · '
@@ -273,7 +273,7 @@ def money_section(month=''):
 <div class="kpi"><b>{money(vat['net'])}</b><span>לפני מע״מ</span></div>
 {f'<div class="kpi"><b>{money(vat["foreign"])}</b><span>מחו״ל (בלי מע״מ)</span></div>' if vat['foreign'] else ''}</div>
 {f'<div class="scroll"><table><thead><tr><th>סיווג</th><th>סה״כ</th><th>מע״מ</th></tr></thead><tbody>{vat_rows}</tbody></table></div>' if vat_rows else ''}
-<p class="muted" style="font-size:13px">הערכה לפי קבלות בש״ח מספקים בארץ (סכום כולל מע״מ). ספק פטור / עוסק פטור — מסמנים אצלו „בלי מע״מ” בטבלת הספקים. הדיווח הרשמי — אצל הרו״ח.</p>
+<p class="muted" style="font-size:13px">הערכה לפי קבלות בש״ח מספקים בארץ (סכום כולל מע״מ). ספק פטור / עוסק פטור — מסמנים אצלו ״בלי מע״מ״ בטבלת הספקים. הדיווח הרשמי — אצל הרו״ח.</p>
 
 {_h('vendors', '🏷️ סיווג קבוע לכל ספק')}
 <p class="muted">בוחרים פעם אחת את סוג ההוצאה של כל ספק — וכל קבלה ממנו (גם הישנות) מקבלת אותו באקסל, בחבילה לרו״ח ובייצוא.</p>
@@ -393,7 +393,7 @@ def clients_section():
 
 {_h('debts', '💰 מעקב תשלומים')}
 <p class="muted">חשבונית ששלחת ללקוח ועוד לא שולמה: אחרי מועד התשלום יוצאת תזכורת מנומסת מהתיבה שלך (10:00, אף פעם לא בשבת ובחג),
-ועוד אחת כל כמה ימים — עד 3 תזכורות, או עד שמסמנים „✓ שולם”.</p>
+ועוד אחת כל כמה ימים — עד 3 תזכורות, או עד שמסמנים ״✓ שולם״.</p>
 <div class="scroll"><table><thead><tr><th>לקוח</th><th>סכום</th><th>חשבונית</th><th>לתשלום עד</th><th>תזכורות</th><th></th></tr></thead><tbody>{debt_rows}</tbody></table></div>
 {payment_block()}
 {f'<h3>הצעות — חשבוניות ששלחת ולא נענו</h3>{sugg}' if sugg else ''}
@@ -412,11 +412,11 @@ def clients_section():
 <textarea name="text" rows="5" style="width:100%;{FIELD}">{e(REMINDER_DEFAULT)}</textarea></label>
 <div><button style="margin:0">💰 הוספה למעקב</button></div></form></details>
 
-<p class="muted" style="font-size:13px">💌 „✓ שולם” עם תודה: יוצא ללקוח מייל תודה (עם הקבלה, אם צירפת) בנוסח:
+<p class="muted" style="font-size:13px">💌 ״✓ שולם״ עם תודה: יוצא ללקוח מייל תודה (עם הקבלה, אם צירפת) בנוסח:
 <span style="white-space:pre-line">{e(THANKS_DEFAULT)}</span></p>
 
 {_h('quotes', '📝 הצעות מחיר')}
-<p class="muted">הצעה ששלחת ללקוח: אם אין תשובה תוך שבוע — תזכורת לבדוק איתו. מסמנים „🎉 התקבלה” או „לא התקבלה”, ורואים כמה אחוז מההצעות מתקבלות.
+<p class="muted">הצעה ששלחת ללקוח: אם אין תשובה תוך שבוע — תזכורת לבדוק איתו. מסמנים ״🎉 התקבלה״ או ״לא התקבלה״, ורואים כמה אחוז מההצעות מתקבלות.
 {f'<b>ב-90 הימים האחרונים: {rate["won"]} התקבלו, {rate["lost"]} לא, {rate["open"]} פתוחות' + (f' — {rate["rate"]}% הצלחה' if rate['rate'] is not None else '') + '</b>' if rate['won'] + rate['lost'] + rate['open'] else ''}</p>
 <div class="scroll"><table><tbody>{quote_rows}</tbody></table></div>
 {f'<h3>הצעות — מיילים ששלחת שנראים כמו הצעת מחיר</h3>{quote_sugg}' if quote_sugg else ''}
@@ -432,7 +432,7 @@ def clients_section():
 <div><button style="margin:0">➕ הוספה</button></div></form></details>
 
 {_h('folders', '📁 תיקייה לכל לקוח')}
-<p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if load_json(config.SETTINGS_FILE, {}).get('client_folders') else ''}כל קובץ שמגיע ממייל שתואם כלל שלך (למשל „לקוח כהן”)
+<p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if load_json(config.SETTINGS_FILE, {}).get('client_folders') else ''}כל קובץ שמגיע ממייל שתואם כלל שלך (למשל ״לקוח כהן״)
 נשמר לבד בתיקייה <span dir="ltr">{e(config.CLIENTS_DIR)}</span>\שם הלקוח\חודש. המייל עצמו לא משתנה.</p>
 <form method="post" style="display:flex;gap:8px;flex-wrap:wrap">{_t()}
 {'<button formaction="/client_folders" name="on" value="0" class="ghost" style="margin:0">כיבוי</button>' if load_json(config.SETTINGS_FILE, {}).get('client_folders') else
@@ -476,7 +476,7 @@ TEMPLATE_FIELDS = ['שם_פרטי', 'שם', 'נושא', 'מספר_חשבונית
 def auto_section():
     rules = load_json(config.RULES_FILE, [])
     rows = ''.join(
-        f'<tr><td>{FIELD_NAMES.get(r["field"], r["field"])} מכיל <b dir="auto">„{e(r["contains"])}”</b></td>'
+        f'<tr><td>{FIELD_NAMES.get(r["field"], r["field"])} מכיל <b dir="auto">״{e(r["contains"])}״</b></td>'
         f'<td>🏷️ {e(r["label"])}{" 🔔" if r.get("notify") else ""}'
         + (f'<div style="font-size:13px">↪️ מועבר אל <span dir="ltr">{e(r["forward_to"])}</span></div>' if r.get('forward_to') else '') + '</td>'
         f'<td><form method="post" action="/rule_delete" style="margin:0">{_t()}'
@@ -504,7 +504,7 @@ def auto_section():
     return f'''
 <p class="muted">אוטומציות מתקדמות (כש___ ← אם___ ← אז___): <a href="/automations">⚡ לשונית אוטומציות ←</a></p>
 {_h('rules', '🏷️ הכללים שלי')}
-<p class="muted">כל מייל שמתאים לכלל מקבל תווית משלו (תחת „{TAG_PREFIX}”) ומקבץ משלו בדוח. 🔔 = גם התראה ב-Windows.</p>
+<p class="muted">כל מייל שמתאים לכלל מקבל תווית משלו (תחת ״{TAG_PREFIX}״) ומקבץ משלו בדוח. 🔔 = גם התראה ב-Windows.</p>
 <div class="scroll"><table><tbody>{rows}</tbody></table></div>
 <form method="post" action="/rule_add" class="box" style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end">
 {_t()}
@@ -519,8 +519,8 @@ def auto_section():
 <form method="post" action="/test_send">{_t()}<button class="ghost">✉️ בדיקת שליחה (מייל ניסיון לעצמך)</button></form></details>
 
 {_h('templates', '📝 תבניות תשובה עם שדות')}
-<p class="muted">ב„היום שלי” ובמיון המהיר: בוחרים תבנית — והשדות מתמלאים לבד מהמייל: השם, מספר החשבונית או ההזמנה, הסכום, התאריך.
-<br>למשל: „שלום {{שם_פרטי}}, קיבלנו את חשבונית {{מספר_חשבונית}} על סך {{סכום}}, תודה!”</p>
+<p class="muted">ב״היום שלי״ ובמיון המהיר: בוחרים תבנית — והשדות מתמלאים לבד מהמייל: השם, מספר החשבונית או ההזמנה, הסכום, התאריך.
+<br>למשל: ״שלום {{שם_פרטי}}, קיבלנו את חשבונית {{מספר_חשבונית}} על סך {{סכום}}, תודה!״</p>
 <div class="scroll"><table><tbody>{tmpl_rows}</tbody></table></div>
 <form method="post" action="/template_add" enctype="multipart/form-data" class="box" style="display:grid;gap:8px;margin-top:10px">{_t()}
 <input type="text" name="name" required maxlength="40" placeholder="שם התבנית" style="{FIELD}">
@@ -572,7 +572,7 @@ def tidy_section():
         for r in unopened.get('rows', []))
     return f'''
 {_h('clean', '🧹 ניקוי תיבת הדואר הנכנס')}
-<p class="muted">מעביר לארכיון את כל המיילים הישנים בדואר הנכנס — <b>לא מוחק כלום</b>. ב-Gmail המייל נשאר ב„כל הדואר” ובחיפוש;
+<p class="muted">מעביר לארכיון את כל המיילים הישנים בדואר הנכנס — <b>לא מוחק כלום</b>. ב-Gmail המייל נשאר ב״כל הדואר״ ובחיפוש;
 בתיבות אחרות הוא עובר לתיקיית Archive. <b>נשארים</b>: מיילים מסומנים בכוכב ⭐, ומיילים שמחכים לתשובה ממך או דחופים.</p>
 <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">{_t()}
 <span>מיילים ישנים מ-</span><select name="days" style="{FIELD}">{days_opts}</select>
@@ -624,7 +624,7 @@ def data_section():
 {backup_check_block()}
 {_h('cloud', '☁️ גיבוי מוצפן ל-Google Drive')}
 <p class="muted">למקרה שהמחשב מתקלקל או מוחלף: הכללים, ההגדרות, הקבלות וההיסטוריה — נעולים בסיסמה <b>שרק {g('את יודעת', 'אתה יודע', 'אתם יודעים')}</b>,
-ונשמרים בתיקייה „MailBrief גיבויים” ב-Drive. Google רואה רק קובץ נעול. MailBrief מקבל גישה רק לקבצים שהוא עצמו יצר.
+ונשמרים בתיקייה ״MailBrief גיבויים״ ב-Drive. Google רואה רק קובץ נעול. MailBrief מקבל גישה רק לקבצים שהוא עצמו יצר.
 <b>בלי הסיסמה אי אפשר לשחזר</b> — כדאי לרשום אותה במקום בטוח. (אחרי שחזור במחשב חדש צריך להתחבר מחדש לתיבות.)</p>
 {cloud_html}
 
@@ -643,7 +643,7 @@ def data_section():
 <button style="margin:0">📦 להעביר לכאן</button></form>
 
 <h2>💻 תיקיית פרויקטים</h2>
-<p class="muted">„היום שלי” מציג פרויקטי git בתיקייה הזו שיש בהם שינויים שלא נשמרו. ריק = בלי כרטיס פרויקטים.</p>
+<p class="muted">״היום שלי״ מציג פרויקטי git בתיקייה הזו שיש בהם שינויים שלא נשמרו. ריק = בלי כרטיס פרויקטים.</p>
 <form method="post" action="/projects_root" style="display:flex;gap:8px;flex-wrap:wrap">{_t()}
 <input type="text" name="root" dir="ltr" value="{e(root)}" placeholder="C:/projects" style="flex:1;min-width:220px;{FIELD}">
 <button style="margin:0">שמירה</button></form>
@@ -657,11 +657,11 @@ def gapps_section():
     google = [a for a in accounts if a.get('auth') == 'google']
     current = gapps_account(accounts)
     if not google:
-        body = '<p class="muted">קודם צריך לחבר תיבת Gmail עם „🔵 חיבור עם Google” — ואז לחזור לכאן.</p>'
+        body = '<p class="muted">קודם צריך לחבר תיבת Gmail עם ״🔵 חיבור עם Google״ — ואז לחזור לכאן.</p>'
     else:
         rows = ''.join(
             f'<tr><td dir="ltr" style="text-align:right">{e(a["email"])}</td><td>'
-            + ((('<b style="color:var(--good)">✓ מחובר</b>' + (' · מוצג ב„היום שלי”' if current and current['id'] == a['id'] else
+            + ((('<b style="color:var(--good)">✓ מחובר</b>' + (' · מוצג ב״היום שלי״' if current and current['id'] == a['id'] else
                 f'<form method="post" action="/gapps_choose" style="display:inline;margin:0">{_t()}'
                 f'<input type="hidden" name="email" value="{e(a["email"])}"><button class="ghost" style="margin:0 6px">להציג את זה</button></form>'))
                 if a.get('gapps') else '<span class="muted">לא מחובר</span>'))
@@ -673,7 +673,7 @@ def gapps_section():
     own = bool((load_json(config.SETTINGS_FILE, {}).get('google') or {}).get('client_id'))
     return f'''
 {_h('gapps', '📅 Google Calendar ו-Tasks')}
-<p class="muted">האירועים של היום והמשימות הפתוחות מופיעים ב„היום שלי” — עם הוספה מהירה וסימון „בוצע”. בחלון של Google צריך <b>לסמן את שתי תיבות הסימון</b>.
+<p class="muted">האירועים של היום והמשימות הפתוחות מופיעים ב״היום שלי״ — עם הוספה מהירה וסימון ״בוצע״. בחלון של Google צריך <b>לסמן את שתי תיבות הסימון</b>.
 ההרשאה היא רק לאירועים ולמשימות.</p>
 {body}
 {'' if not own else f"""<details><summary><b>⚙️ עם מפתח משלך: להפעיל את שני הממשקים בפרויקט</b></summary>
@@ -702,10 +702,10 @@ def connect_section():
 <details style="margin-top:12px"><summary><b>⚙️ {'מפתח Microsoft משלך (לא חובה)' if ms_built_in else 'הגדרה חד-פעמית של Microsoft'}</b> (Outlook / Hotmail / Office 365) {'✓' if ms_id else ''}</summary>
 {'<p class="muted" style="font-size:13px">ל-MailBrief יש מפתח מובנה, אז אין צורך בזה. רק למי שרוצה רישום אפליקציה משלו ב-Azure:</p>' if ms_built_in else ''}
 <ol style="font-size:14px;padding-inline-start:20px">
-<li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure ← App registrations</a> ← New registration: „Any organizational directory and personal Microsoft accounts”</li>
+<li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure ← App registrations</a> ← New registration: ״Any organizational directory and personal Microsoft accounts״</li>
 <li>Redirect URI: הפלטפורמה <b>Public client/native (mobile &amp; desktop)</b> — לא Web — והכתובת המלאה, כולל הסוף:
 <code dir="ltr" style="user-select:all">{e(PROVIDERS['microsoft']['redirect'])}</code>
-<br><span class="muted" style="font-size:12px">כבר נרשמה כתובת אחרת (למשל http://localhost בלבד) ומופיעה השגיאה „redirect_uri is not valid”?
+<br><span class="muted" style="font-size:12px">כבר נרשמה כתובת אחרת (למשל http://localhost בלבד) ומופיעה השגיאה ״redirect_uri is not valid״?
 ב-Azure ← האפליקציה ← Authentication ← להוסיף את הכתובת הזו תחת Mobile and desktop applications ← Save</span></li>
 <li>API permissions ← Microsoft Graph ← Delegated ← <b>IMAP.AccessAsUser.All</b></li>
 <li>להעתיק לכאן את ה-Application (client) ID</li></ol>
