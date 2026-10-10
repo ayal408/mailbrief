@@ -883,8 +883,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(inbox.compose_data(q.get('mode', 'new'), q.get('a', ''), q.get('f', ''), uid))
             if url.path == '/inbox_body' and uid:                 # the email itself: sandboxed, no scripts, its own origin
                 images = bool(q.get('img'))
-                doc = inbox.body_document(q.get('a', ''), q.get('f', 'INBOX'), uid, images)
-                self._extra = list(getattr(self, '_extra', [])) + [('Content-Security-Policy', sanitize.csp(images)),
+                nonce = secrets.token_urlsafe(12)
+                doc = inbox.body_document(q.get('a', ''), q.get('f', 'INBOX'), uid, images, nonce)
+                self._extra = list(getattr(self, '_extra', [])) + [('Content-Security-Policy', sanitize.csp(images, nonce)),
                                                                    ('Referrer-Policy', 'no-referrer'), ('Cache-Control', 'no-store')]
                 return self._send(doc, frame='SAMEORIGIN')
             if url.path == '/inbox_file' and uid:

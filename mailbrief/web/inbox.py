@@ -97,7 +97,8 @@ def message_info(address, folder, uid):
             'phishing': {'score': score, 'why': why} if score >= 3 else None,
             'unsub': bool(msg.get('List-Unsubscribe')), 'gmail': gmail_link(address, row.get('gid', '')),
             'message_id': str(msg.get('Message-ID') or '').strip(), 'thread': thread,
-            'earlier': [{'folder': r['folder'], 'uid': r['uid'], 'from': r['from'], 'at': r['at'], 'subject': r['subject']}
+            'earlier': [{'folder': r['folder'], 'uid': r['uid'], 'from': r['from'], 'to': r.get('to', []), 'at': r['at'],
+                         'subject': r['subject'], 'snippet': r.get('snippet', ''), 'unread': '\\Seen' not in r.get('flags', [])}
                         for r in mailbox.thread_messages(address, folder, thread, uid, str(msg.get('Message-ID') or '').strip())],
             'contact': contact_card(address, sender_email), 'draft': role == 'drafts' or '\\Draft' in row.get('flags', []),
             'gapps': _has_gapps(), 'can': mailbox.can(address), 'translate': translate_link(text)}
@@ -159,10 +160,10 @@ def _has_gapps():
         return False
 
 
-def body_document(address, folder, uid, images=False):
+def body_document(address, folder, uid, images=False, nonce=''):
     msg = mailbox.parse(mailbox.fetch_raw(address, folder, uid, mark_seen=False))
     body, _ = sanitize.message_html(msg, images=images, collapse=True)
-    return sanitize.frame_document(body)
+    return sanitize.frame_document(body, nonce)
 
 
 def print_document(address, folder, uid, nonce):
@@ -321,7 +322,7 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 .ib-read{display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .ib-mtools{display:flex;gap:4px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center}
 .ib-mtools select{font:inherit;font-size:13px;padding:5px 8px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:150px}
-.ib-scroll{overflow-y:auto;flex:1;display:flex;flex-direction:column}
+.ib-scroll{overflow-y:auto;flex:1;display:flex;flex-direction:column;min-height:0}.ib-scroll>*{flex-shrink:0}
 .ib-head{padding:14px 18px 6px}.ib-head h2{font-size:20px;margin:0 0 8px;direction:rtl;text-align:start;unicode-bidi:plaintext}
 .ib-meta{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted)}.ib-meta b{color:var(--ink);font-size:14px}
 .ib-av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;flex:none}
@@ -330,10 +331,23 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 .ib-warn{margin:8px 18px 0;padding:10px 12px;border:1px solid var(--bad);color:var(--bad);border-radius:12px;font-size:13px}
 .ib-imgs{margin:8px 18px 0;padding:8px 12px;border:1px dashed var(--line);border-radius:12px;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ib-imgs button{border:0;background:none;color:var(--accent);padding:0;text-decoration:underline}
-.ib-earlier{margin:8px 18px 0}.ib-earlier div{padding:6px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:4px;font-size:13px;cursor:pointer;background:var(--bg)}
-.ib-earlier div:hover{border-color:var(--accent)}
-.ib-body{flex:1;min-height:420px;margin:10px 18px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;display:flex}
-.ib-body iframe{border:0;width:100%;flex:1;min-height:420px;background:#fff}
+.ib-thd{display:flex;align-items:center;gap:10px;margin:0 18px 4px;font-size:12px;color:var(--muted)}
+.ib-thd button{border:0;background:none;color:var(--accent);padding:0;font-size:12px;text-decoration:underline}
+.ib-earlier{margin:0 18px;border-top:1px solid var(--line)}.ib-earlier.after{margin-top:6px}
+.ib-earlier .msg{display:flex;align-items:flex-start;gap:10px;padding:10px 6px;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}
+.ib-earlier .msg:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}.ib-earlier .msg.hid{display:none}
+.ib-earlier .msg .w{flex:1;min-width:0}.ib-earlier .msg .nm{display:flex;gap:6px;align-items:baseline;white-space:nowrap;overflow:hidden}
+.ib-earlier .msg .sn{display:block;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+.ib-earlier .msg .em,.ib-earlier .msg .to{display:none;color:var(--muted);font-size:12px}.ib-earlier .msg.unread .nm b{font-weight:800}
+.ib-earlier .msg.open{border-bottom:0;padding-bottom:4px}.ib-earlier .msg.open .sn{display:none}.ib-earlier .msg.open .em{display:inline}
+.ib-earlier .msg.open .to{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-earlier .msg .t{color:var(--muted);font-size:12px;white-space:nowrap}
+.ib-tmore{display:flex;align-items:center;gap:8px;padding:6px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--accent);font-size:13px}
+.ib-tmore b{display:grid;place-items:center;min-width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--bg);font-size:12px;padding:0 4px}
+.ib-tmore:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.ib-cur{margin:0 18px;padding-top:10px}
+.ib-body{margin:10px 18px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.ib-body iframe{display:block;border:0;width:100%;height:420px;background:#fff}
 .ib-files{display:flex;gap:8px;flex-wrap:wrap;margin:0 18px 14px}
 .ib-file{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;background:var(--bg)}
 .ib-file a,.ib-file button{border:0;background:none;color:var(--accent);padding:0;font-size:12px;text-decoration:none}
@@ -374,8 +388,8 @@ background:var(--surface);border:1px solid var(--line);border-radius:16px;box-sh
 #ibx.dense .ib-row{padding:4px 10px;gap:0 8px}#ibx.dense .ib-row .sub{font-size:12.5px}#ibx.dense .ib-f{padding:4px 10px}
 #ibx.nopane{grid-template-columns:230px 1fr}#ibx.nopane .ib-read{display:none}#ibx.nopane.reading .ib-list{display:none}#ibx.nopane.reading .ib-read{display:flex}
 #ibx.nopane.reading .ib-back{display:inline-block}.ib-hid{opacity:.55}.ib-f.drop{background:color-mix(in srgb,var(--accent) 25%,transparent);outline:2px dashed var(--accent)}
-.ib-inline{border:1px solid var(--line);border-radius:10px;margin:-2px 0 6px;overflow:hidden;background:#fff;resize:vertical;height:280px;display:flex}
-.ib-inline iframe{border:0;width:100%;flex:1}.ib-dot{width:9px;height:9px;border-radius:50%;flex:none}
+.ib-inline{border:1px solid var(--line);border-radius:10px;margin:0 0 10px;overflow:hidden;background:#fff}
+.ib-inline iframe{display:block;border:0;width:100%;height:160px}.ib-dot{width:9px;height:9px;border-radius:50%;flex:none}
 #ib-comp footer{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);flex-wrap:wrap}
 #ib-comp footer .send{border:0;background:var(--accent);color:#fff;border-radius:12px;padding:9px 20px;font-weight:700}
 #ib-comp footer select{font:inherit;font-size:13px;padding:6px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
@@ -804,15 +818,31 @@ function drawMessage(){
   } else if (c && !c.emails) card = '<div class="ib-card">👤 שולח חדש — עוד לא התכתבת איתו</div>';
   var warn = m.phishing ? '<div class="ib-warn">🎣 <b>זהירות — ייתכן שזו הונאה:</b> ' + m.phishing.why.map(esc).join(' · ') + '. לא ללחוץ על קישורים ולא לשלוח פרטים.</div>' : '';
   var imgs = m.blocked && !S.imgs ? '<div class="ib-imgs">📷 ' + (m.blocked === 1 ? 'תמונה אחת מהאינטרנט הוסתרה' : m.blocked + ' תמונות מהאינטרנט הוסתרו') + ' (הן מגלות לשולח שפתחת) <button type="button" data-m="imgs">הצגה</button> · <button type="button" data-m="imgs_always">תמיד מהשולח הזה</button></div>' : '';
-  var earlier = m.earlier.length ? '<div class="ib-earlier">' + m.earlier.map(function(e){ return '<div data-open="' + esc(e.folder) + '\u0001' + e.uid + '" title="לחיצה: פתיחה כאן · לחיצה כפולה: כהודעה מלאה">🗨️ <b>' + esc(e.from.name || e.from.email) + '</b> · ' + when(e.at) + ' — ' + esc(e.subject) + '</div>'; }).join('') + '</div>' : '';
+  // 💬 the conversation as in Gmail: the other messages by date, folded to a preview line, the open one in its place
+  var mine = m.date ? new Date(m.date) : null, before = [], after = [];
+  m.earlier.forEach(function(e){ (mine && e.at && new Date(e.at) > mine ? after : before).push(e); });
+  var threadRow = function(e, hid){
+    return '<div class="msg' + (e.unread ? ' unread' : '') + (hid ? ' hid' : '') + '" data-open="' + esc(e.folder) + '\u0001' + e.uid + '" title="לחיצה: פתיחה / קיפול · לחיצה כפולה: כהודעה מלאה">' + avatar(e.from.name, e.from.email, 32) +
+      '<span class="w"><span class="nm"><b dir="auto">' + esc(e.from.name || e.from.email) + '</b><span class="em" dir="ltr">&lt;' + esc(e.from.email) + '&gt;</span></span>' +
+      '<span class="sn" dir="auto">' + esc(e.snippet || e.subject) + '</span>' + ((e.to || []).length ? '<span class="to">אל: ' + people(e.to) + '</span>' : '') + '</span>' +
+      '<span class="t" title="' + esc(e.at ? new Date(e.at).toLocaleString('he-IL') : '') + '">' + when(e.at) + '</span></div>';
+  };
+  var fold = before.length > 4 ? before.length - 3 : 0;   // a long conversation: the first, "N more", the last two
+  var earlier = before.length ? '<div class="ib-earlier">' + before.map(function(e, i){
+      return (fold && i === 1 ? '<div class="ib-tmore" data-tmore="1"><b>' + fold + '</b>הודעות נוספות בשיחה</div>' : '') + threadRow(e, fold && i >= 1 && i <= fold); }).join('') + '</div>' : '';
+  var later = after.length ? '<div class="ib-earlier after">' + after.map(function(e){ return threadRow(e, false); }).join('') + '</div>' : '';
+  var threadHead = m.earlier.length ? '<div class="ib-thd">💬 ' + (m.earlier.length + 1) + ' הודעות בשיחה<span style="flex:1"></span>' +
+    '<button type="button" data-thread="all">פתיחת הכול</button><button type="button" data-thread="none">קיפול הכול</button></div>' : '';
   var files = m.files.length ? '<div class="ib-files">' + m.files.map(function(f){ var u = '/inbox_file?' + ref + '&n=' + f.n;
       return '<div class="ib-file">📄 <span dir="auto">' + esc(f.name) + '</span> <span class="muted">' + sizeOf(f.size) + '</span>' +
         (f.view ? '<button type="button" data-view="' + f.n + '">👁️ צפייה</button>' : '') + '<button type="button" data-file="' + f.n + '">פתיחה</button><button type="button" data-save="' + f.n + '">שמירה</button></div>'; }).join('') +
       (m.files.length > 1 ? '<button class="ib-ic" type="button" data-m="allfiles" style="font-size:13px">💾 כל הקבצים</button>' : '') + '</div>' : '';
   var labels = (m.labels || []).filter(function(l){ return !/^\\\\/.test(l); }).map(function(l){ return '<span class="pill">' + esc(l) + '</span>'; }).join('');
-  $('ib-read').innerHTML = '<div class="ib-mtools">' + tools + '</div><div class="ib-scroll"><div class="ib-head"><h2>' + esc(m.subject || '(ללא נושא)') + ' ' + labels + '</h2>' + meta + '</div>' +
-    warn + card + earlier + imgs + '<div class="ib-body"><iframe title="תוכן ההודעה" referrerpolicy="no-referrer" src="/inbox_body?' + ref + (S.imgs ? '&img=1' : '') + '"></iframe></div>' + files +
+  $('ib-read').innerHTML = '<div class="ib-mtools">' + tools + '</div><div class="ib-scroll"><div class="ib-head"><h2>' + esc(m.subject || '(ללא נושא)') + ' ' + labels + '</h2></div>' +
+    threadHead + earlier + '<div class="ib-cur">' + meta + '</div>' +
+    warn + card + imgs + '<div class="ib-body"><iframe title="תוכן ההודעה" referrerpolicy="no-referrer" src="/inbox_body?' + ref + (S.imgs ? '&img=1' : '') + '"></iframe></div>' + files + later +
     (m.draft ? '' : '<div class="ib-quick"><button class="ib-ic" type="button" data-m="reply">↩️ תשובה</button><button class="ib-ic" type="button" data-m="all">↩️↩️ לכולם</button><button class="ib-ic" type="button" data-m="fwd">↪️ העברה</button></div>') + '</div>';
+  document.querySelectorAll('.ib-earlier .msg.unread:not(.hid)').forEach(function(x){ toggleEarlier(x, true); });   // not read yet: open, as Gmail does
   var mv = $('ib-move'); if (mv) mv.onchange = function(){ if (mv.value) act('move', [{a: m.account, f: m.folder, u: m.uid}], {to: mv.value}); };
   var more = $('ib-more-act'); more.onchange = function(){ var v = more.value; more.value = ''; if (v) tool(v); };
 }
@@ -950,17 +980,34 @@ $('ibx').addEventListener('click', function(ev){
   if ((el = t.closest('[data-bulk]'))) { var refs = selectedRefs(); if (refs.length) act(el.dataset.bulk, refs); return; }
   if ((el = t.closest('[data-do=compose]'))) { compose('new'); return; }
   if (t.id === 'ib-more') { S.page++; loadList({more: 1}); return; }
+  if ((el = t.closest('[data-tmore]'))) { unfoldThread(); return; }
+  if ((el = t.closest('[data-thread]'))) {              // 💬 the whole conversation open / closed
+    if (el.dataset.thread === 'all') unfoldThread();
+    document.querySelectorAll('.ib-earlier .msg').forEach(function(x){ toggleEarlier(x, el.dataset.thread === 'all'); }); return; }
   if ((el = t.closest('[data-open]'))) {                // 🗨️ an earlier message of the conversation, opened right here
-    var p = el.dataset.open.split('\u0001'), next = el.nextElementSibling;
-    if (ev.detail > 1) { openMessage(S.open.account, p[0], p[1]); return; }
-    if (next && next.classList.contains('ib-inline')) { next.remove(); return; }
-    var box = document.createElement('section'); box.className = 'ib-inline';
-    box.innerHTML = '<iframe title="הודעה קודמת" referrerpolicy="no-referrer" src="/inbox_body?a=' + encodeURIComponent(S.open.account) + '&f=' + encodeURIComponent(p[0]) + '&u=' + p[1] + '"></iframe>';
-    el.insertAdjacentElement('afterend', box); return; }
+    if (ev.detail > 1) { var p = el.dataset.open.split('\u0001'); openMessage(S.open.account, p[0], p[1]); return; }
+    toggleEarlier(el); return; }
   if ((el = t.closest('[data-file]'))) { post('/inbox_save', {a: S.open.account, f: S.open.folder, u: S.open.uid, n: el.dataset.file, open: 1}).then(function(d){ toast(d.msg); }).catch(fail); return; }
   if ((el = t.closest('[data-save]'))) { post('/inbox_save', {a: S.open.account, f: S.open.folder, u: S.open.uid, n: el.dataset.save}).then(function(d){ toast(d.msg); }).catch(fail); return; }
   if ((el = t.closest('[data-m]'))) msgAction(el.dataset.m);
 });
+function toggleEarlier(el, want){
+  var next = el.nextElementSibling, isOpen = !!(next && next.classList.contains('ib-inline'));
+  if (want === undefined) want = !isOpen; if (want === isOpen) return;
+  el.classList.toggle('open', want);
+  if (!want) { next.remove(); return; }
+  var p = el.dataset.open.split('\u0001'), box = document.createElement('section'); box.className = 'ib-inline';
+  box.innerHTML = '<iframe title="הודעה קודמת" referrerpolicy="no-referrer" src="/inbox_body?a=' + encodeURIComponent(S.open.account) + '&f=' + encodeURIComponent(p[0]) + '&u=' + p[1] + '"></iframe>';
+  el.insertAdjacentElement('afterend', box);
+}
+function unfoldThread(){
+  document.querySelectorAll('.ib-earlier .msg.hid').forEach(function(x){ x.classList.remove('hid'); });
+  document.querySelectorAll('.ib-tmore').forEach(function(x){ x.remove(); });
+}
+function fitFrame(ev){                                  // 📏 an email frame tells its height: shown whole, the pane scrolls once
+  var h = ev.data && ev.data.mbHeight; if (typeof h !== 'number' || !(h > 0)) return;
+  document.querySelectorAll('#ib-read iframe').forEach(function(f){ if (f.contentWindow === ev.source) f.style.height = Math.min(Math.max(h, 60), 50000) + 'px'; });
+}
 function msgAction(k){
   var m = S.open; if (!m) return; var ref = [{a: m.account, f: m.folder, u: m.uid}];
   if (!m.files && !/^(back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
@@ -1089,9 +1136,9 @@ var timer = setInterval(function(){
   if (!$('ibx')) return stop();
   api('/inbox_poll.json').then(function(d){ if (S.v >= 0 && d.v !== S.v) { loadList({quiet: 1}); loadAllFolders(true); } S.v = d.v; }).catch(function(){});
 }, 8000);
-function stop(){ clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.__ibx = null; }
+function stop(){ clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.removeEventListener('message', fitFrame); window.__ibx = null; }
 function unload(){ if (S.comp) saveDraft(true); }
-window.addEventListener('keydown', keys); window.addEventListener('beforeunload', unload); document.addEventListener('mousedown', outside);
+window.addEventListener('keydown', keys); window.addEventListener('beforeunload', unload); document.addEventListener('mousedown', outside); window.addEventListener('message', fitFrame);
 window.__ibx = {stop: stop};
 
 applyLook(); drawFolders(); loadAllFolders(false); if (S.acc !== '*') loadFolders(S.acc, true);

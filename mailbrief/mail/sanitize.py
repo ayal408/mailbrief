@@ -229,8 +229,11 @@ def message_html(msg, images=False, collapse=False):
     return text_to_html(content, collapse), 0
 
 
-def csp(images):
-    return ("sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; style-src 'unsafe-inline'; "
+def csp(images, nonce=''):
+    """nonce: only MailBrief's own few lines that report the page's height may run — still a null origin, so even they
+    can't reach MailBrief; everything the email itself carries stays blocked."""
+    scripts = f" allow-scripts; script-src 'nonce-{nonce}'" if nonce else ''
+    return (f"sandbox allow-popups allow-popups-to-escape-sandbox{scripts}; default-src 'none'; style-src 'unsafe-inline'; "
             f"img-src data:{' https: http:' if images else ''}; font-src data:{' https:' if images else ''}; form-action 'none'")
 
 
@@ -243,6 +246,18 @@ FRAME_STYLE = ('<style>html{background:#fff;color:#1d1a24;color-scheme:light}bod
                '{display:none}.mb-q[open]>summary{background:#e3dcf7}</style>')
 
 
-def frame_document(body_html):
+# The reading pane grows the frame to the whole email (one scroll for the pane, nothing cut off): the height goes up by
+# postMessage — a number and nothing else. The email's own CSS can't pin the page to the frame's height.
+FIT_STYLE = '<style>html,body{height:auto!important;min-height:0!important;max-height:none!important;overflow-y:visible!important}</style>'
+FIT_SCRIPT = ('(function(){var last=0;function send(){var b=document.body,d=document.documentElement;if(!b)return;'
+              'var h=Math.ceil(Math.max(b.scrollHeight,b.getBoundingClientRect().height))+(d.scrollWidth>d.clientWidth?18:0);'
+              'if(h!==last){last=h;parent.postMessage({mbHeight:h},"*");}}'
+              'addEventListener("load",send);addEventListener("resize",send);document.addEventListener("toggle",send,true);'
+              'if(window.ResizeObserver)new ResizeObserver(send).observe(document.body);send();})();')
+
+
+def frame_document(body_html, nonce=''):
+    fit = f'{FIT_STYLE}' if nonce else ''
+    script = f'<script nonce="{nonce}">{FIT_SCRIPT}</script>' if nonce else ''
     return (f'<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">'
-            f'<base target="_blank">{FRAME_STYLE}</head><body dir="auto">{body_html}</body></html>')
+            f'<base target="_blank">{FRAME_STYLE}</head><body dir="auto">{body_html}{fit}{script}</body></html>')

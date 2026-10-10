@@ -524,7 +524,10 @@ class InboxServer(InboxBase):
         resp, body = self.get('/inbox_body?a=me@gmail.com&f=INBOX&u=1')
         self.assertIn('sandbox', resp.getheader('Content-Security-Policy'))
         self.assertEqual(resp.getheader('X-Frame-Options'), 'SAMEORIGIN')
-        self.assertNotIn(b'<script', body)
+        policy = resp.getheader('Content-Security-Policy')            # only the height-reporting script, by its nonce
+        nonce = re.search(r"script-src 'nonce-([\w-]+)'", policy).group(1)
+        self.assertNotIn('allow-same-origin', policy)
+        self.assertEqual(re.findall(rb'<script[^>]*>', body), [f'<script nonce="{nonce}">'.encode()])
         resp, body = self.get(f'/inbox_file?a=me@gmail.com&f=INBOX&u=1&n={info["files"][0]["n"]}')
         self.assertEqual(body, b'%PDF-1.4 fake')
         self.assertIn('attachment', resp.getheader('Content-Disposition'))

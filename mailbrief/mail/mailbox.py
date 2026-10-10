@@ -534,14 +534,23 @@ def _thread_heads(m, where, uids, gmail):
     if not uids:
         return []
     rows = []
-    typ, data = m.uid('FETCH', ','.join(map(str, uids)).encode(), f'(UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS ({HEADERS})])')
+    ids = ','.join(map(str, uids)).encode()
+    typ, data = m.uid('FETCH', ids, f'(UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS ({HEADERS})])')
     for meta, lit in _records(data):
         uid = re.search(r'UID (\d+)', meta)
         if uid:
             r = _row(uid.group(1), meta, lit, gmail)
-            r.pop('_heads', None)
             r['folder'] = where
             rows.append(r)
+    try:                                                 # the preview line of each collapsed message, as in the list
+        typ, data = m.uid('FETCH', ids, '(UID BODY.PEEK[TEXT]<0.3072>)')
+        texts = {int(u.group(1)): lit for meta, lit in _records(data) if (u := re.search(r'UID (\d+)', meta))}
+        for r in rows:
+            r['snippet'] = snippet(r['_heads'], texts.get(r['uid'], b''))
+    except Exception:
+        pass
+    for r in rows:
+        r.pop('_heads', None)
     return rows
 
 
