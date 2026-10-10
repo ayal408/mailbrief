@@ -29,6 +29,7 @@ HERE = os.path.join(_documents(), 'MailBrief') if MANAGED else APP_DIR
 RESOURCES = getattr(sys, '_MEIPASS', APP_DIR)
 # The program's own Google sign-in key, added at build time (never in git): users just click "Connect with Google".
 BUNDLED_GOOGLE = os.path.join(RESOURCES, 'google_client.json')
+BUNDLED_MICROSOFT = os.path.join(RESOURCES, 'microsoft_client.json')
 NOTICES_FILE = os.path.join(RESOURCES, 'THIRD-PARTY-NOTICES.txt')
 DATA = os.path.join(HERE, 'data')
 REPORTS = os.path.join(DATA, 'reports')

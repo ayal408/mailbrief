@@ -47,6 +47,7 @@ jobs:
         shell: pwsh
         env:
           GOOGLE_CLIENT_JSON: ${{ secrets.GOOGLE_CLIENT_JSON }}     # the built-in Google sign-in key (set-google-key.ps1)
+          MICROSOFT_CLIENT_JSON: ${{ secrets.MICROSOFT_CLIENT_JSON }}   # the built-in Microsoft Application ID (set-microsoft-key.ps1)
         run: |
           # --specpath build makes relative paths resolve inside build\ - so the icon and data files get full paths
           $data = @('--add-data', "$((Resolve-Path THIRD-PARTY-NOTICES.txt).Path);.")
@@ -55,9 +56,14 @@ jobs:
             $data += @('--add-data', "$PWD\google_client.json;.")
             Write-Host 'Built-in Google key: yes'
           } else { Write-Host '::warning::No GOOGLE_CLIENT_JSON secret - users will have to set up their own Google key' }
+          if ($env:MICROSOFT_CLIENT_JSON) {
+            [IO.File]::WriteAllText("$PWD\microsoft_client.json", $env:MICROSOFT_CLIENT_JSON)
+            $data += @('--add-data', "$PWD\microsoft_client.json;.")
+            Write-Host 'Built-in Microsoft key: yes'
+          } else { Write-Host '::warning::No MICROSOFT_CLIENT_JSON secret - users will have to set up their own Microsoft key' }
           pyinstaller --onefile --noconsole --name MailBrief --icon (Resolve-Path assets/mailbrief.ico).Path @data `
             --paths . --distpath dist --workpath build --specpath build --noconfirm --log-level WARN main.py
-          Remove-Item google_client.json -ErrorAction SilentlyContinue
+          Remove-Item google_client.json, microsoft_client.json -ErrorAction SilentlyContinue
           if ($LASTEXITCODE) { throw 'PyInstaller failed' }
 
       - name: Build the installer (MailBrief-Setup.exe)

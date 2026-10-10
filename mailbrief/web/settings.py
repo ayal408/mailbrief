@@ -68,7 +68,7 @@ def boxes_section():
     accounts = load_json(config.ACCOUNTS_FILE, [])
     oauth = load_json(config.SETTINGS_FILE, {})
     google_id = (oauth.get('google') or {}).get('client_id', '')
-    ms_ready = bool((oauth.get('microsoft') or {}).get('client_id'))
+    ms_ready = bool((oauth.get('microsoft') or {}).get('client_id') or bundled_client('microsoft')[0])
     built_in = bool(bundled_client('google')[0])
     google_ready = bool(google_id and (oauth.get('google') or {}).get('client_secret')) or built_in
     cards = []
@@ -686,6 +686,7 @@ def connect_section():
     google_id = (oauth.get('google') or {}).get('client_id', '')
     ms_id = (oauth.get('microsoft') or {}).get('client_id', '')
     built_in = bool(bundled_client('google')[0])
+    ms_built_in = bool(bundled_client('microsoft')[0])
     return f'''{gapps_section()}
 {_h('keys', '🔑 מפתחות התחברות')}
 <details {'' if built_in or google_id else 'open'} style="margin-top:8px"><summary><b>⚙️ {'מפתח Google משלך (לא חובה)' if built_in else 'הגדרה חד-פעמית של Google'}</b> {'✓' if google_id else ''}</summary>
@@ -698,7 +699,8 @@ def connect_section():
 <label>Client ID</label><input type="text" name="client_id" dir="ltr" value="{e(google_id)}">
 <label>Client secret</label><input type="password" name="client_secret" dir="ltr" placeholder="{'••••••• (שמור)' if (oauth.get('google') or {}).get('client_secret') else ''}">
 <button>שמירה</button></form></details>
-<details style="margin-top:12px"><summary><b>⚙️ הגדרה חד-פעמית של Microsoft</b> (Outlook / Hotmail / Office 365) {'✓' if ms_id else ''}</summary>
+<details style="margin-top:12px"><summary><b>⚙️ {'מפתח Microsoft משלך (לא חובה)' if ms_built_in else 'הגדרה חד-פעמית של Microsoft'}</b> (Outlook / Hotmail / Office 365) {'✓' if ms_id else ''}</summary>
+{'<p class="muted" style="font-size:13px">ל-MailBrief יש מפתח מובנה, אז אין צורך בזה. רק למי שרוצה רישום אפליקציה משלו ב-Azure:</p>' if ms_built_in else ''}
 <ol style="font-size:14px;padding-inline-start:20px">
 <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure ← App registrations</a> ← New registration: „Any organizational directory and personal Microsoft accounts”</li>
 <li>Redirect URI: הפלטפורמה <b>Public client/native (mobile &amp; desktop)</b> — לא Web — והכתובת המלאה, כולל הסוף:

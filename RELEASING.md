@@ -54,3 +54,20 @@ repository secret.
 
 Until Google verifies the app, users see "Google hasn't verified this app" (Advanced -> Go to MailBrief), and at most
 100 users can connect. A user's own key in the settings always wins over the built-in one.
+
+## The built-in Microsoft key
+
+The same for Outlook / Hotmail / Office 365: MailBrief.exe can carry its own Microsoft Application (client) ID, so users
+click "Connect with Microsoft" with no Azure setup. A Microsoft public client has no secret, so the ID is not
+confidential; it is still kept out of git (`microsoft_client.json`, git-ignored) and reaches release builds from the
+`MICROSOFT_CLIENT_JSON` repository secret.
+
+1. In Azure, the app registration: "Any organizational directory and personal Microsoft accounts", platform
+   **Mobile and desktop applications** with the redirect URI `http://localhost:8765/oauth/callback`.
+2. In MailBrief -> Settings -> "Microsoft one-time setup", save its Application (client) ID.
+3. Run `powershell -ExecutionPolicy Bypass -File set-microsoft-key.ps1`: it writes `microsoft_client.json` and sets the
+   GitHub secret.
+4. The next `build.ps1` / release includes it ("Built-in Microsoft key: yes" in the log).
+
+Work and school accounts whose organisation allows only verified publishers need Publisher verification in Azure;
+personal Outlook.com / Hotmail accounts don't. A user's own ID in the settings always wins over the built-in one.

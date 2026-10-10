@@ -35,7 +35,9 @@ PENDING = {}    # state -> (provider, PKCE verifier, extra scope), lives only wh
 
 
 def bundled_client(provider):
-    """The key built into MailBrief.exe (see RELEASING.md) — for Google only."""
+    """The key built into MailBrief.exe (see RELEASING.md)."""
+    if provider == 'microsoft':               # a public client: an Application ID and no secret (microsoft_client.json)
+        return load_json(config.BUNDLED_MICROSOFT, {}).get('client_id', ''), ''
     if provider != 'google':
         return '', ''
     cfg = load_json(config.BUNDLED_GOOGLE, {})

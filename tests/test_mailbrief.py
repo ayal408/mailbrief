@@ -821,6 +821,9 @@ class Diagnostics(Isolated):
         storage.save_json(config.BUNDLED_GOOGLE, {'installed': {'client_id': 'built-in.apps.googleusercontent.com', 'client_secret': 's1'}})
         self.assertEqual(oauth.client_for('google'), ('built-in.apps.googleusercontent.com', 's1'))
         self.assertEqual(oauth.client_for('microsoft'), ('', ''))
+        storage.save_json(config.BUNDLED_MICROSOFT, {'client_id': '00000000-aaaa-bbbb-cccc-000000000000'})
+        self.assertEqual(oauth.client_for('microsoft'), ('00000000-aaaa-bbbb-cccc-000000000000', ''))   # public client: no secret
+        storage.save_json(config.BUNDLED_MICROSOFT, {})
         storage.save_json(config.SETTINGS_FILE, {'google': {'client_id': 'own.apps.googleusercontent.com', 'client_secret': storage.encrypt('s2')}})
         self.assertEqual(oauth.client_for('google'), ('own.apps.googleusercontent.com', 's2'))     # the user's own key wins
         from mailbrief.web import settings
