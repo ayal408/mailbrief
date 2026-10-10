@@ -701,7 +701,10 @@ def connect_section():
 <details style="margin-top:12px"><summary><b>⚙️ הגדרה חד-פעמית של Microsoft</b> (Outlook / Hotmail / Office 365) {'✓' if ms_id else ''}</summary>
 <ol style="font-size:14px;padding-inline-start:20px">
 <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Azure ← App registrations</a> ← New registration: „Any organizational directory and personal Microsoft accounts”</li>
-<li>Redirect URI: <b>Public client/native</b>, כתובת <code dir="ltr">http://localhost</code></li>
+<li>Redirect URI: הפלטפורמה <b>Public client/native (mobile &amp; desktop)</b> — לא Web — והכתובת המלאה, כולל הסוף:
+<code dir="ltr" style="user-select:all">{e(PROVIDERS['microsoft']['redirect'])}</code>
+<br><span class="muted" style="font-size:12px">כבר נרשמה כתובת אחרת (למשל http://localhost בלבד) ומופיעה השגיאה „redirect_uri is not valid”?
+ב-Azure ← האפליקציה ← Authentication ← להוסיף את הכתובת הזו תחת Mobile and desktop applications ← Save</span></li>
 <li>API permissions ← Microsoft Graph ← Delegated ← <b>IMAP.AccessAsUser.All</b></li>
 <li>להעתיק לכאן את ה-Application (client) ID</li></ol>
 <form method="post" action="/oauth_config">{_t()}<input type="hidden" name="provider" value="microsoft">
