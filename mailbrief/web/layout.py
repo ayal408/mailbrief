@@ -71,17 +71,17 @@ FONT = ('<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500
         + FAVICON + extras.BOOT)
 
 
-TABS = [('/today', '☀️', 'היום שלי'), ('/', '⚙️', 'הגדרות'), ('/dashboard', '📊', 'לוח בקרה'), ('/stats', '📈', 'במספרים'),
+TABS = [('/inbox', '📥', 'דואר נכנס'), ('/today', '☀️', 'היום שלי'), ('/', '⚙️', 'הגדרות'), ('/dashboard', '📊', 'לוח בקרה'), ('/stats', '📈', 'במספרים'),
         ('/automations', '⚡', 'אוטומציות'), ('/clients', '👥', 'לקוחות'), ('/reading', '📰', 'ניוזלטרים'),
         ('/search', '🔍', 'חיפוש'), ('/help', '❓', 'מדריך')]
 
 
-TITLE_TAB = {'היום שלי': '/today', 'לוח בקרה': '/dashboard', 'המייל שלי במספרים': '/stats', 'אוטומציות': '/automations',
+TITLE_TAB = {'דואר נכנס': '/inbox', 'היום שלי': '/today', 'לוח בקרה': '/dashboard', 'המייל שלי במספרים': '/stats', 'אוטומציות': '/automations',
              'לקוחות': '/clients', 'לקוח': '/clients', 'רשימת קריאה': '/reading', 'ניוזלטרים': '/reading', 'חיפוש': '/search', 'מדריך': '/help',
              'בדיקת תקינות': '/help', '30 הימים שלך': '/today', 'מיון מהיר': '/today', 'מייל מתוזמן': '/today', 'ברכות חג': '/today'}
 
 
-SIMPLE_TABS = ('/today', '/', '/search', '/help')
+SIMPLE_TABS = ('/inbox', '/today', '/', '/search', '/help')
 
 
 def corner_avatars():

@@ -46,4 +46,5 @@ def summary_lines(s):
         lines.append('👥 הכי הרבה קשר: ' + ', '.join(name for name, _ in s['this']['top']))
     for w in s['waiting']:
         lines.append(f"⏳ מחכה הכי הרבה: {w['from']} — {w['days']} ימים")
-    return lines
+    from mailbrief.features.timesaved import saved_lines
+    return lines + saved_lines()

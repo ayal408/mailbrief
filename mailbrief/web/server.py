@@ -75,6 +75,10 @@ from mailbrief.features.daily import daily_account, send_daily
 from mailbrief.features.update import start_update, update_available
 from mailbrief.features import setup
 from mailbrief.web.token import TOKEN
+from mailbrief.web import inbox
+from mailbrief.mail import mailbox, sanitize
+from mailbrief.mail.message import decode
+from mailbrief.features import live
 
 
 UNDO_SEND = dt.timedelta(seconds=10)      # "send now" leaves this long to change your mind (↩️) — then it goes out
@@ -142,6 +146,8 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
     def _get(self):
+        if self.path == '/_whoami':                               # start-up check: is it really this MailBrief on the port?
+            return self._send(INSTANCE, 'text/plain')             # (just a random number, so before the host check)
         if not self._host_ok():
             return self._send('forbidden', code=403)
         url = urlparse(self.path)
@@ -155,6 +161,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path not in ('/oauth/callback', '/toast_act') and not self._unlocked():
             from mailbrief.web.lockpage import lock_page
             return self._send(lock_page(self.path if url.path != '/' or url.query else '/today'))
+        if url.path == '/inbox' or url.path.startswith('/inbox_'):
+            return self._inbox_get(url)
         if url.path == '/welcome':
             return self._send(welcome_page())
         if not has_profile() and url.path in ('/', '/today', '/dashboard', '/stats', '/automations', '/clients', '/reading', '/search', '/help', '/insights', '/triage', '/compose', '/greetings'):
@@ -212,6 +220,10 @@ class Handler(BaseHTTPRequestHandler):
             import json
             from mailbrief.web.settings_search import index
             return self._send(json.dumps(index(), ensure_ascii=False), 'application/json; charset=utf-8')
+        if url.path == '/quote':
+            from mailbrief.web.quote import quote_page
+            q = parse_qs(url.query)
+            return self._send(quote_page(q.get('msg', [''])[0], q.get('to', [''])[0], q.get('name', [''])[0]))
         if url.path == '/free_slots':
             import json
             from mailbrief.features.slots import suggest
@@ -810,6 +822,276 @@ class Handler(BaseHTTPRequestHandler):
             return back(f'⚠️ {exc}')
         return ('/compose?msg=' + quote(f'🗓️ {count} ברכות אישיות יישלחו ב-{when:%d/%m} מ-{when:%H:%M} (בקבוצות קטנות). אפשר לבטל כל אחת כאן.'), None)
 
+    # ---- 📥 the inbox (web/inbox.py): JSON in and out ------------------------------------------------------------------
+
+    def _json(self, data, code=200):
+        self._send(json.dumps(data, ensure_ascii=False), 'application/json; charset=utf-8', code=code)
+
+    def _inbox_error(self, exc):
+        from mailbrief.mail.accounts import friendly_error
+        if not isinstance(exc, (LookupError, ValueError, RuntimeError)):
+            log_error('inbox')
+        try:
+            text = friendly_error(exc, mailbox.account(self._inbox_acc)) if getattr(self, '_inbox_acc', '') else str(exc)
+        except Exception:
+            text = str(exc)
+        return self._json({'error': net.netfree_block(exc) or text or 'שגיאה'}, code=400)
+
+    def _inbox_get(self, url):
+        site = self.headers.get('Sec-Fetch-Site', '')
+        if site and site not in ('same-origin', 'none') and url.path != '/inbox':
+            return self._send('forbidden', code=403)        # another website can't make it mark mail read / prefetch
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        self._inbox_acc = q.get('a', '') if q.get('a', '') != '*' else ''
+        uid = int(q['u']) if q.get('u', '').isdigit() else None
+        try:
+            if url.path == '/inbox':
+                return self._send(inbox.inbox_page({k: q.get(k, '') for k in ('a', 'f', 'u', 'q', 'compose')}))
+            if url.path == '/inbox_poll.json':
+                return self._json({'v': live.version()})
+            if url.path == '/inbox_folders.json':
+                return self._json({'folders': inbox.with_prefs(q.get('a', ''), mailbox.folders(q.get('a', ''), fresh=bool(q.get('fresh'))))})
+            if url.path == '/inbox_overview.json':
+                return self._json(mailbox.overview(view.emails()))
+            if url.path == '/inbox_list.json':
+                page_no = int(q['p']) if q.get('p', '').isdigit() else 0
+                if q.get('a') == '*':
+                    if q.get('cached'):
+                        rows = [dict(r, account=a) for a in view.emails() for r in mailbox.cached_list(a.lower(), 'INBOX')]
+                        rows.sort(key=lambda r: r['at'], reverse=True)
+                        return self._json({'items': rows[:mailbox.PER_PAGE], 'total': len(rows), 'offline': False})
+                    return self._json(mailbox.unified(view.emails(), page_no, q.get('q', ''), bool(q.get('unread'))))
+                if q.get('cached'):
+                    rows = mailbox.cached_list(q.get('a', '').lower(), q.get('f', 'INBOX'), page_no)
+                    return self._json({'items': rows, 'total': len(rows), 'offline': False})
+                return self._json(mailbox.list_messages(q.get('a', ''), q.get('f', 'INBOX'), page_no, q.get('q', ''), bool(q.get('unread'))))
+            if url.path == '/inbox_msg.json' and uid:
+                return self._json(inbox.message_info(q.get('a', ''), q.get('f', 'INBOX'), uid))
+            if url.path == '/inbox_people.json':
+                return self._json({'people': inbox.people()})
+            if url.path == '/inbox_compose.json':
+                return self._json(inbox.compose_data(q.get('mode', 'new'), q.get('a', ''), q.get('f', ''), uid))
+            if url.path == '/inbox_body' and uid:                 # the email itself: sandboxed, no scripts, its own origin
+                images = bool(q.get('img'))
+                doc = inbox.body_document(q.get('a', ''), q.get('f', 'INBOX'), uid, images)
+                self._extra = list(getattr(self, '_extra', [])) + [('Content-Security-Policy', sanitize.csp(images)),
+                                                                   ('Referrer-Policy', 'no-referrer'), ('Cache-Control', 'no-store')]
+                return self._send(doc, frame='SAMEORIGIN')
+            if url.path == '/inbox_file' and uid:
+                raw = mailbox.fetch_raw(q.get('a', ''), q.get('f', 'INBOX'), uid, mark_seen=False)
+                self._extra = list(getattr(self, '_extra', [])) + [('Content-Security-Policy', sanitize.csp(False)), ('Cache-Control', 'no-store')]
+                if q.get('n') == 'eml':                           # "show original": the raw message as plain text
+                    return self._send(raw, 'text/plain; charset=utf-8', frame='SAMEORIGIN')
+                part = mailbox.part_at(mailbox.parse(raw), int(q.get('n', '-1')))
+                data, ctype = part.get_payload(decode=True) or b'', part.get_content_type()
+                name = decode(part.get_filename()) or 'file'
+                if q.get('view') and inbox.viewable(ctype, name):
+                    if ctype == 'application/pdf' or ctype.startswith(('audio/', 'video/')):   # built-in players don't run sandboxed
+                        self._extra = [h for h in self._extra if h[0] != 'Content-Security-Policy']
+                    elif ctype.startswith('text/') or ctype not in inbox.VIEW_TYPES or ctype in ('application/json', 'application/xml'):
+                        return self._send(data, 'text/plain; charset=' + (part.get_content_charset() or 'utf-8'), frame='SAMEORIGIN')
+                    return self._send(data, ctype, frame='SAMEORIGIN')
+                self._extra.append(('Content-Disposition', f"attachment; filename*=UTF-8''{quote(name)}"))
+                return self._send(data, 'application/octet-stream')
+        except Exception as exc:
+            return self._inbox_error(exc)
+        return self._send('not found', code=404)
+
+    def _inbox_post(self, f, work):
+        self._inbox_acc = f.get('a', '')
+        try:
+            self._json(work())
+        except Exception as exc:
+            self._inbox_error(exc)
+
+    def post_inbox_act(self, f):
+        def work():
+            address, folder, what = f.get('a', ''), f.get('f', 'INBOX'), f.get('act', '')
+            uids = [int(u) for u in f.get('uids', '').split(',') if u.strip().isdigit()]
+            flags = {'read': ('\\Seen', True), 'unread': ('\\Seen', False), 'star': ('\\Flagged', True), 'unstar': ('\\Flagged', False)}
+            if what in flags:
+                mailbox.set_flag(address, folder, uids, *flags[what])
+            elif what == 'archive':
+                mailbox.archive(address, folder, uids)
+            elif what == 'delete':
+                mailbox.delete(address, folder, uids)
+            elif what == 'delete_draft':
+                mailbox.delete_for_good(address, folder, uids)
+            elif what in ('spam', 'notspam'):
+                mailbox.spam(address, folder, uids, back=what == 'notspam')
+            elif what == 'move':
+                mailbox.move(address, folder, uids, f.get('to', ''))
+            else:
+                raise ValueError('פעולה לא מוכרת')
+            live.bump()
+            return {'ok': True}
+        return self._inbox_post(f, work)
+
+    def post_inbox_folder(self, f):
+        """🏷️ Folders and labels: create / rename / delete on the server; pin / hide / colour on this computer."""
+        def work():
+            address, folder, op = f.get('a', ''), f.get('f', ''), f.get('op', '')
+            if op == 'create':
+                result = mailbox.create_folder(address, f.get('name', ''), folder)
+            elif op == 'rename':
+                result = mailbox.rename_folder(address, folder, f.get('name', ''))
+            elif op == 'delete':
+                mailbox.delete_folder(address, folder)
+                result = ''
+            elif op in ('hide', 'pin'):
+                inbox.set_folder_pref(address, folder, 'hidden' if op == 'hide' else 'pinned', f.get('on') == '1')
+                result = folder
+            elif op == 'color':
+                color = f.get('color', '')
+                inbox.set_folder_pref(address, folder, 'color', color if color in inbox.LABEL_COLORS else '')
+                result = folder
+            else:
+                raise ValueError('פעולה לא מוכרת')
+            return {'ok': True, 'folder': result}
+        return self._inbox_post(f, work)
+
+    def _inbox_message(self, f):
+        """(fields for outbox.schedule / build) from the writing window."""
+        mode = f.get('mode', 'new')
+        extra = {'cc': f.get('cc', ''), 'bcc': f.get('bcc', '')}
+        if f.get('ref_u', '').isdigit() and mode in ('reply', 'all', 'fwd'):
+            original = mailbox.parse(mailbox.fetch_raw(f.get('ref_a', ''), f.get('ref_f', ''), int(f['ref_u']), mark_seen=False))
+            if mode != 'fwd':
+                extra['thread'] = inbox.thread_headers(original)
+            if f.get('quote'):
+                extra['quote'] = inbox.quote_of(original, forward=mode == 'fwd')
+            if mode == 'fwd':
+                extra['forward'] = {'account': f.get('ref_a', ''), 'folder': f.get('ref_f', ''), 'uid': int(f['ref_u'])}
+        if f.get('draft_u', '').isdigit():
+            extra['draft'] = {'folder': f.get('draft_f', ''), 'uid': int(f['draft_u'])}
+        return extra
+
+    def post_inbox_send(self, f):
+        def work():
+            acc = mailbox.account(f.get('a', ''))
+            choice = f.get('when', 'now')
+            send_at = dt.datetime.now().astimezone() + UNDO_SEND if choice == 'now' else outbox.when_for(choice, f.get('at', ''))
+            item = outbox.schedule(acc['email'], f.get('to', ''), f.get('subject', ''), f.get('body', ''), send_at,
+                                   files=f['_files'], html=f.get('html', ''), **self._inbox_message(f))
+            if choice == 'now':
+                send_soon()
+                return {'id': item['id'], 'undo': int(UNDO_SEND.total_seconds()), 'msg': '✉️ נשלח'}
+            return {'id': item['id'], 'undo': 10, 'msg': f'🕒 יישלח ב-{send_at:%d/%m} בשעה {send_at:%H:%M}'}
+        return self._inbox_post(f, work)
+
+    def post_inbox_cancel(self, f):
+        def work():
+            item = next((it for it in outbox.outbox() if it['id'] == f.get('id') and it['status'] == 'waiting'), None)
+            if not item:
+                raise RuntimeError('כבר מאוחר מדי — המייל יצא')
+            outbox.cancel(item['id'])
+            return {'ok': True}
+        return self._inbox_post(f, work)
+
+    def post_inbox_draft(self, f):
+        def work():
+            acc = mailbox.account(f.get('a', ''))
+            extra = self._inbox_message(f)
+            draft = extra.pop('draft', None)
+            extra.pop('forward', None)
+            item = {'id': 'draft', 'to': outbox.addresses(f.get('to', '')), 'cc': outbox.addresses(extra.get('cc')),
+                    'bcc': outbox.addresses(extra.get('bcc')), 'subject': f.get('subject', '')[:300], 'body': f.get('body', '')[:50000],
+                    'thread': extra.get('thread'), 'quote': extra.get('quote')}
+            if f.get('html', '').strip():
+                item['html'] = outbox.rich_html(f['html'])
+            message = outbox.build(item, acc)
+            del message['X-MailBrief-Scheduled']
+            folder, uid = mailbox.save_draft(acc['email'], message, draft['uid'] if draft else None)
+            live.bump()
+            return {'folder': folder, 'uid': uid}
+        return self._inbox_post(f, work)
+
+    def post_inbox_save(self, f):
+        """💾 An attachment into הורדות (and open it with its program, or show the folder)."""
+        def work():
+            from mailbrief.util import safe_name, write_once
+            msg = mailbox.parse(mailbox.fetch_raw(f.get('a', ''), f.get('f', 'INBOX'), int(f.get('u', '0')), mark_seen=False))
+            name, who = mailbox.sender(msg)
+            folder = os.path.join(config.DOWNLOADS_DIR, safe_name(f"{dt.date.today():%Y-%m-%d} {name or who}")[:80])
+            chosen = mailbox.attachments(msg) if f.get('n') == 'all' else \
+                [a for a in mailbox.attachments(msg) if str(a[0]) == f.get('n')]
+            if not chosen:
+                raise LookupError('לא נמצאו קבצים מצורפים')
+            paths = [write_once(folder, safe_name(fname), part.get_payload(decode=True) or b'') for _, fname, _, _, part in chosen]
+            if f.get('open') and len(paths) == 1:
+                os.startfile(paths[0])
+                return {'msg': f'📂 נפתח: {os.path.basename(paths[0])}'}
+            os.startfile(folder)
+            return {'msg': f'💾 נשמר{"ו " + str(len(paths)) + " קבצים" if len(paths) > 1 else ""} בהורדות'}
+        return self._inbox_post(f, work)
+
+    def post_inbox_tool(self, f):
+        """The ⋯ menu of a message: remind, snooze, task, receipt, unsubscribe, all files, pictures from this sender."""
+        def work():
+            address, folder, uid, tool = f.get('a', ''), f.get('f', 'INBOX'), int(f.get('u', '0')), f.get('tool', '')
+            msg = mailbox.parse(mailbox.fetch_raw(address, folder, uid, mark_seen=False))
+            name, who = mailbox.sender(msg)
+            subject = decode(msg.get('Subject')).strip()[:200]
+            row = next((r for r in mailbox.cached_list(address.lower(), folder) if r['uid'] == uid), {})
+            glink = inbox.gmail_link(address, row.get('gid', ''))
+            if tool == 'remind_at':                       # 📅 a day and hour from the Hebrew date picker
+                from mailbrief.features.reminders import remind_at
+                when = dt.datetime.fromisoformat(f.get('at', '')).astimezone()
+                if when <= dt.datetime.now().astimezone():
+                    raise ValueError('הזמן שנבחר כבר עבר')
+                remind_at(when, subject, name or who, glink, address)
+                return {'msg': f'⏰ תזכורת ב-{when:%d/%m} בשעה {when:%H:%M}'}
+            if tool.startswith('remind'):
+                days = int(tool[6:] or 1)
+                due = add_reminder(days, subject, name or who, glink, address)
+                return {'msg': f'⏰ תזכורת ב-{due:%d/%m} בבוקר'}
+            if tool.startswith('snooze_'):
+                until = self._snooze_until(tool[7:])
+                snooze.snooze(address, str(msg.get('Message-ID') or '').strip(), subject, until, glink)
+                return {'msg': f'💤 יחזור לתיבה ב-{until:%d/%m} בשעה {until:%H:%M}'}
+            if tool == 'task':
+                acc = google_apps.gapps_account()
+                if not acc:
+                    raise RuntimeError('צריך לחבר קודם את היומן והמשימות של Google (בהגדרות)')
+                google_apps.add_task(acc, subject or 'מייל', f'מאת {name or who}\n{glink}'.strip())
+                return {'msg': '✅ נוספה משימה ב-Google Tasks'}
+            if tool == 'receipt':
+                it = inbox.receipt_from(address, msg)
+                amount = f' · {it["amount"]}' if it.get('amount') else ''
+                return {'msg': f'🧾 נשמר בקבלות{amount}'}
+            if tool == 'unsub':
+                from mailbrief.mail.classify import classify
+                it = classify(msg, address)
+                if not it.get('unsub'):
+                    raise RuntimeError('לשולח הזה אין קישור ביטול רשמי — אפשר לסמן כספאם')
+                entry = {'account': address, 'sender': who, 'name': name, **it['unsub']}
+                kind, value = unsubscribe(entry)
+                if kind == 'open':
+                    if window.in_app():
+                        window.open_external(value)
+                        return {'msg': '↗ דף הביטול נפתח בדפדפן'}
+                    return {'open': value, 'msg': '↗ דף הביטול נפתח'}
+                return {'msg': value}
+            if tool == 'files':
+                chosen = mailbox.attachments(msg)
+                if not chosen:
+                    raise LookupError('אין קבצים מצורפים בהודעה הזו')
+                from mailbrief.util import safe_name, write_once
+                folder_path = os.path.join(config.DOWNLOADS_DIR, safe_name(f"{dt.date.today():%Y-%m-%d} {name or who}")[:80])
+                for _, fname, _, _, part in chosen:
+                    write_once(folder_path, safe_name(fname), part.get_payload(decode=True) or b'')
+                os.startfile(folder_path)
+                return {'msg': f'💾 {len(chosen)} קבצים נשמרו בהורדות'}
+            if tool == 'images':
+                settings = load_json(config.SETTINGS_FILE, {})
+                allowed = settings.setdefault('images_from', [])
+                if who.lower() not in {a.lower() for a in allowed}:
+                    allowed.append(who.lower())
+                save_json(config.SETTINGS_FILE, settings)
+                return {'msg': f'📷 תמונות מ-{who} יוצגו תמיד'}
+            raise ValueError('פעולה לא מוכרת')
+        return self._inbox_post(f, work)
+
     def _snooze_until(self, choice):
         if choice == 'week':
             now = dt.datetime.now().astimezone()
@@ -927,6 +1209,52 @@ class Handler(BaseHTTPRequestHandler):
         from mailbrief.features.maintenance import check_backups
         ok, lines = check_backups(force=True)
         return ('🧪 ' + ('הגיבוי תקין' if ok else 'נמצאה בעיה') + ' — ' + ' · '.join(lines))
+
+    # ---- 📝 quotes · 📅 meetings from replies · 📱 contacts to the phone ------------------------------------------------------
+    def post_quote_make(self, f):
+        from mailbrief.features import quotes
+        from mailbrief.features.quote_pdf import make_quote
+        num = lambda v: float(v) if re.fullmatch(r'\d+(\.\d+)?', (v or '').strip()) else 0.0
+        lists = f['_lists']
+        items = list(zip(lists.get('desc', []), map(num, lists.get('qty', [])), map(num, lists.get('price', []))))
+        client = {'name': f.get('name', '').strip()[:80], 'email': f.get('email', '').strip()}
+        back = lambda m: ('/quote?msg=' + quote(m) + '&to=' + quote(client['email']) + '&name=' + quote(client['name']), None)
+        if f.get('action') == 'send' and not outbox.EMAIL.fullmatch(client['email']):
+            return back('⚠️ כדי לשלוח צריך את המייל של הלקוח')
+        try:
+            path, number, total = make_quote(f.get('account', ''), client, items, vat=f.get('vat') == '1',
+                                             notes=f.get('notes', '')[:2000], valid_days=int(f.get('valid') or 30))
+        except (ValueError, RuntimeError) as exc:
+            return back(f'⚠️ {exc}')
+        if f.get('action') != 'send':
+            os.startfile(path)
+            return back(f'📄 הצעת מחיר {number} נוצרה (₪{total:,.2f}) — בתיקייה „הצעות מחיר”')
+        from mailbrief.profile import profile
+        me = profile().get('business') or profile().get('name') or ''
+        subject = f'הצעת מחיר {number}' + (f' — {me}' if me else '')
+        body = f'שלום {client["name"]},\n\nמצורפת הצעת המחיר (מס׳ {number}) על סך ₪{total:,.2f}.\nאשמח לעמוד לרשותך בכל שאלה.\n\nבברכה,\n{profile().get("name", "")}'
+        with open(path, 'rb') as pdf:
+            item = outbox.schedule(f['account'], client['email'], subject, body, outbox.out_of_holy(dt.datetime.now().astimezone() + UNDO_SEND),
+                                   files=[(os.path.basename(path), pdf.read())])
+        quotes.add_quote(f['account'], client['email'], client['name'], subject, f'₪{total:,.0f}')
+        undo.record('send', f'📝 הצעת מחיר {number} ל{client["name"]} יוצאת בעוד 10 שניות', {'ids': [item['id']]})
+        send_soon()
+        return ('/?s=clients&msg=' + quote(f'📨 הצעת מחיר {number} (₪{total:,.2f}) יוצאת ל{client["name"]} ונוספה למעקב הצעות המחיר') + '#quotes', None)
+
+    def post_meeting_add(self, f):
+        from mailbrief.features.meeting_reply import add_meeting
+        try:
+            start = dt.datetime.fromisoformat(f.get('start', ''))
+            add_meeting(f'פגישה עם {f.get("who", "")[:60]}', start, f.get('sender', ''), notes=f.get('subject', '')[:200])
+        except (ValueError, RuntimeError) as exc:
+            return ('/today?msg=' + quote(f'⚠️ {exc}'), None)
+        return ('/today?msg=' + quote(f'📅 הפגישה נקבעה ביומן ל-{start:%d/%m} בשעה {start:%H:%M}, וההזמנה נשלחה ל-{f.get("who", "")}'), None)
+
+    def post_contacts_vcf(self, f):
+        from mailbrief.web.contacts import export_vcf
+        path, count = export_vcf()
+        os.startfile(os.path.dirname(path))
+        return ('/contacts?msg=' + quote(f'📱 {count} אנשי קשר נשמרו ב-„{os.path.basename(path)}” — מעבירים לטלפון (או מייבאים ב-contacts.google.com)'), None)
 
     def post_email_note(self, f):
         from mailbrief.features.email_notes import set_note
@@ -1628,6 +1956,92 @@ class LocalServer(ThreadingHTTPServer):
         super().server_bind()
 
 
+class LocalServer6(LocalServer):
+    """The same on ::1. Browsers try *.localhost on IPv6 first — without this, another program listening there (a Node /
+    Vite dev server, Docker, IIS) is what the MailBrief window shows."""
+    address_family = socket.AF_INET6
+
+
+INSTANCE = secrets.token_hex(8)         # answered at /_whoami, so start-up can tell this copy from any other program
+NO_IPV6 = (10047, 10049)                # WSAEAFNOSUPPORT, WSAEADDRNOTAVAIL: IPv6 is off — browsers won't use ::1 either
+
+
+def _answers(ip, port):
+    """Does this very process answer on ip:port? (A socket bind can succeed while another program still gets the traffic.)"""
+    import http.client
+    try:
+        conn = http.client.HTTPConnection(ip, port, timeout=3)
+        conn.request('GET', '/_whoami', headers={'Host': f'127.0.0.1:{port}'})
+        body = conn.getresponse().read()
+        conn.close()
+        return body.decode('ascii', 'replace') == INSTANCE
+    except (OSError, http.client.HTTPException):
+        return False
+
+
+def _claim(port):
+    """Listens on 127.0.0.1 and ::1. Returns (servers, ipv4_ok, ipv6_ok); the servers are already running.
+    ipv6_ok is also True when the computer has no IPv6 (then nothing can be reached there)."""
+    try:
+        servers = [LocalServer(('127.0.0.1', port), Handler)]
+    except OSError:
+        return [], False, False
+    no_ipv6 = False
+    try:
+        servers.append(LocalServer6(('::1', port), Handler))
+    except OSError as exc:                       # taken by another program — unless the computer simply has no IPv6
+        no_ipv6 = not socket.has_ipv6 or getattr(exc, 'winerror', None) in NO_IPV6
+    for s in servers:
+        s.worker = threading.Thread(target=s.serve_forever, daemon=True)
+        s.worker.start()
+    v6 = _answers('::1', port) if len(servers) == 2 else no_ipv6
+    return servers, _answers('127.0.0.1', port), v6
+
+
+def _release(servers):
+    for s in servers:
+        s.shutdown()
+        s.server_close()
+
+
+def _port_owner(port):
+    """'node.exe' (or '') — the program listening on the port, for the message to the user."""
+    try:
+        out = subprocess.run(['netstat', '-ano', '-p', 'TCP'], capture_output=True, text=True, timeout=5,
+                             creationflags=0x08000000).stdout
+        out += subprocess.run(['netstat', '-ano', '-p', 'TCPv6'], capture_output=True, text=True, timeout=5,
+                              creationflags=0x08000000).stdout
+        pid = next(parts[-1] for parts in (line.split() for line in out.splitlines())
+                   if len(parts) >= 5 and parts[1].endswith(f':{port}') and parts[3] == 'LISTENING' and parts[-1] != str(os.getpid()))
+        task = subprocess.run(['tasklist', '/FI', f'PID eq {pid}', '/FO', 'CSV', '/NH'], capture_output=True, text=True,
+                              timeout=5, creationflags=0x08000000).stdout
+        return task.split('","')[0].strip('"\r\n ') if task.startswith('"') else f'PID {pid}'
+    except (OSError, subprocess.SubprocessError, StopIteration):
+        return ''
+
+
+def _is_mailbrief(port):
+    """An older MailBrief (without the single-instance mutex) answers /_show with 'ok' — and shows its window."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f'http://127.0.0.1:{port}/_show', headers={'Host': f'127.0.0.1:{port}'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.read() == b'ok'
+    except Exception:
+        return False
+
+
+def _port_busy_message(port):
+    owner = _port_owner(port)
+    text = (f'תוכנה אחרת{" (" + owner + ")" if owner else ""} כבר משתמשת בכתובת של MailBrief (פורט {port}),\n'
+            'ולכן MailBrief לא יכול להיפתח — אחרת החלון היה מציג את התוכנה ההיא.\n\n'
+            'סגרו את התוכנה האחרת (או שנו לה את הפורט) ופתחו את MailBrief שוב.')
+    try:
+        ctypes.windll.user32.MessageBoxW(None, text, 'MailBrief', 0x30 | 0x80000 | 0x100000 | 0x40000)   # warning, RTL, top-most
+    except Exception:
+        pass
+
+
 _INSTANCE = []      # keeps the mutex handle for the life of the process
 
 
@@ -1649,23 +2063,22 @@ def serve(start_page=''):
     if not first_instance():                     # already running: ask it to show its window
         _show_running_copy(start_page)
         return
-    try:
-        server = LocalServer(("127.0.0.1", config.PORT), Handler)
-    except OSError:                              # the port is taken (an older copy still running): just show it
-        open_window(link(start_page))
+    servers, v4, v6 = _claim(config.PORT)
+    if not v4:                                   # the port is taken: an older copy is shown; another program never is
+        _release(servers)
+        if not _is_mailbrief(config.PORT):
+            _port_busy_message(config.PORT)
         return
-    servers = [server]
-    try:                                         # the port-less address, when nothing else uses port 80
-        servers.append(LocalServer(("127.0.0.1", config.NICE_PORT), Handler))
+    nice, nice_v4, nice_v6 = _claim(config.NICE_PORT)     # the port-less address, only when port 80 is all ours
+    if nice_v4 and nice_v6:
+        servers += nice
         remember(config.NICE_PORT)
-    except OSError:
-        remember(config.PORT)
-    workers = [threading.Thread(target=s.serve_forever, daemon=True) for s in servers]
-    for worker in workers:
-        worker.start()
+    else:
+        _release(nice)
+        remember(config.PORT, config.NICE_HOST if v6 else '127.0.0.1')
     threading.Thread(target=_ensure_setup, daemon=True).start()    # a new computer: scheduled runs + Start menu
     threading.Thread(target=_outbox_timer, daemon=True).start()
-    worker = workers[0]
+    live.start()                                 # 🔴 new mail shows up in the inbox page at once
     try:
         if window.available():                   # a real window (WebView2) on the main thread, the tray icon beside it
             threading.Thread(target=_tray_thread, daemon=True).start()
@@ -1677,7 +2090,7 @@ def serve(start_page=''):
                 run_tray()                       # returns when the user picks "Exit"
             except Exception:
                 _log_tray()
-                worker.join()                    # no tray: keep serving until "⏻ Close" on the page
+                servers[0].worker.join()         # no tray: keep serving until "⏻ Close" on the page
     finally:
         for s in servers:
             s.shutdown()
@@ -1688,6 +2101,7 @@ def _outbox_timer():
     while True:
         time.sleep(120)
         try:
+            live.start()                         # a mailbox connected since: watch it too
             if any(it['status'] == 'waiting' for it in outbox.outbox()):
                 outbox.send_due()
             if snooze.snoozed():

@@ -27,7 +27,7 @@ def save_snapshot(per_account, awaiting=None, only=None):
     for address, items in per_account:
         for it in items:
             row = {'account': address, 'from': it['sender_name'], 'sender': it.get('sender', ''), 'subject': it['subject'], 'link': it.get('link', ''),
-                   'message_id': it.get('message_id', '')}
+                   'message_id': it.get('message_id', '')} | ({'meeting': it['meeting']} if it.get('meeting') else {})
             if it.get('due'):
                 due.append(row | {'due': it['due'], 'amount': it.get('amount', '')})
             if it.get('invite'):
@@ -135,11 +135,20 @@ def check_alerts(only=None):
                     learn_deadlines(pairs, acc['email'], {a['email'].lower() for a in accounts})
                 except Exception:
                     pass
+                from mailbrief.features.meeting_reply import find_meeting
+                from mailbrief.mail.message import body_text
                 for it, msg in pairs:
                     try:
                         note_away(msg, it['sender'], dt.date.fromisoformat(it['iso'][:10]))
                     except Exception:
                         pass
+                    if 'people' in it['cats'] and msg.get('In-Reply-To'):      # 📅 "Sunday at 10:00 works for me"
+                        try:
+                            when, sentence = find_meeting(body_text(msg) or '', dt.datetime.fromisoformat(it['iso']))
+                            if when:
+                                it['meeting'] = {'start': when.isoformat(timespec='minutes'), 'sentence': sentence}
+                        except Exception:
+                            pass
                 try:
                     awaiting += awaiting_replies(m, acc, {a['email'].lower() for a in accounts})
                 except Exception:

@@ -77,6 +77,19 @@ def by_thread(rows, who='from'):
     return out
 
 
+def meeting_button(r):
+    """📅 "Sunday at 10:00 works" in the reply -> one click puts it in Google Calendar, with them invited."""
+    m = r.get('meeting')
+    if not m or dt.datetime.fromisoformat(m['start']) < dt.datetime.now().astimezone():
+        return ''
+    start = dt.datetime.fromisoformat(m['start'])
+    return (f'<form method="post" action="/meeting_add" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
+            f'<input type="hidden" name="start" value="{e(m["start"])}"><input type="hidden" name="who" value="{e(r.get("from", ""))}">'
+            f'<input type="hidden" name="sender" value="{e(r.get("sender", ""))}"><input type="hidden" name="subject" value="{e(r.get("subject", ""))}">'
+            f'<button style="{SMALL};border-color:var(--accent);color:var(--accent)" title="„{e(m["sentence"])}”">'
+            f'📅 {start:%d/%m} {start:%H:%M} — ליומן</button></form>')
+
+
 def note_button(r, note_rows):
     """📝 A personal note on the email — shown under it until the email leaves the list."""
     key = triage_key(r)
@@ -264,6 +277,7 @@ def today_page(msg='', show_all=False, print_now=False):
                        f'<div style="display:flex;gap:6px"><select name="when" style="font:inherit;font-size:13px;padding:4px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">'
                        '<option value="now">לשלוח עכשיו</option><option value="after_holy">🕯️ אחרי שבת/חג</option><option value="tomorrow8">🌅 מחר 8:00</option></select>'
                        f'<button style="{SMALL};background:var(--accent);color:#fff;border-color:var(--accent)">✉️ שליחה</button></div></form></details>')
+        button += meeting_button(r)
         button += note_button(r, note_rows)
         button += dismiss_button(r)
         sender = (r.get('sender') or '').lower()

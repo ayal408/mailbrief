@@ -7,7 +7,7 @@ import re
 import secrets
 import shutil
 from email.message import EmailMessage
-from email.utils import make_msgid
+from email.utils import formataddr, formatdate, make_msgid
 
 from mailbrief import config, net
 from mailbrief.features.calendar import holy_windows, is_holy_time
@@ -58,16 +58,37 @@ def when_for(choice, custom='', now=None, windows=None):
     return out_of_holy(moment, windows)
 
 
-def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=None):
-    to = [a.strip() for a in re.split(r'[,;\s]+', to) if a.strip()]
-    if not to or not all(EMAIL.fullmatch(a) for a in to):
-        raise ValueError('כתובת הנמען לא נראית תקינה')
+def addresses(text):
+    return [a.strip() for a in re.split(r'[,;\s]+', text or '') if a.strip()]
+
+
+def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=None, cc='', bcc='', quote=None, forward=None,
+             draft=None, html=''):
+    """quote: {'text', 'html'} of the message answered / forwarded; forward: {account, folder, uid} — its files go along;
+    draft: {folder, uid} — the draft this mail was written in, removed once it is sent."""
+    to, cc, bcc = addresses(to), addresses(cc), addresses(bcc)
+    if not to and not cc and not bcc:
+        raise ValueError('צריך לכתוב לפחות נמען אחד')
+    bad = [a for a in to + cc + bcc if not EMAIL.fullmatch(a)]
+    if bad:
+        raise ValueError(f'הכתובת „{bad[0]}” לא נראית תקינה')
     if not subject.strip() and not body.strip():
         raise ValueError('המייל ריק')
     item = {'id': secrets.token_hex(4), 'account': account, 'to': to, 'subject': subject.strip()[:300], 'body': body[:50000],
             'send_at': send_at.isoformat(timespec='minutes'), 'created': _now().isoformat(timespec='minutes'), 'status': 'waiting'}
     if thread:
         item['thread'] = {k: thread.get(k, '') for k in ('in_reply_to', 'references')}
+    for key, value in (('cc', cc), ('bcc', bcc)):
+        if value:
+            item[key] = value
+    if quote and (quote.get('text') or quote.get('html')):
+        item['quote'] = {'text': (quote.get('text') or '')[:200000], 'html': (quote.get('html') or '')[:1000000]}
+    if forward:
+        item['forward'] = {k: forward[k] for k in ('account', 'folder', 'uid')}
+    if draft:
+        item['draft'] = {k: draft[k] for k in ('folder', 'uid')}
+    if html.strip():                                   # ✍️ written with bold / colours / lists in the inbox editor
+        item['html'] = rich_html(html)
     if follow and follow.get('days'):                  # ⏰ "no answer within N days -> a polite reminder"
         item['follow'] = {'days': int(follow['days']), 'text': (follow.get('text') or '').strip()[:3000]}
     if files:
@@ -156,9 +177,23 @@ def signature_html(acc):
             + ''.join(parts) + '</div>'), logo
 
 
+def rich_html(html):
+    """The editor's HTML, cleaned like an incoming email (pasted text can carry anything)."""
+    from mailbrief.mail.sanitize import clean_html
+    return clean_html(html[:300000], images=True)[0]
+
+
 def build(item, acc):
     msg = EmailMessage()
-    msg['From'], msg['To'], msg['Subject'] = acc['email'], ', '.join(item['to']), item['subject']
+    msg['From'] = formataddr((acc['display_name'], acc['email'])) if acc.get('display_name') else acc['email']
+    if item['to']:
+        msg['To'] = ', '.join(item['to'])
+    if item.get('cc'):
+        msg['Cc'] = ', '.join(item['cc'])
+    if item.get('bcc'):
+        msg['Bcc'] = ', '.join(item['bcc'])
+    msg['Subject'] = item['subject']
+    msg['Date'] = formatdate(localtime=True)
     msg['X-MailBrief-Scheduled'] = '1'
     for header, key in (('In-Reply-To', 'in_reply_to'), ('References', 'references')):
         if (item.get('thread') or {}).get(key):
@@ -166,11 +201,26 @@ def build(item, acc):
     if not item.get('message_id'):                     # known in advance: the automatic follow-up looks for replies to it
         item['message_id'] = make_msgid(domain=acc['email'].rsplit('@', 1)[-1])
     msg['Message-ID'] = item['message_id']
-    msg.set_content(with_signature(item['body'], acc))
+    quote = item.get('quote') or {}
+    msg.set_content(with_signature(item['body'], acc) + ('\n\n' + quote['text'] if quote.get('text') else ''))
     sig_html, logo = signature_html(acc)
-    msg.add_alternative(f'<div dir="auto" style="font-family:Arial;white-space:pre-wrap">{e(item["body"].rstrip())}</div>{sig_html}', subtype='html')
+    quoted = ''
+    if quote.get('html'):
+        quoted = f'<br><div class="mb-quote">{quote["html"]}</div>'
+    elif quote.get('text'):
+        quoted = f'<br><div style="white-space:pre-wrap;color:#555">{e(quote["text"])}</div>'
+    text_html = (f'<div dir="auto" style="font-family:Arial">{item["html"]}</div>' if item.get('html') else
+                 f'<div dir="auto" style="font-family:Arial;white-space:pre-wrap">{e(item["body"].rstrip())}</div>')
+    msg.add_alternative(f'{text_html}{sig_html}{quoted}', subtype='html')
     if logo:
         msg.get_payload()[-1].add_related(logo[0], maintype='image', subtype=logo[1], cid=f'<{LOGO_CID}>')
+    if item.get('forward'):                            # ↪️ a forward takes the original's files along
+        from mailbrief.mail import mailbox
+        f = item['forward']
+        original = mailbox.parse(mailbox.fetch_raw(f['account'], f['folder'], f['uid'], mark_seen=False))
+        for _, name, ctype, _, part in mailbox.attachments(original):
+            main, _, sub = ctype.partition('/')
+            msg.add_attachment(part.get_payload(decode=True) or b'', maintype=main, subtype=sub or 'octet-stream', filename=name)
     for name in item.get('files', []):
         path = os.path.join(config.DATA, 'outbox-files', item['id'], name)
         with open(path, 'rb') as f:
@@ -178,6 +228,24 @@ def build(item, acc):
             main, sub = ctype.split('/', 1)
             msg.add_attachment(f.read(), maintype=main, subtype=sub, filename=name)
     return msg
+
+
+def after_send(acc, item, message):
+    """A copy in Sent (servers other than Gmail / Outlook don't keep one themselves), and the draft it came from goes."""
+    from mailbrief.mail import mailbox
+    try:
+        if not mailbox.keeps_sent_copy(acc):
+            del message['Bcc']
+            mailbox.append(acc['email'], 'sent', message)
+        if item.get('draft'):
+            mailbox.delete_for_good(acc['email'], item['draft']['folder'], [item['draft']['uid']])
+    except Exception:
+        pass
+    try:
+        from mailbrief.features import live
+        live.bump()
+    except Exception:
+        pass
 
 
 def send_due(accounts=None, now=None):
@@ -198,8 +266,10 @@ def send_due(accounts=None, now=None):
         try:
             if not acc:
                 raise RuntimeError('התיבה כבר לא מחוברת')
-            smtp.send_mail(acc, build(it, acc))
+            message = build(it, acc)
+            smtp.send_mail(acc, message)
             it['status'], it['sent'] = 'sent', now.isoformat(timespec='minutes')
+            after_send(acc, it, message)
             sent += 1
             if it.get('follow'):
                 from mailbrief.features.autofollow import register

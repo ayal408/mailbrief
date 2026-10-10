@@ -214,7 +214,7 @@ HTML = """
   window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') { hide(); close(); } });
 
   var ITEMS = [
-    ['☀️ היום שלי', '/today'], ['⚡ מיון מהיר', '/triage'], ['✉️ מייל מתוזמן', '/compose'], ['🗓️ ברכות חג ללקוחות', '/greetings'], ['🔎 30 הימים שלי במבט אחד', '/insights'],
+    ['📥 דואר נכנס', '/inbox'], ['✏️ הודעה חדשה', '/inbox?compose=1'], ['☀️ היום שלי', '/today'], ['⚡ מיון מהיר', '/triage'], ['✉️ מייל מתוזמן', '/compose'], ['🗓️ ברכות חג ללקוחות', '/greetings'], ['🔎 30 הימים שלי במבט אחד', '/insights'],
     ['⚙️ הגדרות ותיבות', '/?s=boxes'], ['👤 הפרופיל שלי', '/?s=me#profile'], ['✉️ סיכום יומי במייל', '/?s=me#daily'], ['🔕 שעות שקטות ו-VIP', '/?s=me#quiet'],
     ['🧾 חשבוניות שלא הגיעו', '/?s=money#missing'], ['🧮 מע״מ החודש', '/?s=money#vat'], ['🏷️ סיווג ספקים', '/?s=money#vendors'],
     ['📦 לרואה החשבון', '/?s=money#accountant'], ['📤 ייצוא לחשבשבת', '/?s=money#export'],
@@ -227,6 +227,7 @@ HTML = """
     ['📎 כל הקבצים המצורפים', '/files'], ['📊 תקציב חודשי', '/?s=money#budget'], ['⚖️ מי זול יותר', '/?s=money#compare'],
     ['🧾 מסמכים להחזר מס', '/?s=money#tax'], ['⚡ קיצורי טקסט', '/?s=auto#snippets'], ['🔓 בדיקת דליפות', '/?s=me#leaks'],
     ['📋 דוח שבועי לשותף', '/?s=clients#share'], ['🖨️ הדפסת היום שלי', '/today?print=1'],
+    ['📝 הצעת מחיר (PDF)', '/quote'], ['📱 אנשי קשר לטלפון', '/contacts'],
     ['💳 פרטי תשלום בתזכורות', '/?s=clients#debts'], ['🕯️ מענה אוטומטי בחגים', '/?s=auto#holidayreply'],
     ['📨 מייל אישי לרשימה', '/merge'], ['📊 סיכום שנתי', '/year_report'], ['🚫 שולחים חסומים', '/?s=auto#blocked'],
     ['📇 אנשי קשר', '/contacts'], ['📊 סטטיסטיקות לקוחות', '/client_stats'], ['💚 הכנסות החודש', '/?s=money#income'], ['🔁 מיילים חוזרים', '/?s=auto#recurring'],
@@ -538,6 +539,7 @@ HTML += """
 <div id="mb-keys" role="dialog" aria-label="קיצורי מקלדת"><div class="card"><h3 style="margin-top:0">⌨️ קיצורי מקלדת</h3>
 <table><tbody>
 <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd> או <kbd>/</kbd></td><td>חיפוש מהיר של כל דבר</td></tr>
+<tr><td><kbd>G</kbd> ואז <kbd>I</kbd></td><td>📥 דואר נכנס (בתוכו: <kbd>J</kbd>/<kbd>K</kbd>, <kbd>R</kbd>, <kbd>E</kbd>, <kbd>#</kbd>, <kbd>C</kbd>)</td></tr>
 <tr><td><kbd>G</kbd> ואז <kbd>T</kbd></td><td>☀️ היום שלי</td></tr>
 <tr><td><kbd>G</kbd> ואז <kbd>Q</kbd></td><td>⚡ מיון מהיר</td></tr>
 <tr><td><kbd>G</kbd> ואז <kbd>M</kbd></td><td>✉️ מייל מתוזמן</td></tr>
@@ -613,7 +615,7 @@ HTML += """
 
   // keyboard shortcuts: G then a letter jumps to a page, ? shows them, Alt+A opens accessibility
   var keys = document.getElementById('mb-keys'), pending = 0;
-  var GO = {t: '/today', q: '/triage', m: '/compose', s: '/?s=boxes', d: '/dashboard', n: '/stats', c: '/clients', r: '/reading', a: '/automations', h: '/help'};
+  var GO = {i: '/inbox', t: '/today', q: '/triage', m: '/compose', s: '/?s=boxes', d: '/dashboard', n: '/stats', c: '/clients', r: '/reading', a: '/automations', h: '/help'};
   var HE = {'א': 't', 'ק': 'r', 'ר': 'r', 'ם': 'o', 'פ': 'p', 'ש': 'a', 'ד': 's', 'ג': 'd', 'כ': 'f', 'ע': 'g', 'י': 'h', 'ח': 'j', 'ל': 'k', 'ך': 'l',
             'ז': 'z', 'ס': 'x', 'ב': 'c', 'ה': 'v', 'נ': 'b', 'מ': 'n', 'צ': 'm', '/': 'q', 'ט': 'y', 'ו': 'u', 'ן': 'i', 'ת': ','};
   document.getElementById('mb-keys-open').onclick = function(){ toggle(false); keys.classList.add('on'); };
@@ -726,3 +728,9 @@ BOOT = ("<script>try{var d=document.documentElement,t=localStorage.getItem('mb-t
         "if(t==='night')t=(h>=19||h<6)?'dark':'light';if(t==='light'||t==='dark')"
         "d.setAttribute('data-theme',t);var a=JSON.parse(localStorage.getItem('mb-a11y')||'{}');if(a.fs)d.setAttribute('data-fs',a.fs);"
         "['contrast','still','spacing','links','cursor','focus'].forEach(function(f){if(a[f])d.setAttribute('data-'+f,'')})}catch(e){}</script>")
+
+
+# 📅 every date field opens the Hebrew date picker (web/hebpicker.py)
+from mailbrief.web import hebpicker  # noqa: E402
+STYLE += hebpicker.STYLE
+HTML += hebpicker.HTML

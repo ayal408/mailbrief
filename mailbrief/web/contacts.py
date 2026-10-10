@@ -49,10 +49,29 @@ def contacts_page(msg=''):
 <p class="muted">כל מי שהתכתבת איתו ב-90 הימים האחרונים ({len(rows)} אנשים, {with_phone} עם טלפון מהחתימה). הכול נשאר במחשב.</p>
 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
 <input type="search" id="c-q" placeholder="🔍 חיפוש לפי שם, כתובת או טלפון…" style="flex:1;min-width:220px;font:inherit;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
-<form method="post" action="/contacts_export" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><button style="margin:0;padding:8px 16px">📥 ייצוא ל-Excel</button></form></div>
+<form method="post" action="/contacts_export" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><button style="margin:0;padding:8px 16px">📥 ייצוא ל-Excel</button></form>
+<form method="post" action="/contacts_vcf" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><button class="ghost" style="margin:0;padding:8px 16px" title="קובץ vCard — לייבוא לטלפון או ל-Google Contacts">📱 לטלפון</button></form></div>
 {f'<div class="scroll"><table id="c-table"><thead><tr><th>שם</th><th>כתובת</th><th>טלפון</th><th>אחרון</th><th>מיילים</th></tr></thead><tbody>{body}</tbody></table></div>' if rows else '<p class="muted">עוד אין — הרשימה נבנית מההיסטוריה (אפשר „בניית היסטוריה” במדריך).</p>'}
 <script>(function(){{var q=document.getElementById('c-q');if(!q)return;q.oninput=function(){{var t=q.value.trim().toLowerCase();
 document.querySelectorAll('#c-table tbody tr').forEach(function(tr){{tr.style.display=!t||tr.dataset.text.indexOf(t)>=0?'':'none';}});}};}})();</script>''', '/clients')
+
+
+def export_vcf():
+    """📱 הורדות\\אנשי קשר YYYY-MM-DD.vcf — one file the phone or Google Contacts imports in one go."""
+    esc = lambda s: (s or '').replace('\\', '\\\\').replace(',', '\\,').replace(';', '\\;').replace('\n', ' ')
+    os.makedirs(config.DOWNLOADS_DIR, exist_ok=True)
+    path = os.path.join(config.DOWNLOADS_DIR, f'אנשי קשר {dt.date.today():%Y-%m-%d}.vcf')
+    cards = []
+    for p in people():
+        lines = ['BEGIN:VCARD', 'VERSION:3.0', f'FN:{esc(p["name"])}', f'N:{esc(p["name"])};;;;', f'EMAIL;TYPE=INTERNET:{esc(p["email"])}']
+        if p['phone']:
+            kind = 'CELL' if p['phone'].startswith('05') else 'WORK'
+            lines.append(f'TEL;TYPE={kind}:+972{p["phone"][1:]}')
+        lines += ['NOTE:MailBrief', 'END:VCARD']
+        cards.append('\r\n'.join(lines))
+    with open(path, 'w', encoding='utf-8', newline='') as f:
+        f.write('\r\n'.join(cards) + '\r\n')
+    return path, len(cards)
 
 
 def export_csv():

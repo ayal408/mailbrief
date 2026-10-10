@@ -755,6 +755,35 @@ class Address(Isolated):
         hosts = server.allowed_hosts()
         self.assertTrue({'mailbrief.localhost', '127.0.0.1:8765', 'localhost:8765'} <= hosts)
         self.assertNotIn('evil.example', hosts)
+        address.remember(8765, '127.0.0.1')                                          # another program on ::1:8765
+        self.assertEqual(address.link('today'), 'http://127.0.0.1:8765/today')
+
+    def test_another_program_on_the_port_is_never_shown(self):
+        import socket
+        from mailbrief.web import server
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        servers, v4, v6 = server._claim(port)                                        # a free port: all ours
+        self.assertTrue(v4 and v6)
+        server._release(servers)
+        with socket.socket() as other:                                               # another program on 127.0.0.1
+            other.bind(('127.0.0.1', port))
+            other.listen()
+            servers, v4, _ = server._claim(port)
+            self.assertFalse(v4)
+            server._release(servers)
+        if socket.has_ipv6:
+            with socket.socket(socket.AF_INET6) as other:                            # ... or only on ::1 (a dev server)
+                try:
+                    other.bind(('::1', port))
+                except OSError:
+                    self.skipTest('no IPv6 on this computer')
+                other.listen()
+                servers, v4, v6 = server._claim(port)
+                self.assertTrue(v4)
+                self.assertFalse(v6)
+                server._release(servers)
 
 
 class Diagnostics(Isolated):
@@ -886,7 +915,8 @@ class ClientCare(Isolated):
     def test_birthday_greeting_once(self):
         from mailbrief.features import clientcare, outbox
         clientcare.add_date('me@gmail.com', 'yossi@x.co.il', 'יוסי לוי', '1990-10-05', 'birthday')
-        with mock.patch.object(clientcare, 'out_of_holy', side_effect=lambda w: w):
+        now = dt.datetime(2026, 10, 4, 12, 0).astimezone()                           # not the real clock: it moves past 05/10
+        with mock.patch.object(clientcare, 'out_of_holy', side_effect=lambda w: w), mock.patch.object(clientcare, '_now', return_value=now):
             self.assertEqual(clientcare.greet_due(dt.date(2026, 10, 1)), 0)
             self.assertEqual(clientcare.greet_due(dt.date(2026, 10, 4)), 1)            # the day before: queued for 09:00 on the day
             self.assertEqual(clientcare.greet_due(dt.date(2026, 10, 5)), 0)            # never twice a year
@@ -1825,6 +1855,88 @@ class ScannedReceipts(Isolated):
             pdfsearch.search('4471')
         self.assertEqual([(h['name'], h['scan']) for h in hits], [('photo.jpg', True)])
         read.assert_called_once()                                                        # read once, then from the index
+
+
+class Batch10(Isolated):
+    def test_quote_totals_and_page(self):
+        from mailbrief.features import quote_pdf
+        lines, net, tax, total = quote_pdf.totals([('עיצוב לוגו', 1, 1000.0), ('שעות ייעוץ', 2, 250.0), ('', 1, 99.0)])
+        self.assertEqual((len(lines), net, tax, total), (2, 1500.0, 270.0, 1770.0))
+        self.assertEqual(quote_pdf.totals([('x', 1, 100.0)], vat=False)[1:], (100.0, 0.0, 100.0))
+        html, total = quote_pdf.quote_html(1001, {'name': 'דנה', 'email': 'dana@client.co.il'}, [('עיצוב', 1, 1000.0)])
+        for text in ('הצעת מחיר', '1001', 'דנה', '₪1,180.00', 'אינה חשבונית מס'):
+            self.assertIn(text, html)
+        self.assertEqual((quote_pdf.next_number(peek=True), quote_pdf.next_number(), quote_pdf.next_number()), (1001, 1001, 1002))
+        with self.assertRaises(ValueError):
+            quote_pdf.make_quote('me@gmail.com', {'name': 'x'}, [('', 0, 0.0)])
+        from mailbrief.web.quote import quote_page
+        self.assertIn('/quote_make', quote_page())
+
+    def test_quote_pdf_with_edge(self):
+        from mailbrief.features import quote_pdf
+        if not quote_pdf.edge_path():
+            self.skipTest('Microsoft Edge is not installed here')
+        path, number, total = quote_pdf.make_quote('me@gmail.com', {'name': 'דנה', 'email': 'dana@client.co.il'}, [('עיצוב', 2, 500.0)])
+        with open(path, 'rb') as f:
+            self.assertTrue(f.read(5).startswith(b'%PDF'))
+        self.assertEqual((number, total), (1001, 1180.0))
+        self.assertIn('הצעת מחיר 1001', os.path.basename(path))
+
+    def test_meeting_from_reply(self):
+        from mailbrief.features.meeting_reply import event, find_meeting
+        got = dt.datetime(2026, 9, 29, 12, 0, tzinfo=IL)                                  # a Tuesday
+        when, line = find_meeting('היי,\nיום ראשון ב-10:00 מתאים לי מצוין\nתודה', got)
+        self.assertEqual(when, dt.datetime(2026, 10, 4, 10, 0, tzinfo=IL))
+        self.assertIn('10:00', line)
+        self.assertEqual(find_meeting('Tomorrow at 14:30 works for me', got)[0], dt.datetime(2026, 9, 30, 14, 30, tzinfo=IL))
+        self.assertEqual(find_meeting('בסדר, נפגש ב-12/10 בשעה 9:30', got)[0], dt.datetime(2026, 10, 12, 9, 30, tzinfo=IL))
+        self.assertIsNone(find_meeting('הפגישה הקודמת הייתה ביום ראשון ב-10:00', got)[0])     # no agreement
+        self.assertIsNone(find_meeting('מתאים לי, מחיר 3.50 לשעה', got)[0])                  # not a time
+        self.assertIsNone(find_meeting('תודה!\n\nOn Mon, someone wrote:\n> שני ב-11:00 מתאים', got)[0])   # only in the quoted part
+        ev = event('פגישה עם דנה', dt.datetime(2026, 10, 4, 10, 0, tzinfo=IL), 'dana@client.co.il')
+        self.assertEqual((ev['start']['dateTime'], ev['end']['dateTime'], ev['attendees']),
+                         ('2026-10-04T10:00', '2026-10-04T11:00', [{'email': 'dana@client.co.il'}]))
+
+    def test_meeting_button_in_my_day(self):
+        from mailbrief.web import today
+        soon = (dt.datetime.now().astimezone() + dt.timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
+        storage.save_json(config.SNAPSHOT_FILE, {'waiting': [{'account': 'me@gmail.com', 'from': 'דנה', 'sender': 'dana@client.co.il',
+                          'subject': 'פגישה', 'days': 0, 'message_id': '<1>', 'link': '', 'meeting': {'start': soon.isoformat(), 'sentence': 'מתאים'}}]})
+        storage.save_json(config.SETTINGS_FILE, {'profile': {'name': 'רחל'}})
+        with mock.patch.object(net, 'cached_json', return_value=None), mock.patch.object(today, 'today_overview', return_value=None):
+            html = today.today_page()
+        self.assertIn('/meeting_add', html)
+        self.assertIn(f'{soon:%d/%m} 10:00', html)
+
+    def test_contacts_to_phone(self):
+        from mailbrief.features import contacts
+        from mailbrief.web.contacts import export_vcf
+        storage.save_json(config.HISTORY_FILE, {'1': {'sender': 'dana@client.co.il', 'name': 'דנה, כהן', 'cats': ['people'],
+                                                      'date': '2026-09-20', 'account': 'me@gmail.com'}})
+        contacts.set_phone('dana@client.co.il', '050-1234567')
+        path, count = export_vcf()
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+        self.assertEqual(count, 1)
+        for line in ('BEGIN:VCARD', 'FN:דנה\\, כהן', 'EMAIL;TYPE=INTERNET:dana@client.co.il', 'TEL;TYPE=CELL:+972501234567', 'END:VCARD'):
+            self.assertIn(line, text)
+
+    def test_time_saved(self):
+        from mailbrief.features import timesaved
+        today = dt.date(2026, 9, 29)
+        storage.save_json(config.OUTBOX_FILE, [{'status': 'sent', 'sent': '2026-09-28T10:00'}, {'status': 'sent', 'sent': '2026-08-01T10:00'},
+                                               {'status': 'waiting'}])
+        storage.save_json(config.WF_LOG, [{'at': '28/09 10:00'}, {'at': '01/01 10:00'}])
+        storage.save_json(config.FORWARD_LOG, [{'at': '27/09 09:00', 'ok': True}, {'at': '27/09 09:00', 'error': 'x'}])
+        storage.save_json(config.LEDGER_FILE, {'a': {'date': '2026-09-25'}, 'b': {'date': '2026-09-25', 'duplicate': 'x'}})
+        counts, minutes = timesaved.week_counts(today)
+        self.assertEqual(counts, {'sent': 1, 'automation': 1, 'forward': 1, 'receipt': 1})
+        self.assertEqual(minutes, 6)
+        self.assertIn('כ-6 דקות', timesaved.saved_lines(today)[0])
+        for f in (config.OUTBOX_FILE, config.WF_LOG, config.FORWARD_LOG):
+            storage.save_json(f, [])
+        storage.save_json(config.LEDGER_FILE, {})
+        self.assertEqual(timesaved.saved_lines(today), [])
 
 
 def message_b64(claims):
