@@ -113,11 +113,17 @@ def folder_prefs():
 
 
 def with_prefs(address, folders):
+    from mailbrief.mail import gmail_labels
     prefs = folder_prefs().get(address.lower(), {})
+    try:
+        gmail = gmail_labels.colors(mailbox.account(address))        # 🎨 the colours given to the labels in Gmail
+    except Exception:
+        gmail = {}
     out = []
     for f in folders:
         p = prefs.get(f['id'], {})
-        out.append(dict(f, hidden=bool(p.get('hidden')), pinned=bool(p.get('pinned')), color=p.get('color', '')))
+        out.append(dict(f, hidden=bool(p.get('hidden')), pinned=bool(p.get('pinned')), color=p.get('color', ''),
+                        gcolor=gmail.get(f.get('path', ''))))
     pinned = [f for f in out if f['pinned'] and not f['role']]
     return [f for f in out if f['role']] + pinned + [f for f in out if not f['role'] and not f['pinned']]
 
@@ -140,6 +146,37 @@ def translate_link(text):
     if letters < 40 or hebrew > letters * 0.2:
         return ''
     return 'https://translate.google.com/?sl=auto&tl=iw&op=translate&text=' + quote(re.sub(r'\s+', ' ', text)[:1800])
+
+
+def translate(address, folder, uid):
+    """🌐 The message itself in Hebrew, inside MailBrief (Google Translate — the text goes there only when the user asks)."""
+    import json as _json
+    import urllib.request
+    from urllib.parse import urlencode
+    from mailbrief import net
+    text = body_text(mailbox.parse(mailbox.fetch_raw(address, folder, uid, mark_seen=False)))
+    text = re.sub(r'\n{3,}', '\n\n', re.sub(r'[ \t]+', ' ', text)).strip()[:12000]
+    chunks, cur = [], ''
+    for para in text.split('\n'):                        # pieces of up to ~1800 characters, whole lines
+        if cur and len(cur) + len(para) > 1800:
+            chunks.append(cur)
+            cur = ''
+        cur += para[:1800] + '\n'
+    if cur.strip():
+        chunks.append(cur)
+    net.require_online()
+    out, source = [], ''
+    for chunk in chunks:
+        req = urllib.request.Request('https://translate.googleapis.com/translate_a/single?' + urlencode(
+            {'client': 'gtx', 'sl': 'auto', 'tl': 'iw', 'dt': 't', 'q': chunk}), headers={'User-Agent': 'Mozilla/5.0'})
+        try:
+            with urllib.request.urlopen(req, timeout=20, context=net.TLS) as resp:
+                data = _json.load(resp)
+        except Exception as exc:
+            raise RuntimeError(net.netfree_block(exc) or 'התרגום לא הצליח כרגע — אפשר לנסות שוב') from None
+        out.append(''.join(seg[0] for seg in (data[0] or []) if seg and seg[0]))
+        source = source or (data[2] if len(data) > 2 and isinstance(data[2], str) else '')
+    return {'text': ''.join(out).strip(), 'from': source}
 
 
 VIEW_TYPES = ('application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'text/plain', 'text/csv',
@@ -298,6 +335,8 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 .ib-new{width:100%;border:0;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;border-radius:14px;padding:12px;font-weight:700;margin-bottom:10px;box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 30%,transparent)}
 .ib-acc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);padding:12px 8px 4px;cursor:pointer;user-select:none}
 .ib-acc span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-f .tw{flex:none;width:18px;margin-inline-start:-20px;text-align:center;color:var(--muted);font-size:15px;line-height:1;border-radius:6px;cursor:pointer}
+.ib-f .tw:hover{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--ink)}
 .ib-f{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:var(--ink);padding:7px 10px;border-radius:10px;text-align:start;font-size:14px}
 .ib-f:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}.ib-f.on{background:color-mix(in srgb,var(--accent) 16%,transparent);font-weight:500}
 .ib-f .n{margin-inline-start:auto;font-size:12px;font-weight:700;color:var(--accent)}.ib-f .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -348,6 +387,10 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 .ib-cur{margin:0 18px;padding-top:10px}
 .ib-body{margin:10px 18px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
 .ib-body iframe{display:block;border:0;width:100%;height:420px;background:#fff}
+.ib-tr{margin:10px 18px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.ib-tr .hd{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px;background:var(--bg)}
+.ib-tr .hd button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:4px 12px;font-size:13px}
+.ib-tr .tx{padding:14px 18px;font-size:15px;line-height:1.7;white-space:normal;unicode-bidi:plaintext}
 .ib-files{display:flex;gap:8px;flex-wrap:wrap;margin:0 18px 14px}
 .ib-file{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;background:var(--bg)}
 .ib-file a,.ib-file button{border:0;background:none;color:var(--accent);padding:0;font-size:12px;text-decoration:none}
@@ -520,11 +563,27 @@ function syncUrl(){
 }
 
 // ---- folders ----
-function folderButton(acc, f){
-  var on = S.acc === acc && S.folder === f.id;
-  return '<button type="button" class="ib-f' + (on ? ' on' : '') + (f.hidden ? ' ib-hid' : '') + '" data-acc="' + esc(acc) + '" data-folder="' + esc(f.id) + '" title="' + esc(f.path || f.name) + ' — לחיצה ימנית לעוד" style="padding-inline-start:' + (10 + 12 * Math.min(f.pinned ? 0 : f.depth || 0, 3)) + 'px">' +
-    (f.color ? '<span class="ib-dot" style="background:' + esc(f.color) + '"></span>' : '<span>' + (f.pinned && !f.role ? '📌' : f.icon) + '</span>') +
-    '<span class="nm">' + esc(f.name) + '</span>' + (f.unread ? '<span class="n">' + f.unread + '</span>' : '') + '</button>';
+function folderButton(acc, f, kids, open, more){
+  var on = S.acc === acc && S.folder === f.id, g = !f.color && f.gcolor;
+  return '<button type="button" class="ib-f' + (on ? ' on' : '') + (f.hidden ? ' ib-hid' : '') + '" data-acc="' + esc(acc) + '" data-folder="' + esc(f.id) + '" title="' + esc(f.path || f.name) + ' — לחיצה ימנית לעוד" style="padding-inline-start:' + (10 + (kids === undefined ? 0 : 20) + 18 * Math.min(f.pinned ? 0 : f.depth || 0, 4)) + 'px">' +
+    (kids ? '<span class="tw" data-twist="' + esc(acc + '\u0001' + f.path) + '" title="' + (open ? 'קיפול' : 'פתיחה') + '">' + (open ? '▾' : '◂') + '</span>' : '') +
+    (f.color ? '<span class="ib-dot" style="background:' + esc(f.color) + '"></span>' :
+     g ? '<span class="ib-dot" style="background:' + esc(g.bg) + ';box-shadow:inset 0 0 0 1.5px ' + esc(g.fg || g.bg) + '"></span>' :
+     '<span>' + (f.pinned && !f.role ? '📌' : f.icon) + '</span>') +
+    '<span class="nm">' + esc(f.name) + '</span>' + ((f.unread || more) ? '<span class="n">' + ((f.unread || 0) + (more || 0)) + '</span>' : '') + '</button>';
+}
+// 🗂️ nested labels (דרושים/AllJobs) fold under their parent; what's open is remembered on this computer
+var OPEN = {}; try { OPEN = JSON.parse(localStorage.getItem('ib-open') || '{}') || {}; } catch (e) {}
+function ownTree(acc, own){
+  var paths = {}; own.forEach(function(f){ paths[f.path] = f; });
+  var parent = function(p){ var i = p.lastIndexOf('/'); return i > 0 ? p.slice(0, i) : ''; };
+  var kids = function(f){ return own.filter(function(x){ return x.path.indexOf(f.path + '/') === 0; }); };
+  var shown = function(f){ for (var p = parent(f.path); p; p = parent(p)) if (paths[p] && !OPEN[acc + '\u0001' + p]) return false; return true; };
+  return own.filter(function(f){ return shown(f) || (S.acc === acc && S.folder === f.id); }).map(function(f){
+    var k = kids(f), open = !!OPEN[acc + '\u0001' + f.path];
+    var more = k.length && !open ? k.reduce(function(n, x){ return n + (x.unread || 0); }, 0) : 0;
+    return folderButton(acc, f, k.length, open, more);
+  }).join('');
 }
 function drawFolders(){
   var html = '';
@@ -540,7 +599,7 @@ function drawFolders(){
     var main = shown.filter(function(f){ return f.role || f.pinned; }), own = shown.filter(function(f){ return !f.role && !f.pinned; });
     html += main.map(function(f){ return folderButton(a.email, f); }).join('');
     html += '<details' + (own.some(function(f){ return S.acc === a.email && S.folder === f.id; }) || S.labelsOpen ? ' open' : '') + ' data-labels="1"><summary class="muted" style="font-size:12px;padding:6px 12px;cursor:pointer">תוויות ותיקיות (' + own.length + ')</summary>' +
-      own.map(function(f){ return folderButton(a.email, f); }).join('') +
+      ownTree(a.email, own) +
       '<button type="button" class="ib-f" data-newlabel="' + esc(a.email) + '" style="color:var(--muted);font-size:13px"><span>➕</span><span class="nm">תווית / תיקייה חדשה</span></button>' +
       (hidden ? '<button type="button" class="ib-f" data-showhidden="1" style="color:var(--muted);font-size:13px"><span>👁️</span><span class="nm">' + (S.showHidden ? 'הסתרת המוסתרות' : 'הצגת מוסתרות (' + hidden + ')') + '</span></button>' : '') + '</details>';
   });
@@ -801,7 +860,7 @@ function drawMessage(){
     '<span style="width:8px"></span>' + (m.can.archive && m.role !== 'all' ? '<button class="ib-ic" type="button" data-m="archive" title="ארכיון (E)">🗄️</button>' : '') + '<button class="ib-ic" type="button" data-m="delete" title="מחיקה (#)">🗑️</button>' +
     '<button class="ib-ic' + (m.flagged ? ' on' : '') + '" type="button" data-m="star" title="כוכב (S)">⭐</button><button class="ib-ic" type="button" data-m="unread" title="סימון כלא נקרא (U)">●</button>' +
     (m.can.spam ? '<button class="ib-ic" type="button" data-m="' + (m.role === 'junk' ? 'notspam' : 'spam') + '" title="' + (m.role === 'junk' ? 'לא ספאם' : 'ספאם') + '">' + (m.role === 'junk' ? '📥' : '🚫') + '</button>' : '') + folderOptions(m.account) +
-    (m.translate ? '<button class="ib-ic" type="button" data-m="translate" title="תרגום לעברית ב-Google Translate (הטקסט נשלח ל-Google)">🌐 תרגום</button>' : '') +
+    (m.translate ? '<button class="ib-ic" type="button" data-m="translate" title="תרגום ההודעה לעברית, כאן (הטקסט נשלח ל-Google Translate)">🌐 תרגום</button>' : '') +
     '<select id="ib-more-act" title="עוד פעולות"><option value="">⋯ עוד</option><option value="remind1">⏰ תזכורת מחר</option><option value="remind3">⏰ תזכורת בעוד 3 ימים</option><option value="remind7">⏰ תזכורת בעוד שבוע</option><option value="remind_date">📅 תזכורת בתאריך…</option>' +
     '<option value="snooze_tomorrow8">💤 נודניק עד מחר בבוקר</option><option value="snooze_week">💤 נודניק לשבוע</option>' + (m.gapps ? '<option value="task">✅ משימה ב-Google</option>' : '') +
     '<option value="receipt">🧾 לשמור כקבלה / חשבונית</option>' + (m.unsub ? '<option value="unsub">🔕 ביטול מנוי לשולח</option>' : '') +
@@ -976,6 +1035,8 @@ $('ibx').addEventListener('click', function(ev){
   if ((el = t.closest('[data-toggle]'))) { var a = B.accounts.filter(function(x){ return x.email === el.dataset.toggle; })[0]; a.open = !a.open; if (!S.folders[a.email]) loadFolders(a.email); drawFolders(); return; }
   if ((el = t.closest('[data-newlabel]'))) { newLabel(el); return; }
   if ((el = t.closest('[data-showhidden]'))) { S.showHidden = !S.showHidden; S.labelsOpen = true; drawFolders(); return; }
+  if ((el = t.closest('[data-twist]'))) { var k = el.dataset.twist; S.labelsOpen = true; if (OPEN[k]) delete OPEN[k]; else OPEN[k] = 1;
+    try { localStorage.setItem('ib-open', JSON.stringify(OPEN)); } catch (e) {} drawFolders(); return; }
   if ((el = t.closest('.ib-f'))) { choose(el.dataset.acc, el.dataset.folder); return; }
   if ((el = t.closest('[data-goacc]'))) { choose(el.dataset.goacc, 'INBOX'); return; }
   if ((el = t.closest('[data-goopen]'))) { var g2p = el.dataset.goopen.split('\u0001'); openMessage(g2p[0], 'INBOX', g2p[1]); return; }
@@ -1011,13 +1072,26 @@ function fitFrame(ev){                                  // 📏 an email frame t
   var h = ev.data && ev.data.mbHeight; if (typeof h !== 'number' || !(h > 0)) return;
   document.querySelectorAll('#ib-read iframe').forEach(function(f){ if (f.contentWindow === ev.source) f.style.height = Math.min(Math.max(h, 60), 50000) + 'px'; });
 }
+function translateHere(on){                             // 🌐 the message itself in Hebrew, in place of the original
+  var body = document.querySelector('#ib-read .ib-body'), box = $('ib-tr'), m = S.open;
+  if (!body) return;
+  if (!on) { if (box) box.remove(); body.style.display = ''; return; }
+  if (box) return;
+  box = document.createElement('section'); box.id = 'ib-tr'; box.className = 'ib-tr';
+  box.innerHTML = '<div class="hd">🌐 מתרגם…</div>'; body.insertAdjacentElement('beforebegin', box); body.style.display = 'none';
+  api('/inbox_translate.json', {a: m.account, f: m.folder, u: m.uid}).then(function(d){
+    if (!$('ib-tr') || S.open !== m) return;
+    box.innerHTML = '<div class="hd">🌐 תרגום לעברית' + (d.from && d.from !== 'iw' ? ' <span class="muted">(מ-' + esc(d.from) + ', Google Translate)</span>' : '') +
+      '<span style="flex:1"></span><button type="button" data-m="original">📄 המקור</button></div><div class="tx" dir="rtl">' + esc(d.text).replace(/\n/g, '<br>') + '</div>';
+  }).catch(function(e){ box.innerHTML = '<div class="hd">⚠️ ' + esc(e.message) + '<span style="flex:1"></span><button type="button" data-m="original">📄 המקור</button></div>'; });
+}
 function msgAction(k){
   var m = S.open; if (!m) return; var ref = [{a: m.account, f: m.folder, u: m.uid}];
   if (!m.files && !/^(back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
   if (k === 'back') { closeMessage(); return; }
   if (/^(reply|all|fwd|edit)$/.test(k)) { compose(k); return; }
   if (k === 'imgs') { S.imgs = true; drawMessage(); return; }
-  if (k === 'translate') { window.open(m.translate, '_blank'); return; }
+  if (k === 'translate' || k === 'original') { translateHere(k === 'translate'); return; }
   if (k === 'allfiles') { tool('files'); return; }
   if (k === 'imgs_always') { post('/inbox_tool', {tool: 'images', a: m.account, f: m.folder, u: m.uid}).then(function(){ S.imgs = true; drawMessage(); }).catch(fail); return; }
   if (k === 'star') { m.flagged = !m.flagged; act(m.flagged ? 'star' : 'unstar', ref); drawMessage(); return; }

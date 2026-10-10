@@ -865,6 +865,8 @@ class Handler(BaseHTTPRequestHandler):
                     rows = mailbox.cached_list(q.get('a', '').lower(), q.get('f', 'INBOX'), page_no)
                     return self._json({'items': rows, 'total': len(rows), 'offline': False})
                 return self._json(mailbox.list_messages(q.get('a', ''), q.get('f', 'INBOX'), page_no, q.get('q', ''), bool(q.get('unread'))))
+            if url.path == '/inbox_translate.json' and uid:
+                return self._json(inbox.translate(q.get('a', ''), q.get('f', 'INBOX'), uid))
             if url.path == '/inbox_msg.json' and uid:
                 return self._json(inbox.message_info(q.get('a', ''), q.get('f', 'INBOX'), uid))
             if url.path == '/inbox_templates.json':
