@@ -89,6 +89,10 @@ def run_app(url, on_hidden=None):
             threading.Thread(target=on_hidden, daemon=True).start()
         return False
     win.events.closing += closing
+    def shown():
+        from mailbrief import badge                                # 🔴 unread count on the taskbar icon
+        badge.watch()
+    win.events.shown += shown
     APP['window'] = win
     os.makedirs(os.path.join(config.DATA, 'window'), exist_ok=True)
     webview.start(gui='edgechromium', private_mode=False, storage_path=os.path.join(config.DATA, 'window'))
