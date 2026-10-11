@@ -78,6 +78,15 @@ def download(rel, dest):
         raise RuntimeError('ההורדה לא הושלמה כמו שצריך — העדכון בוטל, אפשר לנסות שוב')
 
 
+def _detached(args, **kw):
+    """Start a process that outlives MailBrief: detached, and out of MailBrief's job when Windows allows it."""
+    flags = 0x00000008 | 0x00000200                  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    try:
+        return subprocess.Popen(args, creationflags=flags | 0x01000000, **kw)   # | CREATE_BREAKAWAY_FROM_JOB
+    except OSError:
+        return subprocess.Popen(args, creationflags=flags, **kw)
+
+
 def start_update(rel):
     """Download next to the program and start it with --replace; the caller then closes this copy."""
     if not can_self_update():
@@ -85,11 +94,12 @@ def start_update(rel):
     if rel.get('setup'):
         setup = os.path.join(tempfile.gettempdir(), f'MailBrief-Setup-{rel["version"]}.exe')
         download(rel, setup)
-        subprocess.Popen([setup, '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/RELAUNCH=1'], creationflags=0x00000008 | 0x00000200)
+        log_file = os.path.join(tempfile.gettempdir(), 'MailBrief-Setup.log')
+        _detached([setup, '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/RELAUNCH=1', f'/LOG={log_file}'])
         return
     new = os.path.join(config.APP_DIR, NEW_EXE)
     download(rel, new)
-    subprocess.Popen([new, '--replace', sys.executable], cwd=config.APP_DIR, creationflags=0x00000008 | 0x00000200)   # detached
+    _detached([new, '--replace', sys.executable], cwd=config.APP_DIR)
 
 
 def finish_update(target):
@@ -102,7 +112,7 @@ def finish_update(target):
             time.sleep(0.5)
     else:
         return
-    subprocess.Popen([target], cwd=os.path.dirname(target), creationflags=0x00000008 | 0x00000200)
+    _detached([target], cwd=os.path.dirname(target))
 
 
 def cleanup():

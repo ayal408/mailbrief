@@ -98,8 +98,8 @@ procedure StopMailBrief();
 var
   Code: Integer;
 begin
-  { the window and the tray icon belong to one process; close it so its file can be replaced }
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM MailBrief.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  { close MailBrief so its file can be replaced. Not /T: this installer was started by MailBrief, so its process tree includes us }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM MailBrief.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Sleep(800);
 end;
 
