@@ -35,6 +35,19 @@ ROLE_ORDER = list(ROLE_NAMES)
 NAME_ROLES = {'sent': 'sent', 'sent items': 'sent', 'sent messages': 'sent', 'פריטים שנשלחו': 'sent', 'drafts': 'drafts',
               'טיוטות': 'drafts', 'trash': 'trash', 'deleted items': 'trash', 'deleted messages': 'trash', 'פריטים שנמחקו': 'trash',
               'junk': 'junk', 'spam': 'junk', 'junk email': 'junk', 'דואר זבל': 'junk', 'archive': 'archive', 'ארכיון': 'archive'}
+# 🗂️ Gmail's inbox categories, as folders under the inbox: the inbox searched with Gmail's own category: words
+CATEGORIES = [('primary', 'ראשי', '👤'), ('promotions', 'קידומי מכירות', '🏷️'), ('social', 'רשתות חברתיות', '👥'),
+              ('updates', 'עדכונים', 'ℹ️'), ('forums', 'פורומים', '💬')]
+CATEGORY_PREFIX = 'INBOX#category:'
+
+
+def real_folder(folder):
+    """(the IMAP folder, the Gmail search it adds): a category is the inbox plus `category:x`."""
+    if folder and folder.startswith(CATEGORY_PREFIX):
+        return 'INBOX', 'category:' + folder[len(CATEGORY_PREFIX):]
+    return folder, ''
+
+
 HEADERS = 'FROM TO CC SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES CONTENT-TYPE CONTENT-TRANSFER-ENCODING LIST-UNSUBSCRIBE'
 
 
@@ -115,7 +128,7 @@ def session(acc, folder=None, readonly=False):
             conn = imap.connect(acc)
         try:
             if folder:
-                typ, data = conn.select(quoted(folder), readonly=readonly)
+                typ, data = conn.select(quoted(real_folder(folder)[0]), readonly=readonly)
                 if typ != 'OK':
                     raise RuntimeError('התיקייה לא נמצאה בתיבה')
             yield conn
@@ -219,13 +232,18 @@ def _role(flags, name):
     return NAME_ROLES.get(utf7_decode(name).rsplit('/', 1)[-1].lower())
 
 
+def _cached_folders(address):
+    with _DB_LOCK, contextlib.closing(_db()) as db:
+        row = db.execute('SELECT data FROM folders WHERE acc=?', (address.lower(),)).fetchone()
+    return json.loads(row[0]) if row else []
+
+
 def folders(address, fresh=True):
     """[{id, name, role, icon, unread, depth}] — the special folders first (in the usual order), then the user's own."""
     if not fresh:
-        with _DB_LOCK, contextlib.closing(_db()) as db:
-            row = db.execute('SELECT data FROM folders WHERE acc=?', (address.lower(),)).fetchone()
-        if row:
-            return json.loads(row[0])
+        cached = _cached_folders(address)
+        if cached:
+            return cached
     acc = account(address)
     out, seen_roles = [], set()
     with session(acc) as m:
@@ -249,7 +267,18 @@ def folders(address, fresh=True):
                     typ, data = m.status(quoted(f['id']), '(UNSEEN)')
                     found = re.search(rb'UNSEEN (\d+)', data[0] or b'') if typ == 'OK' else None
                     f['unread'] = int(found.group(1)) if found else 0
-    out.sort(key=lambda f: (ROLE_ORDER.index(f['role']) if f['role'] in ROLE_ORDER else 99, f['path'].lower()))
+        out.sort(key=lambda f: (ROLE_ORDER.index(f['role']) if f['role'] in ROLE_ORDER else 99, f['path'].lower()))
+        if imap.is_gmail(acc) and any(f['role'] == 'inbox' for f in out):
+            # always listed; the unread counts are a bonus (a dropped connection must not hide the categories)
+            before = {f['id']: f.get('unread', 0) for f in _cached_folders(address)}
+            cats = [{'id': CATEGORY_PREFIX + key, 'name': name, 'path': 'Inbox/' + name, 'role': 'category', 'icon': icon,
+                     'depth': 1, 'unread': before.get(CATEGORY_PREFIX + key, 0)} for key, name, icon in CATEGORIES]
+            with contextlib.suppress(Exception):
+                m.select('INBOX', readonly=True)
+                for c in cats:
+                    c['unread'] = len(_search(m, True, real_folder(c['id'])[1], unread=True))
+            at = next(i for i, f in enumerate(out) if f['role'] == 'inbox') + 1
+            out[at:at] = cats
     with _DB_LOCK, contextlib.closing(_db()) as db, db:
         db.execute('INSERT OR REPLACE INTO folders VALUES (?,?)', (address.lower(), json.dumps(out, ensure_ascii=False)))
     return out
@@ -391,10 +420,11 @@ def list_messages(address, folder='INBOX', page=0, query='', unread=False):
     """One page of the folder, newest first: {'items': [...], 'total': n, 'offline': bool}."""
     acc = account(address)
     gmail = imap.is_gmail(acc)
+    category = real_folder(folder)[1]
     try:
         with session(acc, folder, readonly=True) as m:
             validity = _validity(m)
-            uids = _search(m, gmail, query.strip(), unread)
+            uids = _search(m, gmail, f'{category} {query.strip()}'.strip(), unread)
             chosen = uids[page * PER_PAGE:(page + 1) * PER_PAGE]
             rows = []
             if chosen:
@@ -556,6 +586,20 @@ def _thread_heads(m, where, uids, gmail):
 
 # ---- actions -------------------------------------------------------------------------------------------------------------
 
+def gmail_ids(address, folder, uids):
+    """The Gmail API ids (X-GM-MSGID, in hex) of these messages."""
+    acc = account(address)
+    out = []
+    with session(acc, folder, readonly=True) as m:
+        typ, data = m.uid('FETCH', _uidset(uids), '(UID X-GM-MSGID)')
+        for item in data or []:
+            text = item[0] if isinstance(item, tuple) else item
+            found = re.search(rb'X-GM-MSGID (\d+)', text or b'')
+            if found:
+                out.append(f'{int(found.group(1)):x}')
+    return out
+
+
 def _uidset(uids):
     clean = [str(int(u)) for u in uids]
     if not clean:
@@ -598,7 +642,8 @@ def _copyuid(m, data):
 def move(address, folder, uids, target):
     """MOVE when the server knows it (almost all do); otherwise COPY + delete.
     Returns the messages' new UIDs in the target folder (for ↩️ undo), or [] when the server doesn't say."""
-    if not target or target == folder:
+    target = real_folder(target)[0]                  # back into a category = back into the inbox
+    if not target or target == real_folder(folder)[0]:
         raise ValueError('צריך לבחור תיקייה אחרת')
     acc = account(address)
     with session(acc, folder) as m:
@@ -625,8 +670,12 @@ def mark_all_read(address, folder):
     """✓ Everything in the folder as read."""
     acc = account(address)
     with session(acc, folder) as m:
-        typ, data = m.uid('SEARCH', None, 'UNSEEN')
-        uids = (data[0] or b'').split() if typ == 'OK' and data else []
+        category = real_folder(folder)[1]
+        if category:
+            uids = [str(u).encode() for u in _search(m, True, category, unread=True)]
+        else:
+            typ, data = m.uid('SEARCH', None, 'UNSEEN')
+            uids = (data[0] or b'').split() if typ == 'OK' and data else []
         for i in range(0, len(uids), 500):
             m.uid('STORE', b','.join(uids[i:i + 500]), '+FLAGS.SILENT', r'(\Seen)')
     with _DB_LOCK, contextlib.closing(_db()) as db, db:

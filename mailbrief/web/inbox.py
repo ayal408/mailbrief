@@ -328,8 +328,10 @@ def receipt_from(address, msg):
 CSS = r"""
 main:has(#ibx){max-width:min(1640px,calc(100vw - 32px));padding:14px}
 body:has(#ibx) .hero{padding:10px 16px 0}body:has(#ibx) .hero .gift,body:has(#ibx) .hero .name,body:has(#ibx) .hero .tag{display:none}body:has(#ibx) .hero .corner{position:static;justify-content:flex-end}
-#ibx{--row:var(--bg);display:grid;grid-template-columns:230px minmax(300px,400px) 1fr;gap:0;height:calc(100vh - 150px);min-height:540px;
+#ibx{--row:var(--bg);display:grid;grid-template-columns:230px var(--listw,minmax(300px,400px)) 1fr;gap:0;height:calc(100vh - 150px);min-height:540px;
 border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface);text-align:start}
+/* the columns stay inside the box (a grid row otherwise grows to the longest column, and the box cuts it off — no scrollbar) */
+#ibx{grid-template-rows:minmax(0,1fr)}#ibx>*{min-height:0}.ib-rows,.ib-side,.ib-scroll{min-height:0}
 #ibx button{font:inherit;cursor:pointer}
 .ib-side{border-inline-end:1px solid var(--line);overflow-y:auto;padding:12px 8px;background:var(--bg)}
 .ib-new{width:100%;border:0;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;border-radius:14px;padding:12px;font-weight:700;margin-bottom:10px;box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 30%,transparent)}
@@ -356,9 +358,23 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 .ib-star.on{filter:none;opacity:1}
 .ib-row .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.ib-row .when{font-size:12px;color:var(--muted);white-space:nowrap}
 .ib-row .sub{grid-column:2/4;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-lbl{display:inline-block;font-size:11px;font-weight:500;line-height:16px;padding:0 7px;border-radius:6px;margin-inline-end:5px;vertical-align:1px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-head .ib-lbl{font-size:12px;line-height:20px;padding:0 9px;vertical-align:3px;max-width:none}
+.ib-cats{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--line);padding:0 6px;flex:none;scrollbar-width:none}.ib-cats::-webkit-scrollbar{display:none}
+.ib-cat{flex:none;border:0;background:none;color:var(--muted);padding:9px 10px 7px;font-size:13px;white-space:nowrap;border-bottom:3px solid transparent;border-radius:0}
+.ib-cat:hover{color:var(--ink);background:color-mix(in srgb,var(--accent) 6%,transparent)}.ib-cat.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.ib-cat b{font-size:11px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);border-radius:999px;padding:0 6px;margin-inline-start:2px}
 .ib-row .sn{color:var(--muted);font-weight:400}.ib-row .cnt{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px;margin-inline-start:4px}
 .ib-more{padding:12px;text-align:center}.ib-empty{padding:40px 16px;text-align:center;color:var(--muted)}
 .ib-read{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.ib-list{position:relative}.ib-split{position:absolute;top:0;bottom:0;inset-inline-end:-4px;width:8px;cursor:col-resize;z-index:5}
+.ib-split:hover,.ib-split.on{background:color-mix(in srgb,var(--accent) 35%,transparent)}
+#ibx.bottom{grid-template-columns:230px 1fr;grid-template-rows:minmax(0,2fr) minmax(0,3fr)}#ibx.bottom .ib-side{grid-row:1/3}
+#ibx.bottom .ib-list{border-inline-end:0;border-bottom:1px solid var(--line)}#ibx.bottom .ib-split{display:none}
+#ibx.wide{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}
+/* 🗗 a message in a window of its own: only the message */
+body.solo header.hero,body.solo nav.tabs,body.solo .mbxs,body.solo footer.foot,body.solo main>.item{display:none}body.solo main{max-width:none;padding:8px}
+body.solo #ibx{grid-template-columns:1fr}body.solo .ib-side,body.solo .ib-list,body.solo [data-m="wide"],body.solo [data-m="pop"],body.solo .ib-back{display:none!important}#ibx.wide .ib-side,#ibx.wide .ib-list{display:none}#ibx.wide .ib-read{display:flex}
 .ib-mtools{display:flex;gap:4px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center}
 .ib-mtools select{font:inherit;font-size:13px;padding:5px 8px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:150px}
 .ib-scroll{overflow-y:auto;flex:1;display:flex;flex-direction:column;min-height:0}.ib-scroll>*{flex-shrink:0}
@@ -440,7 +456,7 @@ background:var(--surface);border:1px solid var(--line);border-radius:16px;box-sh
 #ib-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d1a24;color:#fff;padding:10px 16px;border-radius:12px;display:none;gap:12px;align-items:center;z-index:60;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
 #ib-toast.on{display:flex}#ib-toast button{border:0;background:none;color:#fbbf24;font-weight:700;padding:0}
 @media(max-width:1100px){#ibx{grid-template-columns:200px minmax(260px,340px) 1fr}}
-@media(max-width:820px){#ibx{grid-template-columns:1fr;height:auto;min-height:0}.ib-side{display:flex;gap:4px;overflow-x:auto;padding:8px;border:0;border-bottom:1px solid var(--line)}
+@media(max-width:820px){#ibx{grid-template-columns:1fr;grid-template-rows:none;height:auto;min-height:0}.ib-side{display:flex;gap:4px;overflow-x:auto;padding:8px;border:0;border-bottom:1px solid var(--line)}
 .ib-side .ib-new{width:auto;margin:0;white-space:nowrap}.ib-acc{display:none}.ib-f{width:auto;white-space:nowrap}.ib-rows{max-height:none}
 .ib-read{display:none;position:fixed;inset:0;z-index:40;background:var(--surface)}#ibx.reading .ib-read{display:flex}.ib-back{display:inline-block}}
 """
@@ -454,7 +470,7 @@ def inbox_page(start=None):
     start = start or {}
     boot = {'accounts': [{'email': b, 'color': view.color(b), 'name': view.account(b).get('display_name', '')} for b in boxes],
             'account': start.get('a') or (current if current else ('*' if len(boxes) > 1 else boxes[0])),
-            'folder': start.get('f') or 'INBOX', 'uid': start.get('u') or '', 'token': TOKEN, 'q': start.get('q') or '', 'compose': bool(start.get('compose'))}
+            'folder': start.get('f') or 'INBOX', 'uid': start.get('u') or '', 'token': TOKEN, 'q': start.get('q') or '', 'compose': bool(start.get('compose')), 'to': start.get('to') or '', 'solo': bool(start.get('solo'))}
     data = json.dumps(boot, ensure_ascii=False).replace('</', '<\\/')
     body = f'''<style>{CSS}</style>
 <div id="ibx">
@@ -472,7 +488,9 @@ def inbox_page(start=None):
         <button class="ib-ic" type="button" data-bulk="star" title="כוכב">⭐</button><button class="ib-ic" type="button" data-bulk="archive" title="לארכיון (E)">🗄️</button>
         <button class="ib-ic" type="button" data-bulk="delete" title="מחיקה (#)">🗑️</button><button class="ib-ic" type="button" data-bulk="spam" title="ספאם">🚫</button></div>
     </div>
+    <div class="ib-cats" id="ib-cats"></div>
     <div class="ib-rows" id="ib-rows"><div class="ib-empty">טוען…</div></div>
+    <div class="ib-split" id="ib-split" title="גרירה: רשימה רחבה / צרה יותר · לחיצה כפולה: חזרה לרוחב הרגיל"></div>
   </section>
   <section class="ib-read" id="ib-read"><div class="ib-none"><b>📬</b>בוחרים הודעה מהרשימה כדי לקרוא אותה כאן<br>
     <span style="font-size:13px">מקשים: <kbd>J</kbd>/<kbd>K</kbd> מעבר · <kbd>Enter</kbd> פתיחה · <kbd>E</kbd> ארכיון · <kbd>#</kbd> מחיקה · <kbd>R</kbd> תשובה · <kbd>A</kbd> לכולם · <kbd>F</kbd> העברה · <kbd>S</kbd> כוכב · <kbd>U</kbd> לא נקרא · <kbd>C</kbd> חדשה · <kbd>/</kbd> חיפוש</span></div></section>
@@ -511,7 +529,8 @@ def inbox_page(start=None):
   <button type="button" id="ib-view-open">פתיחה בתוכנה</button><button type="button" id="ib-view-save">💾 שמירה</button><button type="button" id="ib-view-x">✕ סגירה</button></header><div class="stage" id="ib-view-stage"></div></div>
 <div id="ib-toast"><span id="ib-toast-t"></span><button type="button" id="ib-toast-b"></button></div>
 <script>window.IBX={data};</script><script>{JS}</script>'''
-    return page('דואר נכנס', body, '/inbox')
+    from mailbrief.web.layout import update_banner
+    return page('דואר נכנס', update_banner() + body, '/inbox')
 
 
 JS = r"""
@@ -558,13 +577,37 @@ function avatar(name, mail, size){
 function syncUrl(){
   var u = new URL(location.href); u.search = '';
   if (S.acc) u.searchParams.set('a', S.acc); if (S.folder !== 'INBOX') u.searchParams.set('f', S.folder);
-  if (S.open) u.searchParams.set('u', S.open.uid); if (S.q) u.searchParams.set('q', S.q);
+  if (S.open) u.searchParams.set('u', S.open.uid); if (S.q) u.searchParams.set('q', S.q); if (B.solo) u.searchParams.set('solo', '1');
   history.replaceState(history.state, '', u.pathname + u.search);
 }
 
 // ---- folders ----
+// 🎨 every label has a colour: the one picked here, else Gmail's, else its mailbox's colour
+function labelInfo(acc, name){
+  var l = S.folders[acc], f = l && l.filter ? l.filter(function(x){ return x.path === name; })[0] : null;
+  if (f && f.color) return {bg: f.color, fg: '#fff', name: f.name};
+  if (f && f.gcolor) return {bg: f.gcolor.bg, fg: f.gcolor.fg || '#fff', name: f.name};
+  return {bg: color(acc), fg: '#fff', name: f ? f.name : name.split('/').pop()};
+}
+function labelChips(acc, labels, skip){       // Gmail's own (\Inbox, \Important ...) are not shown
+  return (labels || []).filter(function(l){ return l && l.charAt(0) !== String.fromCharCode(92) && l !== skip && l.toUpperCase() !== 'INBOX'; }).slice(0, 4).map(function(l){
+    var c = labelInfo(acc, l);
+    return '<span class="ib-lbl" style="background:' + esc(c.bg) + ';color:' + esc(c.fg) + '" title="' + esc(l) + '">' + esc(c.name) + '</span>';
+  }).join('');
+}
+// 🗂️ Gmail's categories as tabs above the list, while the inbox (or one of them) is open
+function drawCats(){
+  var el = $('ib-cats'), l = S.folders[S.acc];
+  var cats = l && l.filter ? l.filter(function(f){ return f.role === 'category' && !f.hidden; }) : [];
+  var here = S.folder === 'INBOX' || S.folder.indexOf(CAT) === 0;
+  if (!cats.length || !here || S.q) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  var tab = function(id, icon, name, n){ return '<button type="button" class="ib-cat' + (S.folder === id ? ' on' : '') + '" data-cat="' + esc(id) + '">' + icon + ' ' + esc(name) + (n ? ' <b>' + n + '</b>' : '') + '</button>'; };
+  el.innerHTML = tab('INBOX', '📥', 'הכול', 0) + cats.map(function(f){ return tab(f.id, f.icon, f.name, f.unread); }).join('');
+}
 function folderButton(acc, f, kids, open, more){
   var on = S.acc === acc && S.folder === f.id, g = !f.color && f.gcolor;
+  if (!f.color && !g && !f.role && !f.pinned && f.icon === '🏷️') g = {bg: color(acc), fg: ''};
   return '<button type="button" class="ib-f' + (on ? ' on' : '') + (f.hidden ? ' ib-hid' : '') + '" data-acc="' + esc(acc) + '" data-folder="' + esc(f.id) + '" title="' + esc(f.path || f.name) + ' — לחיצה ימנית לעוד" style="padding-inline-start:' + (10 + (kids === undefined ? 0 : 20) + 18 * Math.min(f.pinned ? 0 : f.depth || 0, 4)) + 'px">' +
     (kids ? '<span class="tw" data-twist="' + esc(acc + '\u0001' + f.path) + '" title="' + (open ? 'קיפול' : 'פתיחה') + '">' + (open ? '▾' : '◂') + '</span>' : '') +
     (f.color ? '<span class="ib-dot" style="background:' + esc(f.color) + '"></span>' :
@@ -603,7 +646,7 @@ function drawFolders(){
       '<button type="button" class="ib-f" data-newlabel="' + esc(a.email) + '" style="color:var(--muted);font-size:13px"><span>➕</span><span class="nm">תווית / תיקייה חדשה</span></button>' +
       (hidden ? '<button type="button" class="ib-f" data-showhidden="1" style="color:var(--muted);font-size:13px"><span>👁️</span><span class="nm">' + (S.showHidden ? 'הסתרת המוסתרות' : 'הצגת מוסתרות (' + hidden + ')') + '</span></button>' : '') + '</details>';
   });
-  $('ib-folders').innerHTML = html;
+  $('ib-folders').innerHTML = html; drawCats();
 }
 
 // ---- small menus (folders, search options, display) ----
@@ -625,6 +668,12 @@ function folderMenu(btn){
   var acc = btn.dataset.acc, id = btn.dataset.folder, f = (S.folders[acc] || []).filter(function(x){ return x.id === id; })[0];
   if (!f) return;
   var gmail = /gmail\.com$|googlemail\.com$/i.test(acc);
+  if (f.role === 'category') { menu(btn, '<div class="row"><b dir="auto">' + esc(f.icon + ' ' + f.name) + '</b></div>' +
+      '<button type="button" class="it" data-op="hide">' + (f.hidden ? '👁️ הצגה ברשימה' : '🙈 הסתרה מהרשימה') + '</button>' +
+      '<button type="button" class="it" data-op="readall">✓ סימון הכול כנקרא</button>', function(m){
+    m.onclick = function(ev){ var b = ev.target.closest('[data-op]'); if (!b) return;
+      if (b.dataset.op === 'hide') folderOp(acc, id, 'hide', {on: f.hidden ? '' : '1'});
+      else post('/inbox_act', {a: acc, f: id, uids: '', act: 'readall'}).then(function(d){ closeMenu(); toast('✓ ' + d.count + ' סומנו כנקראו'); loadFolders(acc, true); if (S.acc === acc && S.folder === id) loadList({quiet: 1}); }).catch(fail); }; }); return; }
   menu(btn, '<div class="row"><b dir="auto">' + esc(f.icon + ' ' + (f.path || f.name)) + '</b></div>' +
     (f.role ? '' : '<button type="button" class="it" data-op="pin">' + (f.pinned ? '📌 ביטול הצמדה' : '📌 הצמדה למעלה') + '</button>') +
     '<button type="button" class="it" data-op="hide">' + (f.hidden ? '👁️ הצגה ברשימה' : '🙈 הסתרה מהרשימה') + '</button>' +
@@ -636,7 +685,7 @@ function folderMenu(btn){
     (f.role ? '' : '<button type="button" class="it" data-op="delete" style="color:var(--bad)">🗑️ ' + (gmail ? 'מחיקת התווית (המיילים נשארים)' : 'מחיקת התיקייה') + '</button>'), function(m){
     m.onclick = function(ev){
       var b = ev.target.closest('[data-op],[data-color]'); if (!b) return;
-      if (b.hasAttribute('data-color')) { folderOp(acc, id, 'color', {color: b.dataset.color}); return; }
+      if (b.hasAttribute('data-color')) { folderOp(acc, id, 'color', {color: b.dataset.color}).then(function(d){ if (d && d.note) toast('🎨 ' + d.note); else if (d && d.gmail) toast('🎨 הצבע עודכן גם ב-Gmail'); }); return; }
       var op = b.dataset.op;
       if (op === 'pin') folderOp(acc, id, 'pin', {on: f.pinned ? '' : '1'});
       else if (op === 'hide') folderOp(acc, id, 'hide', {on: f.hidden ? '' : '1'});
@@ -686,7 +735,7 @@ function searchMenu(btn){
 var LOOK = (function(){ try { return JSON.parse(localStorage.getItem('ibx-look') || '{}'); } catch (e) { return {}; } })();
 var FONTS = {Rubik: '', Heebo: 'Heebo:wght@400;500;700', 'Noto Sans Hebrew': 'Noto+Sans+Hebrew:wght@400;500;700', 'Assistant': 'Assistant:wght@400;600;700'};
 function applyLook(){
-  var box = $('ibx'); box.classList.toggle('dense', LOOK.density === 'dense'); box.classList.toggle('nopane', LOOK.pane === 'none');
+  var box = $('ibx'); box.classList.toggle('dense', LOOK.density === 'dense'); box.classList.toggle('nopane', LOOK.pane === 'none'); box.classList.toggle('bottom', LOOK.pane === 'bottom');
   var font = LOOK.font && FONTS[LOOK.font] !== undefined ? LOOK.font : '';
   if (font && FONTS[font] && !document.getElementById('ib-font-' + font.replace(/ /g, ''))) {
     var l = document.createElement('link'); l.rel = 'stylesheet'; l.id = 'ib-font-' + font.replace(/ /g, '');
@@ -698,7 +747,7 @@ function lookMenu(btn){
   var opt = function(name, value, label){ return '<label style="display:flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;padding:3px 0"><input type="radio" name="' + name + '" value="' + value + '"' + ((LOOK[name] || '') === value ? ' checked' : '') + '> ' + label + '</label>'; };
   menu(btn, '<div class="row"><b>🎛️ תצוגה</b></div>' +
     '<div class="row" style="display:block"><label>צפיפות הרשימה</label>' + opt('density', '', 'רגילה') + opt('density', 'dense', 'צפופה — יותר מיילים במסך') + '</div>' +
-    '<div class="row" style="display:block"><label>חלונית קריאה</label>' + opt('pane', '', 'בצד הרשימה') + opt('pane', 'none', 'בלי — ההודעה נפתחת במקום הרשימה') + '</div>' +
+    '<div class="row" style="display:block"><label>חלונית קריאה</label>' + opt('pane', '', 'בצד הרשימה') + opt('pane', 'bottom', 'מתחת לרשימה — הודעה רחבה') + opt('pane', 'none', 'בלי — ההודעה נפתחת במקום הרשימה') + '</div>' +
     '<div class="row" style="display:block"><label>גופן</label>' + opt('font', '', 'Rubik') + opt('font', 'Heebo', 'Heebo') + opt('font', 'Noto Sans Hebrew', 'Noto Sans Hebrew') + opt('font', 'Assistant', 'Assistant') + '</div>', function(m){
     m.onchange = function(ev){ if (ev.target.name) { LOOK[ev.target.name] = ev.target.value; try { localStorage.setItem('ibx-look', JSON.stringify(LOOK)); } catch (e) {} applyLook(); } };
   });
@@ -730,6 +779,7 @@ function rowName(r){
   if (sentLike && r.to && r.to.length) return 'אל: ' + r.to.map(function(t){ return t.name || t.email; }).join(', ');
   return r.from.name || r.from.email;
 }
+function currentPath(){ var l = S.folders[S.acc] || []; var f = (l.filter ? l : []).filter(function(x){ return x.id === S.folder; })[0]; return f ? f.path : ''; }
 function currentRole(){ var l = S.folders[S.acc] || []; var f = (l.filter ? l : []).filter(function(x){ return x.id === S.folder; })[0]; return f ? f.role : (S.acc === '*' ? 'inbox' : ''); }
 function drawList(){
   var rows = $('ib-rows');
@@ -741,7 +791,7 @@ function drawList(){
       '<div class="who" dir="auto">' + (multi && S.acc === '*' ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color(g.account) + ';margin-inline-end:6px"></span>' : '') +
         esc(rowName(r)) + (g.rows.length > 1 ? '<span class="cnt">' + g.rows.length + '</span>' : '') + '</div>' +
       '<div class="when">' + (g.attach ? '📎 ' : '') + when(r.at) + '</div>' +
-      '<div class="sub" dir="auto">' + esc(r.subject || '(ללא נושא)') + ' <span class="sn">— ' + esc(r.snippet) + '</span></div></div>';
+      '<div class="sub" dir="auto">' + labelChips(g.account || S.acc, r.labels, currentPath()) + esc(r.subject || '(ללא נושא)') + ' <span class="sn">— ' + esc(r.snippet) + '</span></div></div>';
   }).join('') + (S.total > (S.page + 1) * 50 ? '<div class="ib-more"><button class="ib-ic" type="button" id="ib-more">עוד הודעות ▾</button></div>' : '');
   drawBulk();
 }
@@ -765,6 +815,7 @@ function loadList(opts){
   if (!opts.more && !S.q && !S.unread && !opts.quiet) api('/inbox_list.json', Object.assign({}, params, {cached: 1})).then(function(d){ if (d.items.length && !S.items.length) show(d, true); }).catch(function(){});
   return api('/inbox_list.json', params).then(function(d){ show(d, false); }).catch(function(e){ if (seq === listSeq && !S.items.length) $('ib-rows').innerHTML = '<div class="ib-empty">⚠️ ' + esc(e.message) + '</div>'; });
 }
+$('ib-cats').addEventListener('click', function(ev){ var b = ev.target.closest('[data-cat]'); if (b) choose(S.acc, b.dataset.cat); });
 function choose(acc, folder){
   S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1;
   drawFolders(); syncUrl(); loadList();
@@ -775,10 +826,13 @@ function selectedRefs(){
   S.groups.forEach(function(g){ if (S.checked[g.key]) g.rows.forEach(function(r){ refs.push({a: g.account, f: r.folder || S.folder, u: r.uid}); }); });
   return refs;
 }
+var CAT = 'INBOX#category:';
+function catName(acc, key){ var f = (S.folders[acc] || []).filter ? S.folders[acc].filter(function(x){ return x.id === CAT + key; })[0] : null; return f ? f.name : key; }
 function act(what, refs, extra){
   var by = {};
+  if (what === 'move' && extra && (extra.to || '').indexOf(CAT) === 0) { what = 'category'; extra = {to: extra.to.slice(CAT.length)}; }
   refs.forEach(function(r){ var k = r.a + '\u0001' + r.f; (by[k] = by[k] || []).push(r.u); });
-  var gone = /archive|delete|spam|notspam|move/.test(what);
+  var gone = /archive|delete|spam|notspam|move/.test(what) || (what === 'category' && S.folder.indexOf(CAT) === 0 && S.folder !== CAT + extra.to);
   if (gone) {                                         // instant: off the list now, the server catches up
     var drop = {}; refs.forEach(function(r){ drop[r.a.toLowerCase() + '|' + r.u] = 1; });
     S.items = S.items.filter(function(x){ return !drop[(x.account || S.acc).toLowerCase() + '|' + x.uid]; }); S.groups = group(S.items); S.checked = {};
@@ -793,7 +847,8 @@ function act(what, refs, extra){
   var jobs = Object.keys(by).map(function(k){ var p = k.split('\u0001');
     return post('/inbox_act', Object.assign({a: p[0], f: p[1], uids: by[k].join(','), act: what}, extra || {})); });
   return Promise.all(jobs).then(function(res){
-    var label = {archive: '🗄️ הועבר לארכיון', delete: '🗑️ נמחק', spam: '🚫 סומן כספאם', notspam: '📥 הוחזר לדואר הנכנס', move: '📁 הועבר'}[what];
+    var label = {archive: '🗄️ הועבר לארכיון', delete: '🗑️ נמחק', spam: '🚫 סומן כספאם', notspam: '📥 הוחזר לדואר הנכנס', move: '📁 הועבר',
+                 category: '🗂️ הועבר ל' + (what === 'category' ? catName(refs[0].a, extra.to) : '')}[what];
     var keys = Object.keys(by), undo = res.map(function(r, i){ return r && r.undo ? {a: keys[i].split('\u0001')[0], u: r.undo} : null; }).filter(Boolean);
     if (label && undo.length === res.length) toast(label + (refs.length > 1 ? ' (' + refs.length + ')' : ''), '↩️ ביטול', function(){
       Promise.all(undo.map(function(x){ return post('/inbox_act', {a: x.a, f: x.u.folder, uids: x.u.uids.join(','), act: 'move', to: x.u.back}); }))
@@ -805,7 +860,36 @@ function act(what, refs, extra){
 }
 
 // ---- reading ----
-function closeMessage(){ S.open = null; $('ibx').classList.remove('reading'); syncUrl(); drawHome(); }
+function closeMessage(){ S.open = null; $('ibx').classList.remove('reading', 'wide'); syncUrl(); drawHome(); }
+// ⛶ the message over the whole inbox (remembered: the next message opens big too, until 🗗)
+var WIDE = false; try { WIDE = localStorage.getItem('ib-wide') === '1'; } catch (e) {}
+function setWide(on){
+  WIDE = on; try { localStorage.setItem('ib-wide', on ? '1' : ''); } catch (e) {}
+  $('ibx').classList.toggle('wide', on && !!S.open);
+  var b = document.querySelector('#ib-read [data-m="wide"]');
+  if (b) { b.classList.toggle('on', on); b.textContent = on ? '🗗 הקטנה' : '⛶ הגדלה'; b.title = on ? 'חזרה לגודל הרגיל (Esc)' : 'הגדלת ההודעה לכל החלון (Z)'; }
+}
+// ↔️ the line between the list and the message drags; the width stays on this computer
+function setListWidth(px){
+  var box = $('ibx'); if (!box) return;
+  if (!px) { box.style.removeProperty('--listw'); try { localStorage.removeItem('ib-listw'); } catch (e) {} return; }
+  px = Math.round(Math.max(260, Math.min(px, box.clientWidth - 230 - 360)));
+  box.style.setProperty('--listw', px + 'px'); try { localStorage.setItem('ib-listw', px); } catch (e) {}
+}
+(function(){
+  var sp = $('ib-split'); if (!sp) return;
+  try { var w = +localStorage.getItem('ib-listw'); if (w) setListWidth(w); } catch (e) {}
+  sp.ondblclick = function(){ setListWidth(0); };
+  sp.onmousedown = function(ev){
+    ev.preventDefault(); sp.classList.add('on');
+    var list = sp.parentNode.getBoundingClientRect(), rtl = getComputedStyle($('ibx')).direction === 'rtl';
+    var frames = document.querySelectorAll('#ibx iframe'); Array.prototype.forEach.call(frames, function(f){ f.style.pointerEvents = 'none'; });
+    var move = function(e){ setListWidth(rtl ? list.right - e.clientX : e.clientX - list.left); };
+    var up = function(){ sp.classList.remove('on'); Array.prototype.forEach.call(frames, function(f){ f.style.pointerEvents = ''; });
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  };
+})();
 function ago(iso){
   if (!iso) return ''; var m = Math.round((Date.now() - new Date(iso)) / 60000);
   return m < 60 ? 'לפני ' + Math.max(1, m) + ' דק׳' : m < 1440 ? 'לפני ' + Math.round(m / 60) + ' שע׳' : 'לפני ' + Math.round(m / 1440) + ' ימים';
@@ -838,15 +922,22 @@ function openGroup(i){
   g.rows.forEach(function(x){ if (x.flags.indexOf('\\Seen') < 0) x.flags.push('\\Seen'); }); g.unread = false; drawList();
 }
 function openMessage(acc, folder, uid){
-  S.open = {account: acc, folder: folder, uid: +uid}; S.imgs = false; syncUrl(); $('ibx').classList.add('reading');
+  S.open = {account: acc, folder: folder, uid: +uid}; S.imgs = false; syncUrl(); $('ibx').classList.add('reading'); $('ibx').classList.toggle('wide', WIDE);
   $('ib-read').innerHTML = '<div class="ib-none">טוען…</div>';
   api('/inbox_msg.json', {a: acc, f: folder, u: uid}).then(function(m){
     if (!S.open || S.open.uid !== m.uid) return; S.open = m; S.imgs = m.images; drawMessage(); setTimeout(function(){ loadAllFolders(true); }, 800);
   }).catch(function(e){ $('ib-read').innerHTML = '<div class="ib-none">⚠️ ' + esc(e.message) + '</div>'; });
 }
+function moveOptions(acc, here){
+  var l = S.folders[acc]; if (!l || !l.filter) return '';
+  var opt = function(f){ return '<option value="' + esc(f.id) + '">' + esc(f.icon + ' ' + (f.path || f.name)) + '</option>'; };
+  var cats = l.filter(function(f){ return f.role === 'category' && f.id !== here; });
+  return l.filter(function(f){ return f.role !== 'category' && f.id !== here; }).map(opt).join('') +
+    (cats.length ? '<optgroup label="🗂️ קטגוריה בדואר הנכנס">' + cats.map(opt).join('') + '</optgroup>' : '');
+}
 function folderOptions(acc){
   var l = S.folders[acc]; if (!l || !l.filter) return '';
-  return '<select id="ib-move" title="העברה לתיקייה"><option value="">📁 העברה ל…</option>' + l.filter(function(f){ return f.id !== S.open.folder; }).map(function(f){ return '<option value="' + esc(f.id) + '">' + esc(f.icon + ' ' + (f.path || f.name)) + '</option>'; }).join('') + '</select>';
+  return '<select id="ib-move" title="העברה לתיקייה או לקטגוריה"><option value="">📁 העברה ל…</option>' + moveOptions(acc, S.open.folder) + '</select>';
 }
 function people(list){ return list.map(function(p){ return '<span title="' + esc(p.email) + '">' + esc(p.name || p.email) + '</span>'; }).join(', '); }
 function hebDate(d){                                   // כ״ז בתשרי תשפ״ז, as the date picker writes it
@@ -865,9 +956,11 @@ function drawMessage(){
     '<option value="snooze_tomorrow8">💤 נודניק עד מחר בבוקר</option><option value="snooze_week">💤 נודניק לשבוע</option>' + (m.gapps ? '<option value="task">✅ משימה ב-Google</option>' : '') +
     '<option value="receipt">🧾 לשמור כקבלה / חשבונית</option>' + (m.unsub ? '<option value="unsub">🔕 ביטול מנוי לשולח</option>' : '') +
     '<option value="files">💾 שמירת כל הקבצים בהורדות</option><option value="print">🖨️ הדפסה</option><option value="block">🚫 חסימת השולח</option>' +
-    (m.gmail ? '<option value="gmail">🔗 פתיחה ב-Gmail</option>' : '') + '<option value="original">🧾 הצגת המקור (EML)</option></select>';
+    (m.gmail ? '<option value="gmail">🔗 פתיחה ב-Gmail</option>' : '') + '<option value="original">🧾 הצגת המקור (EML)</option></select>' +
+    '<button class="ib-ic" type="button" data-m="pop" title="פתיחה בחלון נפרד — אפשר להזיז למסך אחר" style="margin-inline-start:auto">🗗 חלון</button>' +
+    '<button class="ib-ic' + (WIDE ? ' on' : '') + '" type="button" data-m="wide" title="' + (WIDE ? 'חזרה לגודל הרגיל (Esc)' : 'הגדלת ההודעה לכל החלון (Z)') + '">' + (WIDE ? '🗗 הקטנה' : '⛶ הגדלה') + '</button>';
   var meta = '<div class="ib-meta">' + avatar(m.from.name, m.from.email) + '<div style="flex:1;min-width:0"><b dir="auto">' + esc(m.from.name || m.from.email) + '</b> <span dir="ltr">&lt;' + esc(m.from.email) + '&gt;</span><br>' +
-    'אל: ' + people(m.to) + (m.cc.length ? ' · עותק: ' + people(m.cc) : '') + (multi ? ' · <span style="color:' + color(m.account) + '">●</span> ' + esc(m.account) : '') + '</div>' +
+    'אל: ' + people(m.to) + (m.cc.length ? ' · עותק: ' + people(m.cc) : '') + (multi && !m.to.concat(m.cc).some(function(p){ return (p.email || '').toLowerCase() === m.account.toLowerCase(); }) ? ' · <span style="color:' + color(m.account) + '">●</span> ' + esc(m.account) : '') + '</div>' +
     '<div style="white-space:nowrap;text-align:end">' + (m.date ? new Date(m.date).toLocaleString('he-IL', {dateStyle: 'medium', timeStyle: 'short'}) +
       '<br><span style="font-size:12px">' + hebDate(new Date(m.date)) + '</span>' : '') + '</div></div>';
   var card = '';
@@ -899,7 +992,7 @@ function drawMessage(){
       return '<div class="ib-file">📄 <span dir="auto">' + esc(f.name) + '</span> <span class="muted">' + sizeOf(f.size) + '</span>' +
         (f.view ? '<button type="button" data-view="' + f.n + '">👁️ צפייה</button>' : '') + '<button type="button" data-file="' + f.n + '">פתיחה</button><button type="button" data-save="' + f.n + '">שמירה</button></div>'; }).join('') +
       (m.files.length > 1 ? '<button class="ib-ic" type="button" data-m="allfiles" style="font-size:13px">💾 כל הקבצים</button>' : '') + '</div>' : '';
-  var labels = (m.labels || []).filter(function(l){ return !/^\\\\/.test(l); }).map(function(l){ return '<span class="pill">' + esc(l) + '</span>'; }).join('');
+  var labels = labelChips(m.account, m.labels);
   $('ib-read').innerHTML = '<div class="ib-mtools">' + tools + '</div><div class="ib-scroll"><div class="ib-head"><h2>' + esc(m.subject || '(ללא נושא)') + ' ' + labels + '</h2></div>' +
     threadHead + earlier + '<div class="ib-cur">' + meta + '</div>' +
     warn + card + imgs + '<div class="ib-body"><iframe title="תוכן ההודעה" referrerpolicy="no-referrer" src="/inbox_body?' + ref + (S.imgs ? '&img=1' : '') + '"></iframe></div>' + files + later +
@@ -1087,8 +1180,13 @@ function translateHere(on){                             // 🌐 the message itse
 }
 function msgAction(k){
   var m = S.open; if (!m) return; var ref = [{a: m.account, f: m.folder, u: m.uid}];
-  if (!m.files && !/^(back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
+  if (!m.files && !/^(pop|wide|back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
   if (k === 'back') { closeMessage(); return; }
+  if (k === 'wide') { setWide(!WIDE); return; }
+  if (k === 'pop') {                                   // 🗗 its own window: the app opens one; a browser opens a tab
+    var u = '/inbox?solo=1&a=' + encodeURIComponent(m.account) + '&f=' + encodeURIComponent(m.folder) + '&u=' + m.uid;
+    post('/popout', {url: u, title: m.subject || 'MailBrief'}).then(function(d){ if (!d.ok) window.open(u, '_blank'); }).catch(function(){ window.open(u, '_blank'); });
+    return; }
   if (/^(reply|all|fwd|edit)$/.test(k)) { compose(k); return; }
   if (k === 'imgs') { S.imgs = true; drawMessage(); return; }
   if (k === 'translate' || k === 'original') { translateHere(k === 'translate'); return; }
@@ -1173,7 +1271,7 @@ $('ib-rows').addEventListener('contextmenu', function(ev){
     '<button type="button" class="it" data-r="' + (g.star ? 'unstar' : 'star') + '">⭐ ' + (g.star ? 'הסרת כוכב' : 'כוכב') + '</button>' +
     '<button type="button" class="it" data-r="archive">🗄️ ארכיון</button><button type="button" class="it" data-r="delete">🗑️ מחיקה</button>' +
     '<button type="button" class="it" data-r="spam">🚫 ספאם</button>' +
-    '<div class="row"><label>📁</label><select id="ib-r-move"><option value="">העברה ל…</option>' + ((S.folders[g.account] || []).filter ? S.folders[g.account].filter(function(f){ return f.id !== S.folder; }).map(function(f){ return '<option value="' + esc(f.id) + '">' + esc(f.icon + ' ' + (f.path || f.name)) + '</option>'; }).join('') : '') + '</select></div>', function(m){
+    '<div class="row"><label>📁</label><select id="ib-r-move"><option value="">העברה ל…</option>' + moveOptions(g.account, S.folder) + '</select></div>', function(m){
     m.onclick = function(e2){ var b = e2.target.closest('[data-r]'); if (!b) return; closeMenu(); var r = b.dataset.r;
       if (r === 'open') openGroup(i); else act(r, refs); };
     $('ib-r-move').onchange = function(){ if (this.value) { closeMenu(); act('move', refs, {to: this.value}); } };
@@ -1205,7 +1303,9 @@ function keys(ev){
   else if (k === 'f' && S.open) compose('fwd');
   else if (k === 'c') compose('new');
   else if (ev.key === '/') $('ib-q').focus();
+  else if (ev.key === 'Escape' && S.open && WIDE) setWide(false);
   else if (ev.key === 'Escape' && S.open) closeMessage();
+  else if (k === 'z' && S.open) setWide(!WIDE);
   else handled = false;
   if (handled) ev.preventDefault();
 }
@@ -1225,11 +1325,13 @@ window.addEventListener('keydown', keys); window.addEventListener('beforeunload'
 window.__ibx = {stop: stop};
 window.addEventListener('resize', fitBox); fitBox(); setTimeout(fitBox, 300);
 
+if (B.solo) { document.body.classList.add('solo'); setTimeout(fitBox, 50); }
 applyLook(); drawFolders(); loadAllFolders(false); if (S.acc !== '*') loadFolders(S.acc, true);
 if (!B.uid) drawHome();
 api('/inbox_poll.json').then(function(d){ S.v = d.v; }).catch(function(){});
-if (B.compose) compose('new');
-loadList().then(function(){ if (B.uid) { var i = -1; S.groups.forEach(function(g, n){ if (g.rows.some(function(r){ return String(r.uid) === String(B.uid); })) i = n; });
+if (B.compose) { compose('new'); if (B.to) $('ib-c-to').value = B.to; }
+if (B.solo && B.uid) openMessage(S.acc, S.folder, B.uid);          // 🗗 a window of its own: just the message, at once
+else loadList().then(function(){ if (B.uid) { var i = -1; S.groups.forEach(function(g, n){ if (g.rows.some(function(r){ return String(r.uid) === String(B.uid); })) i = n; });
   if (i >= 0) openGroup(i); else openMessage(S.acc === '*' ? B.accounts[0].email : S.acc, S.folder, B.uid); } });
 })();
 """

@@ -187,6 +187,12 @@ def me_section():
 <label style="margin:0">צליל בהתראות
 <select name="sound" style="width:100%;{FIELD}">{''.join(f'<option value="{k}"{" selected" if (load_json(config.SETTINGS_FILE, {}).get("sound") or "urgent") == k else ""}>{v}</option>'
   for k, v in (('urgent', '🔔 רק לדחוף, לאבטחה ולאנשים חשובים (VIP)'), ('all', '🔊 לכל התראה'), ('off', '🔇 בלי צליל')))}</select></label>
+<label style="margin:0">🔴 המספר על הסמל בשורת המשימות
+<select name="badge" style="width:100%;{FIELD}">{''.join(f'<option value="{k}"{" selected" if (load_json(config.SETTINGS_FILE, {}).get("badge") or "primary") == k else ""}>{v}</option>'
+  for k, v in (('primary', '👤 רק מה שלא נקרא ב״ראשי״ (ב-Gmail: בלי רשתות חברתיות, עדכונים וקידומי מכירות)'), ('all', '📥 כל מה שלא נקרא בדואר הנכנס')))}</select></label>
+<label style="margin:0">🔄 עדכונים אוטומטיים
+<select name="auto_update" style="width:100%;{FIELD}">{''.join(f'<option value="{k}"{" selected" if ("on" if load_json(config.SETTINGS_FILE, {}).get("auto_update", True) else "off") == k else ""}>{v}</option>'
+  for k, v in (('on', '✅ גרסה חדשה מותקנת לבד, כשלא עובדים ב-MailBrief (החלון סגור או 10 דקות בלי עכבר ומקלדת)'), ('off', '✋ רק להודיע, אעדכן בעצמי')))}</select></label>
 <p class="muted" style="margin:0;font-size:13px">בשבת ובחג אין התראות בכלל. בהתראה יש כפתורים: ״⏰ להזכיר בעוד שעה״ ו״📅 מחר בבוקר״.</p>
 <div><button style="margin:0">שמירה</button></div></form>
 

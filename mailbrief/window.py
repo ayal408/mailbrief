@@ -67,13 +67,36 @@ def _place():
     return width, height, left + (aw - width) // 2, top + (ah - height) // 2
 
 
+# Windows 11's fluent overlay scrollbars hide themselves while the mouse is still ("the scrollbar disappears").
+# pywebview gives WebView2 its own --disable-features list (and only the last such flag counts), so ours joins that list.
+OVERLAY_FEATURES = 'msEdgeFluentOverlayScrollbar,msOverlayScrollbarWinStyle,OverlayScrollbar,FluentOverlayScrollbar'
+
+
+def _classic_scrollbars(edgechromium):
+    original = edgechromium.EdgeChrome.__init__
+    if getattr(original, 'mailbrief', False):
+        return
+
+    def init(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        props = self.webview.CreationProperties
+        flags = props.AdditionalBrowserArguments or ''
+        props.AdditionalBrowserArguments = (flags.replace('--disable-features=', f'--disable-features={OVERLAY_FEATURES},', 1)
+                                            if '--disable-features=' in flags else f'{flags} --disable-features={OVERLAY_FEATURES}')
+    init.mailbrief = True
+    edgechromium.EdgeChrome.__init__ = init
+
+
 def run_app(url, on_hidden=None):
     """Runs on the main thread and returns when the user picks "Exit" (tray menu or the page's ⏻ button)."""
     import webview
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True       # Gmail and websites open in the user's browser
+    if os.environ.get('MAILBRIEF_DEVTOOLS'):                         # for checking the page from outside: a DevTools port
+        webview.settings['REMOTE_DEBUGGING_PORT'] = int(os.environ['MAILBRIEF_DEVTOOLS'])
     try:                                                             # ... the one already open, not always Edge
         from webview.platforms import edgechromium
         edgechromium.webbrowser = type('OpenBrowser', (), {'open': staticmethod(lambda u, *a, **k: open_browser_tab(u))})
+        _classic_scrollbars(edgechromium)
     except Exception:
         pass
     width, height, x, y = _place()
@@ -91,12 +114,28 @@ def run_app(url, on_hidden=None):
     win.events.closing += closing
     def shown():
         from mailbrief import badge                                # 🔴 unread count on the taskbar icon
+        from mailbrief.features import update                      # 🔄 new versions install by themselves
         badge.watch()
+        update.watch_auto()
     win.events.shown += shown
     APP['window'] = win
     os.makedirs(os.path.join(config.DATA, 'window'), exist_ok=True)
     webview.start(gui='edgechromium', private_mode=False, storage_path=os.path.join(config.DATA, 'window'))
     APP['window'] = None
+
+
+def popout(path, title=''):
+    """🗗 Another window on the same MailBrief page server (a message to put on a second screen)."""
+    win = APP['window']
+    if not win:
+        return False
+    import webview
+    from urllib.parse import urlsplit
+    base = urlsplit(win.get_current_url() or '')
+    width, height = _size()
+    webview.create_window((title or 'MailBrief')[:80], f'{base.scheme}://{base.netloc}{path}', width=min(1000, width),
+                          height=height, min_size=(560, 420), text_select=True, background_color='#FBF7F2')
+    return True
 
 
 def show(url=None):

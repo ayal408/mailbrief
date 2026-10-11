@@ -56,8 +56,14 @@ nav.tabs a.on{background:var(--accent);color:#fff;border-color:var(--accent);box
 .mbxs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:-4px 16px 16px}
 .mbx{font:inherit;font-size:13px;border:1px dashed var(--line);background:transparent;color:var(--muted);padding:4px 12px;border-radius:999px;cursor:pointer;margin:0;display:inline-flex;align-items:center}
 .mbx:hover{border-color:var(--accent);color:var(--ink);filter:none}.mbx.on{border-style:solid;border-color:var(--accent);color:var(--ink);background:var(--surface);font-weight:500}
-/* Windows 11 hides scrollbars until the mouse is on them ("there's no scrollbar"): a scrollbar style keeps them always shown */
-*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 55%,transparent) transparent}
+/* Windows 11 hides scrollbars until the mouse moves on them ("the scrollbar disappears"). A classic ::-webkit-scrollbar
+   with its own width and colours is never an overlay, so it stays shown. (scrollbar-width / scrollbar-color would switch
+   these rules off in Chromium, so they are not used.) */
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:color-mix(in srgb,var(--line) 45%,transparent);border-radius:8px}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 60%,transparent);border-radius:8px;border:3px solid transparent;background-clip:padding-box;min-height:40px}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--accent) 70%,transparent);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
 @media(max-width:760px){nav.tabs{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}nav.tabs::-webkit-scrollbar{display:none}
 .hero{padding-top:56px}.hero .gift{font-size:48px}.hero .tag{font-size:16px}}
 button{transition:filter .15s,transform .1s}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.97)}
@@ -74,16 +80,16 @@ FONT = ('<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500
 
 
 TABS = [('/inbox', '📥', 'דואר נכנס'), ('/today', '☀️', 'היום שלי'), ('/', '⚙️', 'הגדרות'), ('/dashboard', '📊', 'לוח בקרה'), ('/stats', '📈', 'במספרים'),
-        ('/automations', '⚡', 'אוטומציות'), ('/clients', '👥', 'לקוחות'), ('/reading', '📰', 'ניוזלטרים'),
+        ('/automations', '⚡', 'אוטומציות'), ('/contacts', '📇', 'אנשי קשר'), ('/calendar', '📅', 'לוח שנה'), ('/clients', '👥', 'לקוחות'), ('/reading', '📰', 'ניוזלטרים'),
         ('/search', '🔍', 'חיפוש'), ('/help', '❓', 'מדריך')]
 
 
 TITLE_TAB = {'דואר נכנס': '/inbox', 'היום שלי': '/today', 'לוח בקרה': '/dashboard', 'המייל שלי במספרים': '/stats', 'אוטומציות': '/automations',
-             'לקוחות': '/clients', 'לקוח': '/clients', 'רשימת קריאה': '/reading', 'ניוזלטרים': '/reading', 'חיפוש': '/search', 'מדריך': '/help',
+             'לקוחות': '/clients', 'לקוח': '/clients', 'אנשי קשר': '/contacts', 'לוח שנה': '/calendar', 'רשימת קריאה': '/reading', 'ניוזלטרים': '/reading', 'חיפוש': '/search', 'מדריך': '/help',
              'בדיקת תקינות': '/help', '30 הימים שלך': '/today', 'מיון מהיר': '/today', 'מייל מתוזמן': '/today', 'ברכות חג': '/today'}
 
 
-SIMPLE_TABS = ('/inbox', '/today', '/', '/search', '/help')
+SIMPLE_TABS = ('/inbox', '/today', '/contacts', '/calendar', '/', '/search', '/help')
 
 
 def corner_avatars():
@@ -124,7 +130,7 @@ def top_bar(active=''):
 
 def update_banner():
     """A friendly "new version" strip; quiet when offline or when running from source."""
-    from mailbrief.features.update import can_self_update, update_available
+    from mailbrief.features.update import auto_enabled, can_self_update, update_available
     from mailbrief.web.token import TOKEN
     try:
         rel = update_available()
@@ -137,7 +143,9 @@ def update_banner():
               '<code dir="ltr" style="margin:0 8px">winget upgrade mailbrief</code>')
     return (f'<div class="item" style="border-color:var(--accent);display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
             f'🎁 <b>גרסה חדשה {e(rel["version"])} זמינה</b> <span class="muted">(עכשיו {__version__})</span>{action}'
-            f'<a href="{e(rel["page"])}" target="_blank" class="muted" style="font-size:13px">מה חדש?</a></div>')
+            f'<a href="{e(rel["page"])}" target="_blank" class="muted" style="font-size:13px">מה חדש?</a>'
+            + ('<span class="muted" style="font-size:13px">· אחרת תותקן לבד כשלא עובדים ב-MailBrief</span>' if can_self_update() and auto_enabled() else '')
+            + '</div>')
 
 
 def undo_banner():

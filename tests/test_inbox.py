@@ -186,7 +186,11 @@ class MailboxLayer(InboxBase):
     def test_folders_list_read_and_act(self):
         from mailbrief.mail import mailbox
         folders = mailbox.folders('me@gmail.com')
-        self.assertEqual([f['role'] for f in folders][:3], ['inbox', 'sent', 'drafts'])
+        self.assertEqual([f['role'] for f in folders if f['role'] != 'category'][:3], ['inbox', 'sent', 'drafts'])
+        cats = [f['id'] for f in folders if f['role'] == 'category']                 # Gmail's categories, under the inbox
+        self.assertEqual(cats[0], 'INBOX#category:primary')
+        self.assertEqual(len(cats), 5)
+        self.assertEqual(mailbox.real_folder(cats[1]), ('INBOX', 'category:promotions'))
         self.assertIn('חשבון', [f['name'] for f in folders])                       # Hebrew label, IMAP UTF-7
         self.assertEqual(next(f for f in folders if f['role'] == 'inbox')['unread'], 2)
         page = mailbox.list_messages('me@gmail.com')

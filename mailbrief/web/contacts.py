@@ -2,6 +2,7 @@
 import csv
 import datetime as dt
 import os
+from urllib.parse import quote
 
 from mailbrief import config
 from mailbrief.features.contacts import phone_of, pretty, whatsapp
@@ -38,7 +39,8 @@ def contacts_page(msg=''):
     note = f'<div class="item urgent">{e(msg)}</div>' if msg else ''
     body = ''.join(
         f'<tr data-text="{e((p["name"] + " " + p["email"] + " " + p["phone"]).lower())}"><td dir="auto">{dot(p["account"])}<b>{e(p["name"])}</b></td>'
-        f'<td dir="ltr" style="text-align:right"><a href="/search?q={e("from:" + p["email"])}">{e(p["email"])}</a></td>'
+        f'<td dir="ltr" style="text-align:right"><a href="/inbox?compose=1&amp;to={quote(p["email"])}" title="מייל חדש">✉️</a> '
+        f'<a href="/search?q={e("from:" + p["email"])}" title="כל המיילים">{e(p["email"])}</a></td>'
         f'<td style="white-space:nowrap">' + (f'<a href="tel:{p["phone"]}" dir="ltr">{pretty(p["phone"])}</a>'
                                               + (f' <a href="{whatsapp(p["phone"])}" target="_blank" title="WhatsApp">💬</a>' if whatsapp(p["phone"]) else '')
                                               if p['phone'] else '') + '</td>'

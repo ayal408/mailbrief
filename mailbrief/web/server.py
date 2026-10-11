@@ -238,6 +238,13 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/client_stats':
             from mailbrief.web.clients import client_stats_page
             return self._send(client_stats_page())
+        if url.path == '/calendar':
+            from mailbrief.web.hebcalendar import calendar_page
+            return self._send(calendar_page())
+        if url.path == '/calendar.json':
+            from mailbrief.web.hebcalendar import calendar_json
+            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            return self._send(calendar_json(q), 'application/json; charset=utf-8')
         if url.path == '/contacts':
             from mailbrief.web.contacts import contacts_page
             return self._send(contacts_page(parse_qs(url.query).get('msg', [''])[0]))
@@ -539,6 +546,12 @@ class Handler(BaseHTTPRequestHandler):
             settings['startup'] = f['startup']
         if f.get('sound') in ('urgent', 'all', 'off'):
             settings['sound'] = f['sound']
+        if f.get('badge') in ('primary', 'all'):
+            settings['badge'] = f['badge']
+            from mailbrief import badge
+            badge.refresh()
+        if f.get('auto_update') in ('on', 'off'):
+            settings['auto_update'] = f['auto_update'] == 'on'
         save_json(config.SETTINGS_FILE, settings)
         return '✓ נשמר'
 
@@ -846,7 +859,7 @@ class Handler(BaseHTTPRequestHandler):
         uid = int(q['u']) if q.get('u', '').isdigit() else None
         try:
             if url.path == '/inbox':
-                return self._send(inbox.inbox_page({k: q.get(k, '') for k in ('a', 'f', 'u', 'q', 'compose')}))
+                return self._send(inbox.inbox_page({k: q.get(k, '') for k in ('a', 'f', 'u', 'q', 'compose', 'to', 'solo')}))
             if url.path == '/inbox_poll.json':
                 return self._json({'v': live.version()})
             if url.path == '/inbox_folders.json':
@@ -922,8 +935,15 @@ class Handler(BaseHTTPRequestHandler):
             address, folder, what = f.get('a', ''), f.get('f', 'INBOX'), f.get('act', '')
             uids = [int(u) for u in f.get('uids', '').split(',') if u.strip().isdigit()]
             flags = {'read': ('\\Seen', True), 'unread': ('\\Seen', False), 'star': ('\\Flagged', True), 'unstar': ('\\Flagged', False)}
+            if what == 'move' and f.get('to', '').startswith(mailbox.CATEGORY_PREFIX):   # into a Gmail category
+                what, f['to'] = 'category', f['to'][len(mailbox.CATEGORY_PREFIX):]
             if what in flags:
                 mailbox.set_flag(address, folder, uids, *flags[what])
+            elif what == 'category':                    # 🗂️ another inbox category, through the Gmail API
+                from mailbrief.mail import gmail_labels
+                gmail_labels.set_category(mailbox.account(address), mailbox.gmail_ids(address, folder, uids), f.get('to', ''))
+                live.bump()
+                return {'ok': True}
             elif what in ('archive', 'delete', 'spam', 'notspam', 'move'):
                 if what == 'archive':
                     target, new = mailbox.archive(address, folder, uids)
@@ -948,6 +968,12 @@ class Handler(BaseHTTPRequestHandler):
             return {'ok': True}
         return self._inbox_post(f, work)
 
+    def post_popout(self, f):
+        """🗗 A message in a window of its own (inside the app); in a browser the page opens a tab itself."""
+        url = f.get('url', '')
+        ok = url.startswith('/inbox?') and window.popout(url, f.get('title', ''))
+        return self._json({'ok': bool(ok)}) or None
+
     def post_inbox_folder(self, f):
         """🏷️ Folders and labels: create / rename / delete on the server; pin / hide / colour on this computer."""
         def work():
@@ -963,8 +989,19 @@ class Handler(BaseHTTPRequestHandler):
                 inbox.set_folder_pref(address, folder, 'hidden' if op == 'hide' else 'pinned', f.get('on') == '1')
                 result = folder
             elif op == 'color':
-                color = f.get('color', '')
-                inbox.set_folder_pref(address, folder, 'color', color if color in inbox.LABEL_COLORS else '')
+                color = f.get('color', '') if f.get('color', '') in inbox.LABEL_COLORS else ''
+                acc = mailbox.account(address)
+                path = next((x.get('path', '') for x in mailbox.folders(address, fresh=False) if x['id'] == folder), '')
+                if color and acc.get('auth') == 'google' and path:
+                    try:                                # 🎨 a Gmail label: the colour changes in Gmail itself
+                        from mailbrief.mail import gmail_labels
+                        gmail_labels.set_color(acc, path, color)
+                        inbox.set_folder_pref(address, folder, 'color', '')
+                        return {'ok': True, 'folder': folder, 'gmail': True}
+                    except Exception as exc:            # no Gmail API: kept on this computer only
+                        inbox.set_folder_pref(address, folder, 'color', color)
+                        return {'ok': True, 'folder': folder, 'note': f'הצבע נשמר רק במחשב הזה ({exc})'}
+                inbox.set_folder_pref(address, folder, 'color', color)
                 result = folder
             else:
                 raise ValueError('פעולה לא מוכרת')

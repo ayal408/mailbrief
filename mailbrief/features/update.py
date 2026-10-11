@@ -1,15 +1,20 @@
 """Updates from GitHub Releases: check, download, and swap MailBrief.exe (the new copy replaces the old one after it closes)."""
 import hashlib
+import logging
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 
 from mailbrief import __version__, config, net
 from mailbrief.net import _PUBLIC_TLS
+from mailbrief.storage import load_json
+
+log = logging.getLogger(__name__)
 
 
 REPO = 'ayal408/mailbrief'
@@ -110,3 +115,71 @@ def cleanup():
                 return
             except OSError:
                 time.sleep(0.5)
+
+
+# ---- automatic updates ---------------------------------------------------------------------------------------------------
+
+STATUS = {'version': '', 'state': ''}       # what the update banner says: 'ready' = downloaded, waiting for a quiet moment
+
+
+def auto_enabled():
+    return load_json(config.SETTINGS_FILE, {}).get('auto_update', True)
+
+
+def _idle_seconds():
+    """Seconds since the last mouse / keyboard input anywhere in Windows."""
+    import ctypes
+
+    class LASTINPUTINFO(ctypes.Structure):
+        _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
+    info = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO), 0)
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0
+    return (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000
+
+
+def _window_hidden():
+    import ctypes
+    from mailbrief import window
+    win = window.APP.get('window')
+    try:
+        return not win or not ctypes.windll.user32.IsWindowVisible(win.native.Handle.ToInt64())
+    except Exception:
+        return False
+
+
+def quiet_moment():
+    """Nobody is using MailBrief: its window is closed to the tray, or no mouse / keyboard for 10 minutes."""
+    return _window_hidden() or _idle_seconds() > 10 * 60
+
+
+def _install_now(rel):
+    from mailbrief import window
+    from mailbrief.tray import close_tray
+    log.info('auto update: installing %s', rel['version'])
+    start_update(rel)
+    if not rel.get('setup'):                # a loose MailBrief.exe: the new copy waits for this one to close
+        close_tray()
+        window.quit_app()
+
+
+def watch_auto():
+    """🔄 In the background, every half hour: a new version is installed by itself at a quiet moment — MailBrief
+    closes and opens again on the new version (drafts are saved as you write). Off in Settings → "עדכונים אוטומטיים"."""
+    def loop():
+        time.sleep(90)                          # let MailBrief finish starting first
+        while True:
+            try:
+                rel = update_available() if auto_enabled() and can_self_update() else None
+                if rel:
+                    STATUS.update(version=rel['version'], state='ready')
+                    from mailbrief.features.calendar import is_holy_time
+                    if quiet_moment() and not is_holy_time():
+                        _install_now(rel)
+                        return
+                    time.sleep(60)              # waiting for a quiet moment: look again in a minute
+                    continue
+            except Exception:
+                log.exception('auto update')
+            time.sleep(30 * 60)
+    threading.Thread(target=loop, daemon=True, name='auto-update').start()
