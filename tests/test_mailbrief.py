@@ -12,7 +12,7 @@ from email.message import EmailMessage
 from email.policy import default
 from unittest import mock
 
-from mailbrief import config, net, storage
+from mailbrief import config, hebdate, net, storage
 from mailbrief.features import automations, calendar, forwarding, google_apps, maintenance, notify, replies
 from mailbrief.mail import accounts, classify as sorting, imap, message, smtp
 from mailbrief.money import ledger
@@ -57,6 +57,17 @@ class Isolated(unittest.TestCase):
     def tearDown(self):
         for p in self.patches:
             p.stop()
+
+
+class HebrewDates(unittest.TestCase):
+    def test_known_dates(self):
+        for day, want in (('2026-09-12', 'א׳ בתשרי תשפ״ז'), ('2026-10-16', 'ה׳ בחשוון תשפ״ז'),
+                          ('2024-03-24', 'י״ד באדר ב׳ תשפ״ד'), ('2024-04-23', 'ט״ו בניסן תשפ״ד'),
+                          ('2023-12-08', 'כ״ה בכסלו תשפ״ד'), ('2000-01-01', 'כ״ג בטבת תש״ס')):
+            self.assertEqual(hebdate.text(dt.date.fromisoformat(day), True), want)
+
+    def test_gematria(self):
+        self.assertEqual([hebdate.gematria(n) for n in (1, 15, 16, 30, 5787)], ['א׳', 'ט״ו', 'ט״ז', 'ל׳', 'תשפ״ז'])
 
 
 class Classification(Isolated):

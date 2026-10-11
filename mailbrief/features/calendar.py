@@ -1,7 +1,7 @@
 """Shabbat / Yom Tov windows (Hebcal) and the user's pause switch."""
 import datetime as dt
 
-from mailbrief import config
+from mailbrief import config, hebdate
 from mailbrief import net
 from mailbrief.storage import load_json, save_json
 
@@ -57,14 +57,20 @@ def is_holy_time(now=None):
     return any(start <= now < end for start, end in windows)
 
 
+def _when(t, end=False):
+    """יום שישי ה׳ בחשוון 17:18 · the end of Shabbat: מוצאי שבת ו׳ בחשוון 18:44."""
+    name = ('מוצאי שבת' if t.weekday() == 5 else 'מוצאי החג') if end else f'יום {hebdate.DAYS[t.weekday()]}'
+    return f'{name} {hebdate.text(t.date())} {t:%H:%M}'
+
+
 def holy_status():
     now = dt.datetime.now().astimezone()
     windows = holy_windows() or []
     current = next(((s, e_) for s, e_ in windows if s <= now < e_), None)
     if current:
-        return f'🕯️ שבת/חג — האוטומציות מושהות עד {current[1]:%H:%M} ({current[1]:%d/%m})'
+        return f'🕯️ שבת/חג — האוטומציות מושהות עד {_when(current[1], True)}'
     upcoming = next(((s, e_) for s, e_ in windows if s > now), None)
-    return (f'🕯️ האוטומציות יושהו בשבת/חג הקרוב: {upcoming[0]:%d/%m %H:%M} עד {upcoming[1]:%d/%m %H:%M}'
+    return (f'🕯️ האוטומציות יושהו בשבת/חג הקרוב: מ{_when(upcoming[0])} עד {_when(upcoming[1], True)}'
             if upcoming else '🕯️ האוטומציות מושהות אוטומטית בשבתות ובחגים')
 
 
