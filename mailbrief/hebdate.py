@@ -1,4 +1,5 @@
 """Hebrew dates without a library: ה׳ בחשוון תשפ״ז (the arithmetic of the fixed Hebrew calendar, as in Calendrical Calculations)."""
+
 EPOCH = -1373427                    # 1 Tishrei of year 1, as a date.toordinal() day number
 
 DAYS = ('שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון')     # date.weekday(): Monday = 0
