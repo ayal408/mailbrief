@@ -65,7 +65,13 @@ def check_due(now=None, accounts=None):
         try:
             m.select(f'"{special_folder(m, chr(92) + "All") or "INBOX"}"', readonly=True)
             for r in mine:
-                if replied(m, r['message_id']):
+                try:
+                    answered = replied(m, r['message_id'])
+                except Exception as exc:
+                    r['error'] = str(exc)[:200]
+                    continue
+                r.pop('error', None)
+                if answered:
                     r['status'] = 'answered'
                     continue
                 subject = r['subject'] if r['subject'].lower().startswith(('re:', 'השב:')) else f'Re: {r["subject"]}'

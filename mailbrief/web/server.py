@@ -204,6 +204,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(f.read())
         if url.path == '/dashboard':
             return self._send(dashboard_page())
+        if url.path == '/reminders':
+            from mailbrief.web.reminders import reminders_page
+            number = parse_qs(url.query).get('p', ['0'])[0]
+            return self._send(reminders_page(int(number) if number.isdigit() else 0))
+        if url.path == '/today_widgets.json':
+            return self._json(today_page(widgets=True))
         if url.path == '/today':
             q = parse_qs(url.query)
             return self._send(today_page(q.get('msg', [''])[0], show_all=q.get('all', [''])[0] == '1',
@@ -275,7 +281,7 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(url.query)
             try:
                 when = toast_actions.act(q.get('id', [''])[0], q.get('do', [''])[0], q.get('sig', [''])[0])
-                text = f'⏰ תזכורת נקבעה ל-{when:%d/%m %H:%M}'
+                text = when if isinstance(when, str) else f'⏰ תזכורת נקבעה ל-{when:%d/%m %H:%M}'
             except ValueError as exc:
                 text = f'⚠️ {exc}'
             return self._send(f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>MailBrief</title>{FONT}'
@@ -1010,19 +1016,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _inbox_message(self, f):
         """(fields for outbox.schedule / build) from the writing window."""
-        mode = f.get('mode', 'new')
-        extra = {'cc': f.get('cc', ''), 'bcc': f.get('bcc', '')}
-        if f.get('ref_u', '').isdigit() and mode in ('reply', 'all', 'fwd'):
-            original = mailbox.parse(mailbox.fetch_raw(f.get('ref_a', ''), f.get('ref_f', ''), int(f['ref_u']), mark_seen=False))
-            if mode != 'fwd':
-                extra['thread'] = inbox.thread_headers(original)
-            if f.get('quote'):
-                extra['quote'] = inbox.quote_of(original, forward=mode == 'fwd')
-            if mode == 'fwd':
-                extra['forward'] = {'account': f.get('ref_a', ''), 'folder': f.get('ref_f', ''), 'uid': int(f['ref_u'])}
-        if f.get('draft_u', '').isdigit():
-            extra['draft'] = {'folder': f.get('draft_f', ''), 'uid': int(f['draft_u'])}
-        return extra
+        from mailbrief.features.drafts import message_fields
+        return message_fields(f)
 
     def post_inbox_send(self, f):
         def work():
@@ -1048,20 +1043,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_inbox_draft(self, f):
         def work():
-            acc = mailbox.account(f.get('a', ''))
-            extra = self._inbox_message(f)
-            draft = extra.pop('draft', None)
-            extra.pop('forward', None)
-            item = {'id': 'draft', 'to': outbox.addresses(f.get('to', '')), 'cc': outbox.addresses(extra.get('cc')),
-                    'bcc': outbox.addresses(extra.get('bcc')), 'subject': f.get('subject', '')[:300], 'body': f.get('body', '')[:50000],
-                    'thread': extra.get('thread'), 'quote': extra.get('quote')}
-            if f.get('html', '').strip():
-                item['html'] = outbox.rich_html(f['html'])
-            message = outbox.build(item, acc)
-            del message['X-MailBrief-Scheduled']
-            folder, uid = mailbox.save_draft(acc['email'], message, draft['uid'] if draft else None)
+            from mailbrief.features.drafts import save
+            result = save(f)
             live.bump()
-            return {'folder': folder, 'uid': uid}
+            return result
         return self._inbox_post(f, work)
 
     def post_inbox_save(self, f):
@@ -1469,8 +1454,24 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def post_reminder_delete(self, f):
-        save_json(config.REMINDERS_FILE, [r for r in load_json(config.REMINDERS_FILE, []) if r['id'] != f.get('id')])
-        return ('/today', None)
+        from mailbrief.features.reminders import remove
+        remove(f.get('id'))
+        back = f.get('back', '')
+        return (back if re.fullmatch(r'/reminders(?:\?p=\d+)?', back) else '/today', None)
+
+    def post_reminders_clear(self, f):
+        from mailbrief.features.reminders import clear
+        clear()
+        return ('/reminders' if f.get('back') == '/reminders' else '/today', None)
+
+    def post_reminder_prefs(self, f):
+        from mailbrief.storage import file_lock
+        with file_lock(config.SETTINGS_FILE):
+            settings = load_json(config.SETTINGS_FILE, {})
+            for key in ('notifications_enabled', 'reminders_enabled', 'auto_reminders'):
+                settings[key] = f.get(key) == 'on'
+            save_json(config.SETTINGS_FILE, settings)
+        return ('/?s=me&msg=' + quote('✓ העדפות התזכורות נשמרו') + '#reminderprefs', None)
 
     def post_search_download(self, f):
         query = f.get('q', '').strip()[:200]

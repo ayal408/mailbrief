@@ -3,7 +3,7 @@ import datetime as dt
 import json
 
 from mailbrief import config
-from mailbrief.features.calendar import holy_status
+from mailbrief.features.calendar import holy_status, holy_windows
 from mailbrief.features.outbox import outbox, when_for
 from mailbrief.features.replies import reply_templates, template_files
 from mailbrief.profile import profile
@@ -15,7 +15,7 @@ from mailbrief.web.token import TOKEN
 
 def _preview(choice):
     try:
-        when = when_for(choice)
+        when = when_for(choice, windows=holy_windows(saved_only=True) or [])
         return f'{when:%d/%m %H:%M}'
     except Exception:
         return ''
@@ -63,6 +63,7 @@ def compose_page(msg='', to='', subject='', body=''):
                        f'<input type="hidden" name="id" value="{e(m["id"])}"><button class="ghost" style="margin:0;padding:5px 12px" title="לשלוח עכשיו במקום לחכות">📤 עכשיו</button></form> '
                        f'<form method="post" action="/schedule_cancel" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
                        f'<input type="hidden" name="id" value="{e(m["id"])}"><button class="ghost" style="margin:0;padding:5px 12px">ביטול</button></form>',
+            'sending': '<span>📤 נשלח כעת</span>',
             'sent': '<span style="color:var(--good)">✓ נשלח</span>', 'cancelled': '<span class="muted">בוטל</span>'}
            .get(m['status'], f'<span style="color:var(--bad)">⚠️ {e(m.get("error", ""))}</span>'))
         + '</td></tr>' for m in sorted(outbox(), key=lambda m: (m['status'] != 'waiting', m['send_at'])))

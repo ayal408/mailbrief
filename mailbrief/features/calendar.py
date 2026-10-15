@@ -46,12 +46,12 @@ def holy_windows(saved_only=False):
     return windows
 
 
-def is_holy_time(now=None):
+def is_holy_time(now=None, saved_only=False):
     now = now or dt.datetime.now().astimezone()
     saved = holy_windows(saved_only=True)       # decide from the stored calendar first — no network on Shabbat
     if saved and any(start <= now < end for start, end in saved):
         return True
-    windows = holy_windows()
+    windows = saved if saved_only else holy_windows()
     if windows is None:                          # no calendar at all: play safe — Friday 14:00 to Saturday night
         return (now.weekday() == 4 and now.hour >= 14) or (now.weekday() == 5 and (now.hour, now.minute) < (20, 30))
     return any(start <= now < end for start, end in windows)
@@ -65,7 +65,7 @@ def _when(t, end=False):
 
 def holy_status():
     now = dt.datetime.now().astimezone()
-    windows = holy_windows() or []
+    windows = holy_windows(saved_only=True) or []
     current = next(((s, e_) for s, e_ in windows if s <= now < e_), None)
     if current:
         return f'🕯️ שבת/חג — האוטומציות מושהות עד {_when(current[1], True)}'

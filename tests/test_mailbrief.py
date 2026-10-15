@@ -41,7 +41,7 @@ class Isolated(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.patches = []
+        self.patches = [mock.patch('mailbrief.background.submit')]  # offline tests must never leave real refresh threads running
         for name in dir(config):
             value = getattr(config, name)
             if name.isupper() and isinstance(value, str) and value.startswith(config.HERE) and name != 'HERE':
@@ -564,7 +564,7 @@ class Comfort(Isolated):
         self.assertTrue(notify.quiet_now(dt.datetime(2026, 9, 24, 23, 0)))
         self.assertTrue(notify.quiet_now(dt.datetime(2026, 9, 24, 6, 0)))
         self.assertFalse(notify.quiet_now(dt.datetime(2026, 9, 24, 12, 0)))
-        with mock.patch.object(notify.subprocess, 'run') as run, mock.patch.object(notify, 'is_holy_time', return_value=False), \
+        with mock.patch.object(notify.subprocess, 'Popen') as run, mock.patch.object(notify, 'is_holy_time', return_value=False), \
                 mock.patch.object(notify, 'quiet_now', return_value=True):
             notify.toast('x', ['y'])
         run.assert_not_called()
@@ -950,12 +950,12 @@ class Comforts(Isolated):
 
     def test_vip_breaks_quiet_hours_only(self):
         with mock.patch.object(notify, 'is_holy_time', return_value=False), mock.patch.object(notify, 'paused_until', return_value=None), \
-                mock.patch.object(notify, 'quiet_now', return_value=True), mock.patch.object(notify.subprocess, 'run') as run:
+                mock.patch.object(notify, 'quiet_now', return_value=True), mock.patch.object(notify.subprocess, 'Popen') as run:
             notify.toast('x', ['y'])
             self.assertFalse(run.called)
             notify.toast('x', ['y'], vip=True)
             self.assertTrue(run.called)
-        with mock.patch.object(notify, 'is_holy_time', return_value=True), mock.patch.object(notify.subprocess, 'run') as run:
+        with mock.patch.object(notify, 'is_holy_time', return_value=True), mock.patch.object(notify.subprocess, 'Popen') as run:
             notify.toast('x', ['y'], vip=True)
             self.assertFalse(run.called)                                               # never on Shabbat, VIP or not
         storage.save_json(config.SETTINGS_FILE, {'quiet': {'vip': ['Boss@Corp.co.il', '@client.co.il']}})
@@ -1098,6 +1098,7 @@ class MoreFeatures(Isolated):
         self.assertEqual(attachment_risks(mk('A <a@b.co>', 'x', 'x', attach=('report.pdf', b'%PDF'))), [])
 
     def test_meeting_followup_and_holiday(self):
+        storage.save_json(config.SETTINGS_FILE, {'auto_reminders': True})
         from mailbrief.features import meetings
         events = [{'title': 'פגישה עם דנה', 'time': '10:00', 'link': '', 'attendees': ['dana@client.co.il']},
                   {'title': 'לבד', 'time': '12:00', 'link': '', 'attendees': []}]

@@ -1,3 +1,3 @@
 """MailBrief — a local weekly mail brief for any mailbox (no AI)."""
 
-__version__ = '1.3.7'
+__version__ = '1.4.0'

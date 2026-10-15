@@ -5,6 +5,8 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+    branches: [main]
+    paths: ['mailbrief/__init__.py']
 
 permissions:
   contents: write          # create the release
@@ -29,21 +31,32 @@ jobs:
       - name: Tools
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
 
-      - name: Tag matches the version in the code
+      - name: Resolve and validate the release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = '${{ github.ref_name }}'.TrimStart('v')
           $code = python -c "import mailbrief; print(mailbrief.__version__)"
-          if ($tag -ne $code) { throw "Tag v$tag but mailbrief/__init__.py says $code - run .\release.ps1 $tag" }
-          "VERSION=$tag" >> $env:GITHUB_ENV
+          if ($code -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
+          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$code") { throw 'Tag and code version differ' }
+          "VERSION=$code" >> $env:GITHUB_ENV
+          "RELEASE_TAG=v$code" >> $env:GITHUB_ENV
+          gh release view "v$code" --json tagName 2>$null | Out-Null
+          $exists = $LASTEXITCODE -eq 0
+          "publish=$((-not $exists).ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          exit 0
 
       - name: Lint
+        if: steps.version.outputs.publish == 'true'
         run: python -m pyflakes main.py mailbrief tests
 
       - name: Tests
+        if: steps.version.outputs.publish == 'true'
         run: python -m unittest discover -s tests
 
       - name: Build MailBrief.exe
+        if: steps.version.outputs.publish == 'true'
         shell: pwsh
         env:
           GOOGLE_CLIENT_JSON: ${{ secrets.GOOGLE_CLIENT_JSON }}     # the built-in Google sign-in key (set-google-key.ps1)
@@ -67,6 +80,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'PyInstaller failed' }
 
       - name: Build the installer (MailBrief-Setup.exe)
+        if: steps.version.outputs.publish == 'true'
         shell: pwsh
         run: |
           $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -81,6 +95,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'Inno Setup failed' }
 
       - name: Check the EXE
+        if: steps.version.outputs.publish == 'true'
         shell: pwsh
         run: |
           $exe = 'dist\MailBrief.exe'
@@ -91,6 +106,7 @@ jobs:
           if ((Get-Item dist\MailBrief-Setup.exe).Length -lt 5MB) { throw 'MailBrief-Setup.exe is suspiciously small' }
 
       - name: GitHub release
+        if: steps.version.outputs.publish == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -99,11 +115,18 @@ jobs:
           **התקנה:** להוריד את ``MailBrief-Setup.exe`` למטה ולהריץ (בלי הרשאות מנהל) · או ``winget install mailbrief`` · או ``MailBrief.exe`` נייד בלי התקנה.
           מי שכבר מותקן יקבל בתוכנה כפתור „✨ עדכון עכשיו”.
 
+          **מה חדש בגרסה הזו:**
+          - ממשק יציב ושקט: שמירת מיקום גלילה ובחירה, בלי סיורים ואנימציות אוטומטיים.
+          - טעינת מסכים מהירה ורענון נתונים ברקע, בלי להפריע לכתיבה ולקריאה.
+          - שליטה בתזכורות: כיבוי, ביטול תזכורת בודדת ו״לא להזכיר שוב״.
+          - תיקוני שליחה כפולה, טיוטות וקבצים מצורפים, אוטומציות וגיבויים.
+
           > בהורדה ידנית Windows SmartScreen עשוי להזהיר כי הקובץ לא חתום: „מידע נוסף” ← „הפעל בכל זאת”.
           "@
-          gh release create '${{ github.ref_name }}' dist/MailBrief-Setup.exe dist/MailBrief.exe --title "MailBrief $env:VERSION" --notes $notes --generate-notes --verify-tag
+          gh release create $env:RELEASE_TAG dist/MailBrief-Setup.exe dist/MailBrief.exe --target '${{ github.sha }}' --title "MailBrief $env:VERSION" --notes $notes --generate-notes
 
       - name: Send the new version to winget
+        if: steps.version.outputs.publish == 'true'
         shell: pwsh
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}

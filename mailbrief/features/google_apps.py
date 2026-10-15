@@ -10,7 +10,7 @@ from mailbrief import config
 from mailbrief.mail.accounts import APPS_SCOPES
 from mailbrief.mail.oauth import access_token
 from mailbrief.net import _PUBLIC_TLS, netfree_block, require_online
-from mailbrief.storage import load_json, save_json
+from mailbrief.storage import file_lock, load_json, save_json
 
 
 SCOPES = ' '.join(APPS_SCOPES)
@@ -141,9 +141,10 @@ def import_invite(acc, resource):
 
 
 def forget_cache():
-    cache = load_json(config.CACHE_FILE, {})
-    if cache.pop('gapps', None) is not None:
-        save_json(config.CACHE_FILE, cache)
+    with file_lock(config.CACHE_FILE):
+        cache = load_json(config.CACHE_FILE, {})
+        if cache.pop('gapps', None) is not None:
+            save_json(config.CACHE_FILE, cache)
 
 
 def today_overview(max_age_min=5):
@@ -162,7 +163,21 @@ def today_overview(max_age_min=5):
             result[key] = fetch(acc)
         except Exception as exc:
             result[key + '_error'] = str(exc)
-    if 'events' in result or 'tasks' in result:
+    with file_lock(config.CACHE_FILE):
+        cache = load_json(config.CACHE_FILE, {})
         cache['gapps'] = result
         save_json(config.CACHE_FILE, cache)
     return result
+
+
+def cached_overview():
+    from mailbrief.background import submit
+    acc = gapps_account()
+    if not acc:
+        return None
+    hit = load_json(config.CACHE_FILE, {}).get('gapps')
+    current = hit and hit.get('account') == acc['email'] and hit.get('day') == dt.date.today().isoformat()
+    if not current or time.time() - hit.get('at', 0) >= 5 * 60:
+        submit('gapps-' + acc['email'], today_overview)
+    return hit if current else {'account': acc['email'], 'events': [], 'tasks': [],
+                                'events_error': 'היומן מתעדכן ברקע…', 'tasks_error': 'המשימות מתעדכנות ברקע…'}

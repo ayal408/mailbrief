@@ -30,16 +30,20 @@ def buttons(item):
                       'account': item.get('account', ''), 'at': dt.datetime.now().isoformat(timespec='minutes')}
     save_json(_path(), dict(sorted(items.items(), key=lambda kv: kv[1]['at'])[-60:]))
     return [(label, link(f'toast_act?id={item_id}&do={action}&sig={sign(item_id, action)}'))
-            for label, action in (('⏰ להזכיר בעוד שעה', 'hour'), ('📅 מחר בבוקר', 'tomorrow'))]
+            for label, action in (('⏰ להזכיר בעוד שעה', 'hour'), ('📅 מחר בבוקר', 'tomorrow'), ('לא להזכיר שוב', 'dismiss'))]
 
 
 def act(item_id, action, signature, now=None):
     """Sets the reminder. Returns a short message, or raises ValueError for a bad / old link."""
-    if action not in ('hour', 'tomorrow') or not hmac.compare_digest(signature or '', sign(item_id, action)):
+    if action not in ('hour', 'tomorrow', 'dismiss') or not hmac.compare_digest(signature or '', sign(item_id, action)):
         raise ValueError('קישור לא תקין')
     item = load_json(_path(), {}).get(item_id)
     if not item:
         raise ValueError('ההתראה ישנה מדי')
+    if action == 'dismiss':
+        from mailbrief.features.reminders import decline
+        decline(item['subject'], item['account'])
+        return 'התזכורת בוטלה — לא נזכיר שוב'
     now = now or dt.datetime.now().astimezone()
     when = now + dt.timedelta(hours=1) if action == 'hour' else (now + dt.timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
     remind_at(when, item['subject'], item['from'], item['link'], item['account'])

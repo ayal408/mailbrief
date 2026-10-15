@@ -5,13 +5,26 @@ import smtplib
 from email.message import EmailMessage
 from email.utils import formatdate
 from email.utils import make_msgid
-from email.utils import parseaddr
+from email.utils import getaddresses, parseaddr
 
 from mailbrief.mail.message import _part_text, body_text, decode
 from mailbrief.mail.oauth import access_token, PROVIDERS
 from mailbrief.net import TLS
 from mailbrief.storage import decrypt
 from mailbrief.util import e
+
+
+class PartialDelivery(RuntimeError):
+    """Some recipients were accepted; retrying the whole message would duplicate delivery."""
+    def __init__(self, refused, recipients):
+        self.refused = {addr: {'code': code, 'message': (text.decode('utf-8', 'replace') if isinstance(text, bytes) else str(text))}
+                        for addr, (code, text) in refused.items()}
+        self.accepted = [addr for addr in recipients if addr not in refused]
+        super().__init__('נשלח רק לחלק מהנמענים. נדחו: ' + ', '.join(self.refused))
+
+
+class DeliveryUncertain(RuntimeError):
+    """The connection broke during submission; the server may already have accepted the message."""
 
 
 def build_reply(original, acc, text, auto):
@@ -52,7 +65,17 @@ def send_mail(acc, message):
                 raise RuntimeError(f'השרת דחה את השליחה ({code}) — ייתכן שצריך להתחבר מחדש לתיבה')
         else:
             server.login(acc['user'], decrypt(acc['password']))
-        server.send_message(message)
+        recipients = [addr for _, addr in getaddresses(message.get_all('To', []) + message.get_all('Cc', []) + message.get_all('Bcc', []))]
+        try:
+            refused = server.send_message(message)
+        except smtplib.SMTPServerDisconnected as exc:
+            raise DeliveryUncertain('החיבור נותק בזמן שליחה — יש לבדוק בדואר שנשלח לפני שליחה נוספת') from exc
+        except smtplib.SMTPException:
+            raise
+        except OSError as exc:
+            raise DeliveryUncertain('החיבור נותק בזמן שליחה — יש לבדוק בדואר שנשלח לפני שליחה נוספת') from exc
+        if refused:
+            raise PartialDelivery(refused, recipients)
     finally:
         try:
             server.quit()

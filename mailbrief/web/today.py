@@ -12,7 +12,7 @@ from mailbrief.money.books import missing_invoices
 from mailbrief import config
 from mailbrief import net
 from mailbrief.features.alerts import upcoming_payments
-from mailbrief.features.google_apps import today_overview
+from mailbrief.features.google_apps import cached_overview as today_overview
 from mailbrief.features.invites import invite_key, upcoming, when_text
 from mailbrief.features.calendar import CITIES, holy_status
 from mailbrief.features.replies import reply_templates, vacation_active
@@ -22,7 +22,7 @@ from mailbrief.money.accountant import price_change_text, price_changes
 from mailbrief.features.outbox import outbox
 from mailbrief.features.snooze import snoozed
 from mailbrief.view import current_account, dot, mine
-from mailbrief.features.today import FORTUNES, project_pulse, projects_root, WEATHER
+from mailbrief.features.today import FORTUNES, cached_projects as project_pulse, projects_root, WEATHER
 from mailbrief.money.ledger import find_subscriptions
 from mailbrief.storage import load_json
 from mailbrief.util import e
@@ -164,14 +164,26 @@ def dismiss_button(r):
                f'<button style="{SMALL}" title="לחסום את השולח — מיילים ממנו לא יגיעו יותר לדואר הנכנס">🚫</button></form>' if r.get('sender') else ''))
 
 
-def today_page(msg='', show_all=False, print_now=False):
+TODAY_REFRESH = """<script>(function(){var attempts=0,generation=window.__mbToday=(window.__mbToday||0)+1;function refresh(){if(++attempts>30||location.pathname!='/today'||generation!==window.__mbToday)return;
+fetch('/today_widgets.json',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
+Object.keys(d.cards||{}).forEach(function(key){var old=document.querySelector('[data-live="'+key+'"]');
+if(!old||old.contains(document.activeElement)||old.matches(':hover'))return;var t=document.createElement('template');t.innerHTML=d.cards[key];
+var fresh=t.content.firstElementChild;if(!fresh||old.isEqualNode(fresh))return;
+var y=window.scrollY,anchor=Array.prototype.find.call(document.querySelectorAll('#today-grid>.box'),function(el){return el.getBoundingClientRect().bottom>0;});
+var top=anchor&&anchor.getBoundingClientRect().top;old.replaceWith(fresh);
+if(anchor&&anchor.isConnected)window.scrollTo(0,y+anchor.getBoundingClientRect().top-top);});
+if(d.pending)setTimeout(refresh,3000);}).catch(function(){});}setTimeout(refresh,1000);})();</script>"""
+
+
+def today_page(msg='', show_all=False, print_now=False, widgets=False):
     now = dt.datetime.now()
     city = load_json(config.SETTINGS_FILE, {}).get('city', 'ירושלים')
     lat, lon = CITIES.get(city, CITIES['ירושלים'])
     days = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
-    heb = (net.cached_json('hebdate', f'https://www.hebcal.com/converter?cfg=json&date={now.date()}&g2h=1&strict=1', 360) or {}).get('hebrew', '')
+    from mailbrief import hebdate
+    heb = hebdate.text(now.date())
 
-    w = net.cached_json('weather', 'https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,weather_code'
+    w = net.background_json('weather', 'https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,weather_code'
                     '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia/Jerusalem&forecast_days=1'
                     .format(lat, lon), 30)
     weather = '<span class="muted">אין חיבור לתחזית כרגע</span>'
@@ -183,14 +195,14 @@ def today_page(msg='', show_all=False, print_now=False):
                    f'<span class="muted">{word} · {round(w["daily"]["temperature_2m_min"][0])}°–{round(w["daily"]["temperature_2m_max"][0])}°'
                    f'{f" · ☔ {rain}% גשם" if rain else ""}</span>')
 
-    shabbat = net.cached_json('shabbat', f'https://www.hebcal.com/shabbat?cfg=json&geo=pos&latitude={lat}&longitude={lon}'
+    shabbat = net.background_json('shabbat', f'https://www.hebcal.com/shabbat?cfg=json&geo=pos&latitude={lat}&longitude={lon}'
                           '&tzid=Asia/Jerusalem&M=on&lg=he', 360) or {'items': []}
     times = ''.join(f'<li>{"🕯️" if i["category"] == "candles" else "🍷"} {e(i.get("hebrew") or i["title"])} — '
                     f'{e(days[dt.datetime.fromisoformat(i["date"]).weekday()])} {e(i["date"][11:16])}</li>'
                     for i in shabbat['items'] if i['category'] in ('candles', 'havdalah'))
     parasha = next((i.get('hebrew') or i['title'] for i in shabbat['items'] if i['category'] == 'parashat'), '')
     end = now.date() + dt.timedelta(days=21)
-    hol = net.cached_json('holidays', f'https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=on&mod=on&i=on&lg=he'
+    hol = net.background_json('holidays', f'https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=on&mod=on&i=on&lg=he'
                       f'&start={now.date()}&end={end}', 360) or {'items': []}
     holidays = ''.join(f'<li>{e(i.get("hebrew") or i["title"])} — {e(dt.date.fromisoformat(i["date"][:10]).strftime("%d/%m"))}</li>'
                        for i in hol['items'][:6])
@@ -198,8 +210,16 @@ def today_page(msg='', show_all=False, print_now=False):
     wanted = set(goals())
     def want(*keys):
         return show_all or not keys or bool(wanted & set(keys))
-    card = lambda title, body: (f'<div class="box{" imp" if title.startswith(IMPORTANT_CARDS) else ""}" style="background:var(--surface);border:1px solid var(--line);'
-                                f'border-radius:16px;padding:16px 18px"><h3 style="margin:0 0 8px">{title}</h3>{body}</div>')
+    live_cards = {}
+    def card(title, body):
+        key = next((key for prefix, key in (('🌤️', 'weather'), ('🕯️', 'shabbat'), ('📅 היום ביומן', 'calendar'),
+                                             ('✅ משימות', 'tasks'), ('💻', 'projects')) if title.startswith(prefix)), '')
+        result = (f'<div data-live="{key}" class="box{" imp" if title.startswith(IMPORTANT_CARDS) else ""}" '
+                  f'style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;{"min-height:220px;" if key else ""}">'
+                  f'<h3 style="margin:0 0 8px">{title}</h3>{body}</div>')
+        if key:
+            live_cards[key] = result
+        return result
     important = important_senders()
     from mailbrief.features.email_notes import notes as email_notes
     note_rows = email_notes()
@@ -319,7 +339,7 @@ def today_page(msg='', show_all=False, print_now=False):
     reminders = ''.join(
         f'<li dir="auto">{e(r["subject"][:60])} <span class="muted">— {e(r["from"])} · {dt.datetime.fromisoformat(r["due"]):%d/%m %H:%M}</span>'
         f'<form method="post" action="/reminder_delete" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
-        f'<input type="hidden" name="id" value="{e(r["id"])}"><button style="font:inherit;font-size:12px;padding:0 6px;margin:0 4px;border:0;background:transparent;color:var(--muted);cursor:pointer">✕</button></form></li>'
+        f'<input type="hidden" name="id" value="{e(r["id"])}"><button style="font:inherit;font-size:12px;padding:0 6px;margin:0 4px;border:0;background:transparent;color:var(--muted);cursor:pointer">לא להזכיר שוב</button></form></li>'
         for r in sorted((r for r in load_json(config.REMINDERS_FILE, []) if mine(r, current=box)), key=lambda r: r['due'])[:8]) or '<li class="muted">אין תזכורות</li>'
     urgent = ''.join(mail_row(r, e(r['why']), imp=True) for r in snap.get('urgent', [])[:6]) or '<li class="muted">אין משהו דחוף</li>'
 
@@ -404,7 +424,7 @@ def today_page(msg='', show_all=False, print_now=False):
 body{background:#fff!important;color:#000!important;zoom:.9}main{box-shadow:none!important;border:0!important;margin:0!important;max-width:none!important}
 a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;box-shadow:none!important;border:1px solid #bbb!important}
 *{animation:none!important;transition:none!important}}</style>''' + ('<script>setTimeout(function(){window.print()},700)</script>' if print_now else '')
-    return page('היום שלי', f'''
+    rendered = page('היום שלי', f'''
 {printing}<h1>היום שלי <span class="floaty">☀️</span></h1>
 <p style="font-size:19px;margin:4px 0">יום {days[now.weekday()]}, {now:%d/%m/%Y}{f" · {e(heb)}" if heb else ""}{f" · פרשת {e(parasha.replace('פרשת ', ''))}" if parasha else ""}</p>
 <p class="muted" style="font-style:italic">🥠 {e(fortune)}</p>{update_banner()}{vacation_note}{f'<div class="item urgent">{e(msg)}</div>' if msg else ''}
@@ -419,7 +439,7 @@ a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;b
 {snoozed_card}
 {card("📤 מחכה לתשובה מהם" + SORTER.format(list='list-awaiting'), f'<ul id="list-awaiting" class="sortable">{awaiting}</ul>') if want('replies') else ''}{invites_card if want('calendar') else ''}
 {card("💸 תשלומים קרובים", f'<ul style="margin:0;padding-inline-start:18px">{payments}</ul>') if want('money') else ''}
-{card("⏰ תזכורות", f'<ul style="margin:0;padding-inline-start:18px">{reminders}</ul>') if want('focus', 'replies') else ''}
+{card("⏰ תזכורות", f'<a href="/?s=me#reminderprefs" style="font-size:13px">🔕 הגדרות וכיבוי תזכורות</a> · <a href="/reminders">כל התזכורות</a><ul style="margin:8px 0;padding-inline-start:18px">{reminders}</ul><form method="post" action="/reminders_clear"><input type="hidden" name="t" value="{TOKEN}"><button class="ghost">ביטול כל התזכורות</button></form>') if want('focus', 'replies') else ''}
 {card("📌 מועדים מהמיילים", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(deadline_row(k, d) for k, d in due_soon[:6]) + '</ul>') if due_soon else ''}
 {card("⭐ מאנשים חשובים", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">' + (f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:60])}</a>' if r.get('link') else e(r['subject'][:60])) + f' <span class="muted">— {e(r["from"])}</span></li>' for r in important[:6]) + '</ul>') if important else ''}
 {card(f"🕯️ לפני {e(prep['name'] or 'החג')} — מה לסגור", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{e(line)}</li>' for line in holiday_lines(prep)) + '</ul>') if prep and holiday_lines(prep) else ''}
@@ -438,3 +458,8 @@ a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;b
  '<a href="/today?all=1">✨ להציג הכול</a> <span class="muted" style="font-size:13px">· מה מוצג — בהגדרות ← 👤 הפרופיל שלי</span>'}</p>
 <p class="muted" style="margin-top:24px;font-size:13px">נתוני המייל מהבדיקה האחרונה ({e(snap.get("at", "עוד לא רצה"))}) ·
 <a href="/insights">🔎 30 הימים שלך</a> · <a href="/search">🔍 חיפוש</a> · <a href="/dashboard">📊 לוח בקרה</a> · <a href="/">⚙️ הגדרות</a></p>''')
+
+    if widgets:
+        from mailbrief.background import pending
+        return {'cards': live_cards, 'pending': pending()}
+    return rendered.replace('</main>', TODAY_REFRESH + '</main>', 1) if not print_now else rendered

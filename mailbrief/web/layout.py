@@ -13,12 +13,14 @@ STYLE = """
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14121a;--surface:#1e1b26;--ink:#f3eff8;--muted:#a39cb0;--line:#2e2a38;--accent:#a78bfa;--accent-2:#fb923c;--warn:#fb923c;--bad:#f87171;--good:#4ade80;--shadow:0 10px 30px rgba(0,0,0,.35);--glass:rgba(20,18,26,.86);--oval:rgba(167,139,250,.13);color-scheme:dark}}
 :root[data-theme=dark]{--bg:#14121a;--surface:#1e1b26;--ink:#f3eff8;--muted:#a39cb0;--line:#2e2a38;--accent:#a78bfa;--accent-2:#fb923c;--warn:#fb923c;--bad:#f87171;--good:#4ade80;--shadow:0 10px 30px rgba(0,0,0,.35);--glass:rgba(20,18,26,.86);--oval:rgba(167,139,250,.13);color-scheme:dark}
 *{box-sizing:border-box}
-body{margin:0;color:var(--ink);font-family:Rubik,system-ui,sans-serif;line-height:1.5;min-height:100vh;background-color:var(--bg);
+html{scrollbar-gutter:stable;scroll-behavior:auto}
+main{overflow-anchor:none}
+body{margin:0;color:var(--ink);font-family:system-ui,sans-serif;line-height:1.5;min-height:100vh;background-color:var(--bg);
 background-image:radial-gradient(ellipse 46% 330px at 50% 0,var(--oval),transparent 100%);background-repeat:no-repeat}
 body,main,.box,.item,.kpi,table,nav.tabs{transition:background-color .3s,border-color .3s,color .3s}
-main{max-width:1040px;margin:0 auto 64px;padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);animation:rise .35s ease}a{color:var(--accent)}
+main{max-width:1040px;margin:0 auto 64px;padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);animation:none}a{color:var(--accent)}
 @media(max-width:760px){main{margin:0 8px 40px;padding:20px 14px 28px;border-radius:20px}}
-main.swap{animation:rise .35s ease}main.fading{opacity:.5;filter:saturate(.7);transition:opacity .2s,filter .2s}
+main.swap{animation:none}main.fading{opacity:1;filter:none}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}}
 h1{font-size:24px;font-weight:700;margin:0 0 4px}main h1 .g{background:none;color:inherit}
 .g{background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -36,12 +38,12 @@ table{width:100%;border-collapse:collapse;background:var(--surface);border:1px s
 th,td{text-align:start;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px}th{color:var(--muted);font-weight:500;background:var(--bg)}
 .scroll{overflow-x:auto}.err{background:var(--surface);border:1px solid var(--bad);color:var(--bad);border-radius:14px;padding:12px 16px}
 .hero{position:relative;text-align:center;padding:48px 16px 24px;max-width:1040px;margin:0 auto}
-.hero .gift{font-size:72px;cursor:pointer;display:inline-block;text-decoration:none;animation:wobble 2.4s ease-in-out infinite;user-select:none}
+.hero .gift{font-size:48px;cursor:pointer;display:inline-block;text-decoration:none;animation:none;user-select:none}
 @keyframes wobble{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg) scale(1.05)}40%{transform:rotate(10deg)}60%{transform:rotate(-6deg)}}
 .hero h1.name{background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;}
 .hero .name{font-size:clamp(32px,6vw,56px);font-weight:900;margin:8px 0 4px;letter-spacing:-.5px;line-height:1.2}
-.hero .tag{color:var(--muted);font-size:18px;margin:0;min-height:28px}
-.caret{display:inline-block;width:2px;height:1em;background:var(--accent);vertical-align:-2px;margin-inline-start:2px;animation:blink 1s steps(1) infinite}
+.hero .tag{height:28px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:18px;margin:0;min-height:28px}
+.caret{display:none;width:2px;height:1em;background:var(--accent);vertical-align:-2px;margin-inline-start:2px;animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 .hero .corner{position:absolute;top:14px;inset-inline-end:16px;display:flex;gap:8px;align-items:center}
 .hero .corner>:not(.fchip),.hero .corner>.fchip.on{height:32px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:5px;line-height:1}
@@ -51,7 +53,7 @@ nav.tabs{position:sticky;top:0;z-index:5;display:flex;gap:8px;justify-content:ce
 nav.tabs.stuck{background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 1px 0 var(--line)}
 nav.tabs a{font-size:16px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 18px;border-radius:999px;text-decoration:none;
 transition:.15s;white-space:nowrap}
-nav.tabs a:hover{border-color:var(--accent);transform:translateY(-1px)}
+nav.tabs a:hover{border-color:var(--accent);transform:none}
 nav.tabs a.on{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 35%,transparent)}
 .mbxs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:-4px 16px 16px}
 .mbx{font:inherit;font-size:13px;border:1px dashed var(--line);background:transparent;color:var(--muted);padding:4px 12px;border-radius:999px;cursor:pointer;margin:0;display:inline-flex;align-items:center}
@@ -70,13 +72,12 @@ button{transition:filter .15s,transform .1s}button:hover:not(:disabled){filter:b
 button:disabled{opacity:.5;cursor:default}
 button.ghost{background:transparent!important;color:var(--ink)!important;border:1px solid var(--line)!important}button.ghost:hover:not(:disabled){border-color:var(--accent)!important;filter:none}
 main .kpi,main .item,main .box{background:var(--bg)!important;box-shadow:none}main .item.urgent{box-shadow:inset 4px 0 0 var(--warn)}main .item.bad{box-shadow:inset 4px 0 0 var(--bad)}main .kpi{border-radius:12px}
-main .box:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))!important}
+main .box:hover{transform:none;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))!important}
 footer.foot{text-align:center;color:var(--muted);margin-top:40px;font-size:13px}
 """
 
 
-FONT = ('<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">'
-        + FAVICON + extras.BOOT)
+FONT = FAVICON + extras.BOOT
 
 
 TABS = [('/inbox', '📥', 'דואר נכנס'), ('/today', '☀️', 'היום שלי'), ('/', '⚙️', 'הגדרות'), ('/dashboard', '📊', 'לוח בקרה'), ('/stats', '📈', 'במספרים'),
@@ -130,10 +131,10 @@ def top_bar(active=''):
 
 def update_banner():
     """A friendly "new version" strip; quiet when offline or when running from source."""
-    from mailbrief.features.update import auto_enabled, can_self_update, update_available
+    from mailbrief.features.update import auto_enabled, can_self_update, cached_update
     from mailbrief.web.token import TOKEN
     try:
-        rel = update_available()
+        rel = cached_update()
     except Exception:
         rel = None
     if not rel:

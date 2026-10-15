@@ -5,7 +5,7 @@ import datetime as dt
 from mailbrief import config
 from mailbrief.features import google_apps
 from mailbrief.features.calendar import holy_windows
-from mailbrief.features.reminders import add_reminder
+from mailbrief.features.reminders import add_reminder, automatic_enabled
 from mailbrief.storage import load_json
 
 
@@ -13,20 +13,23 @@ from mailbrief.storage import load_json
 
 def meeting_followups(state, today=None):
     """Once a day: yesterday's meetings that had other participants -> a reminder at 09:00 today. Returns how many."""
+    if not automatic_enabled():
+        return 0
     today = today or dt.date.today()
     if state.get('_meetings') == today.isoformat():
         return 0
     acc = google_apps.gapps_account()
     if not acc:
         return 0
-    state['_meetings'] = today.isoformat()
     made = 0
-    for ev in google_apps.events_on(acc, today - dt.timedelta(days=1)):
+    events = google_apps.events_on(acc, today - dt.timedelta(days=1))
+    state['_meetings'] = today.isoformat()
+    for ev in events:
         if not ev.get('attendees') or ev['time'] == 'כל היום':
             continue
         who = ', '.join(ev['attendees'][:3]) + (f' ועוד {len(ev["attendees"]) - 3}' if len(ev['attendees']) > 3 else '')
         add_reminder(0, f'📝 לשלוח סיכום פגישה: {ev["title"]}', who, ev.get('link', ''), acc['email'],
-                     note='מה סוכם, מי עושה מה ועד מתי')
+                     note='מה סוכם, מי עושה מה ועד מתי', source='meeting')
         made += 1
     return made
 
