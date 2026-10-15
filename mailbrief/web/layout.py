@@ -38,12 +38,12 @@ table{width:100%;border-collapse:collapse;background:var(--surface);border:1px s
 th,td{text-align:start;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px}th{color:var(--muted);font-weight:500;background:var(--bg)}
 .scroll{overflow-x:auto}.err{background:var(--surface);border:1px solid var(--bad);color:var(--bad);border-radius:14px;padding:12px 16px}
 .hero{position:relative;text-align:center;padding:48px 16px 24px;max-width:1040px;margin:0 auto}
-.hero .gift{font-size:48px;cursor:pointer;display:inline-block;text-decoration:none;animation:none;user-select:none}
+.hero .gift{font-size:48px;cursor:pointer;display:inline-block;text-decoration:none;animation:wobble 2.4s ease-in-out infinite;user-select:none}
 @keyframes wobble{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg) scale(1.05)}40%{transform:rotate(10deg)}60%{transform:rotate(-6deg)}}
 .hero h1.name{background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;}
 .hero .name{font-size:clamp(32px,6vw,56px);font-weight:900;margin:8px 0 4px;letter-spacing:-.5px;line-height:1.2}
 .hero .tag{height:28px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:18px;margin:0;min-height:28px}
-.caret{display:none;width:2px;height:1em;background:var(--accent);vertical-align:-2px;margin-inline-start:2px;animation:blink 1s steps(1) infinite}
+.caret{display:inline-block;width:2px;height:1em;background:var(--accent);vertical-align:-2px;margin-inline-start:2px;animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 .hero .corner{position:absolute;top:14px;inset-inline-end:16px;display:flex;gap:8px;align-items:center}
 .hero .corner>:not(.fchip),.hero .corner>.fchip.on{height:32px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:5px;line-height:1}

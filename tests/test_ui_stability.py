@@ -44,6 +44,15 @@ function renderList(){rows.querySelectorAll=()=>[{dataset:{key:'selected'},getBo
 drawList();assert.equal(rows.scrollTop,140);assert.equal(focused,true);
 ''')
 
+    def test_fresh_response_after_cached_list_keeps_user_scroll(self):
+        fn = inbox.JS.split('function loadList(opts){', 1)[1].split("$('ib-cats').addEventListener", 1)[0]
+        self.run_js('''const assert=require('node:assert/strict');var listSeq=0,pending=[],rows={scrollTop:0},S={acc:'a',folder:'INBOX',page:0,q:'',unread:false,items:[],checked:{}};
+function $(){return rows;}function api(){return new Promise(resolve=>pending.push(resolve));}function group(items){return items;}function drawList(){}function toast(){}function esc(s){return s;}
+''' + 'function loadList(opts){' + fn + '''
+(async()=>{loadList();pending[0]({items:[{key:'one'}],total:1});await new Promise(setImmediate);rows.scrollTop=320;
+pending[1]({items:[{key:'two'},{key:'one'}],total:2});await new Promise(setImmediate);assert.equal(rows.scrollTop,320);})();
+''')
+
     def test_message_from_another_account_with_same_uid_cannot_overwrite_reader(self):
         fn = inbox.JS.split('function openMessage(', 1)[1].split('function moveOptions(', 1)[0]
         self.run_js('''
@@ -59,9 +68,9 @@ pending[1]({account:'second@example.com',folder:'INBOX',uid:7});await new Promis
 assert.deepEqual(drawn,['second@example.com']);})();
 ''')
 
-    def test_motion_is_disabled_before_initial_paint_by_default(self):
+    def test_motion_enabled_by_default_and_user_can_disable(self):
         script = re.search(r'<script>(.*?)</script>', extras.BOOT, re.S)[1]
-        self.run_js('const assert=require("node:assert/strict");var attrs={};var document={documentElement:{setAttribute(k,v){attrs[k]=v;}}};var localStorage={getItem(){return null;}};' + script + ';assert.equal(attrs["data-still"],"");')
+        self.run_js('const assert=require("node:assert/strict");var attrs={};var document={documentElement:{setAttribute(k,v){attrs[k]=v;}}};var localStorage={getItem(){return null;}};' + script + ';assert.equal(attrs["data-still"],undefined);')
 
     def test_scripts_remain_valid_javascript(self):
         scripts = [inbox.JS] + re.findall(r'<script>(.*?)</script>', extras.HTML + extras.BOOT, re.S)

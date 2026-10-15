@@ -135,7 +135,7 @@ def important_senders():
     return {p if '@' in p else '@' + p for p in people if p}
 
 
-IMPORTANT_TOGGLE = '''<style>main.mb-imp #today-grid>.box:not(.imp){display:none}main.mb-imp #today-grid li[data-imp="0"]{display:none}
+IMPORTANT_TOGGLE = '''<style>main.mb-imp #today-grid>.box:not(.imp),main.mb-imp .mailbox-day .box:not(.imp){display:none}main.mb-imp #today-grid li[data-imp="0"],main.mb-imp .mailbox-day li[data-imp="0"]{display:none}
 main.mb-imp #mb-imp-btn{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}</style>
 <script>(function(){var b=document.getElementById('mb-imp-btn'),m=document.querySelector('main');if(!b||!m)return;
 function set(on){m.classList.toggle('mb-imp',on);b.textContent=on?'🎯 רק חשוב ✓ (להציג הכול)':'🎯 רק חשוב';try{localStorage.setItem('mb-imp',on?'1':'');}catch(e){}}
@@ -220,7 +220,7 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
         if key:
             live_cards[key] = result
         return result
-    important = important_senders()
+    important_addresses = important_senders()
     from mailbrief.features.email_notes import notes as email_notes
     note_rows = email_notes()
     snap = load_json(config.SNAPSHOT_FILE, {})
@@ -301,7 +301,7 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
         button += note_button(r, note_rows)
         button += dismiss_button(r)
         sender = (r.get('sender') or '').lower()
-        imp = imp or sender in important or '@' + sender.rsplit('@', 1)[-1] in important
+        imp = imp or sender in important_addresses or '@' + sender.rsplit('@', 1)[-1] in important_addresses
         return (f'<li dir="auto" data-imp="{int(imp)}" data-days="{r.get("days", 0)}" data-name="{e(r["from"])}" data-account="{e(r.get("account", ""))}">'
                 f'{dot(r.get("account", ""))}{title}{thread} <span class="muted">— {e(r["from"])} · {tail}</span>{button}'
                 + (f'<div style="font-size:13px;color:var(--accent);margin-top:2px" dir="auto">📝 {e(note_rows[triage_key(r)]["text"])}</div>'
@@ -324,8 +324,6 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
         f'<input type="hidden" name="id" value="{e(s["id"])}"><button style="{SMALL}">להחזיר עכשיו</button></form></li>'
         for s in sorted(sleeping, key=lambda s: s['until'])[:8]) + '</ul>') if sleeping else ''
     handled = dismissed()
-    waiting = ''.join(mail_row(r, f'⏳ {r["days"]} ימים', remind=True)
-                      for r in by_thread([r for r in snap.get('waiting', []) if triage_key(r) not in handled])[:20]) or '<li class="muted">אין — הכול נענה ✨</li>'
     def when(left):
         return 'היום!' if left == 0 else 'מחר' if left == 1 else f'בעוד {left} ימים' if left > 0 else f'עבר לפני {-left} ימים'
     payments = ''.join(
@@ -336,12 +334,6 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
     vac = vacation_active()
     vacation_note = (f'<div class="item urgent">🏖️ מצב חופשה פעיל עד {vac["to"][8:10]}/{vac["to"][5:7]} — מי שכותב/ת מקבל/ת מענה אוטומטי.</div>'
                      if vac else '')
-    reminders = ''.join(
-        f'<li dir="auto">{e(r["subject"][:60])} <span class="muted">— {e(r["from"])} · {dt.datetime.fromisoformat(r["due"]):%d/%m %H:%M}</span>'
-        f'<form method="post" action="/reminder_delete" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
-        f'<input type="hidden" name="id" value="{e(r["id"])}"><button style="font:inherit;font-size:12px;padding:0 6px;margin:0 4px;border:0;background:transparent;color:var(--muted);cursor:pointer">לא להזכיר שוב</button></form></li>'
-        for r in sorted((r for r in load_json(config.REMINDERS_FILE, []) if mine(r, current=box)), key=lambda r: r['due'])[:8]) or '<li class="muted">אין תזכורות</li>'
-    urgent = ''.join(mail_row(r, e(r['why']), imp=True) for r in snap.get('urgent', [])[:6]) or '<li class="muted">אין משהו דחוף</li>'
 
     added = set(load_json(config.CACHE_FILE, {}).get('invites_added', []))
     def invite_row(i):
@@ -356,8 +348,6 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
         return (f'<li dir="auto">{title}{action}<div class="muted" style="font-size:13px">{e(when_text(i))}'
                 + (f' · 📍 {e(i["where"][:50])}' if i.get('where') else '') + f' · מאת {e(i["from"])}</div></li>')
     invites = [i for i in snap.get('invites', []) if upcoming(i)]
-    invites_card = card('📨 הזמנות לפגישות', f'<ul style="margin:0;padding-inline-start:18px">{"".join(invite_row(i) for i in invites[:6])}</ul>'
-                        + ('' if gapps else '<div class="muted" style="font-size:12px;margin-top:6px">חיבור היומן בדף ההגדרות = הוספה בלחיצה</div>')) if invites else ''
 
     def awaiting_row(r):
         title = f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:60])}</a>' if r.get('link') else e(r['subject'][:60])
@@ -379,8 +369,6 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
                  ) if r.get('message_id') and r.get('to_email') and not back else ''
         return (f'<li dir="auto" data-days="{r["days"]}" data-name="{e(r["to"])}" data-account="{e(r.get("account", ""))}">'
                 f'{dot(r.get("account", ""))}{title}{thread}{away_note} <span class="muted">— אל {e(r["to"])} · 📤 {r["days"]} ימים</span>{nudge}{remind}{task}{dismiss_button(r)}</li>')
-    awaiting = ''.join(awaiting_row(r) for r in by_thread([r for r in snap.get('awaiting', []) if triage_key(r) not in handled], 'to')[:20]) \
-        or '<li class="muted">כולם ענו לך ✨</li>'
 
     expected = [f'<li dir="auto" style="color:var(--bad)">📈 {e(price_change_text(c))}</li>' for c in price_changes(load_json(config.LEDGER_FILE, {}))[:3]]
     gaps = missing_invoices()
@@ -424,22 +412,51 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
 body{background:#fff!important;color:#000!important;zoom:.9}main{box-shadow:none!important;border:0!important;margin:0!important;max-width:none!important}
 a{color:#000!important;text-decoration:none!important}.card{break-inside:avoid;box-shadow:none!important;border:1px solid #bbb!important}
 *{animation:none!important;transition:none!important}}</style>''' + ('<script>setTimeout(function(){window.print()},700)</script>' if print_now else '')
+    # Mail tasks are grouped by their owning mailbox; shared widgets stay separate.
+    from mailbrief.view import emails, avatar
+    accounts = [box] if box else emails()
+    extra_accounts = {r.get('account', '') for key in ('urgent', 'waiting', 'awaiting', 'invites') for r in snap.get(key, [])}
+    accounts += sorted(a for a in extra_accounts if a and a.lower() not in {m.lower() for m in accounts})
+    mailbox_sections = []
+    reminder_rows = load_json(config.REMINDERS_FILE, [])
+    if not box and ('' in extra_accounts or any(not r.get('account') for r in reminder_rows)):
+        accounts.append('')
+    for address in accounts:
+        belongs = lambda r: (r.get('account') or '').lower() == address.lower()
+        urgent_rows = [r for r in snap.get('urgent', []) if belongs(r)]
+        waiting_rows = by_thread([r for r in snap.get('waiting', []) if belongs(r) and triage_key(r) not in handled])
+        awaiting_rows = by_thread([r for r in snap.get('awaiting', []) if belongs(r) and triage_key(r) not in handled], 'to')
+        own_reminders = sorted([r for r in reminder_rows if belongs(r)], key=lambda r: r['due'])
+        parts = [card('🔥 דחוף במייל', '<ul>' + (''.join(mail_row(r, e(r['why']), imp=True) for r in urgent_rows[:6]) or '<li class="muted">אין משהו דחוף</li>') + '</ul>')]
+        if want('replies'):
+            parts += [card('⏳ מחכים לתשובה ממך', '<ul>' + (''.join(mail_row(r, f'⏳ {r["days"]} ימים', remind=True) for r in waiting_rows[:20]) or '<li class="muted">הכול נענה ✨</li>') + '</ul>'),
+                      card('📤 מחכה לתשובה מהם', '<ul>' + (''.join(awaiting_row(r) for r in awaiting_rows[:20]) or '<li class="muted">כולם ענו לך ✨</li>') + '</ul>')]
+        if own_reminders and want('focus', 'replies'):
+            parts.append(card('⏰ תזכורות', '<ul>' + ''.join(
+                f'<li dir="auto">{e(r["subject"][:60])} · {dt.datetime.fromisoformat(r["due"]):%d/%m %H:%M}'
+                f'<form method="post" action="/reminder_delete" style="display:inline"><input type="hidden" name="t" value="{TOKEN}">'
+                f'<input type="hidden" name="id" value="{e(r["id"])}"><button class="ghost">לא להזכיר שוב</button></form></li>' for r in own_reminders[:8]) + '</ul><a href="/reminders">כל התזכורות</a>'))
+        own_invites = [r for r in invites if belongs(r)]
+        if own_invites and want('calendar'):
+            parts.append(card('📨 הזמנות לפגישות', '<ul>' + ''.join(invite_row(r) for r in own_invites[:6]) + '</ul>'))
+        mailbox_sections.append(f'<section class="mailbox-day" data-account="{e(address)}"><h2 style="direction:rtl">{avatar(address)} <span dir="auto">{e(address or "ללא תיבה משויכת")}</span></h2>'
+                                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">' + ''.join(parts) + '</div></section>')
+    mailbox_sections = ''.join(mailbox_sections)
+
     rendered = page('היום שלי', f'''
 {printing}<h1>היום שלי <span class="floaty">☀️</span></h1>
 <p style="font-size:19px;margin:4px 0">יום {days[now.weekday()]}, {now:%d/%m/%Y}{f" · {e(heb)}" if heb else ""}{f" · פרשת {e(parasha.replace('פרשת ', ''))}" if parasha else ""}</p>
 <p class="muted" style="font-style:italic">🥠 {e(fortune)}</p>{update_banner()}{vacation_note}{f'<div class="item urgent">{e(msg)}</div>' if msg else ''}
 {f'<p class="pill" style="display:inline-block;font-size:14px;margin:8px 0 0">🔥 {streak} ימים ברצף בלי אף אחד שמחכה לתשובה ממך</p>' if streak >= 2 else ''}
 {quick_bar}
+{mailbox_sections}
 <div id="today-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px">
 {card(f"🌤️ מזג האוויר ב{e(city)}", f'<div>{weather}</div><form method="post" action="/set_city" style="margin-top:8px"><input type="hidden" name="t" value="{TOKEN}"><select name="city" onchange="this.form.submit()" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">{options}</select></form>')}
 {card("🕯️ שבת וחג", f'<ul style="margin:0;padding-inline-start:18px">{times or "<li class=muted>—</li>"}</ul><div style="font-size:13px;margin-top:6px">{e(holy_status())}</div><div class="muted" style="margin-top:8px;font-size:14px">בקרוב:</div><ul style="margin:0;padding-inline-start:18px;font-size:14px">{holidays or "<li class=muted>אין חגים בשלושת השבועות הקרובים</li>"}</ul>')}
 {calendar_card if want('calendar') else ''}{tasks_card if want('calendar') else ''}
-{card("🔥 דחוף במייל", f'<ul style="margin:0;padding-inline-start:18px">{urgent}</ul>')}
-{card("⏳ מחכים לתשובה ממך" + SORTER.format(list='list-waiting'), f'<ul id="list-waiting" class="sortable">{waiting}</ul>') if want('replies') else ''}
 {snoozed_card}
-{card("📤 מחכה לתשובה מהם" + SORTER.format(list='list-awaiting'), f'<ul id="list-awaiting" class="sortable">{awaiting}</ul>') if want('replies') else ''}{invites_card if want('calendar') else ''}
 {card("💸 תשלומים קרובים", f'<ul style="margin:0;padding-inline-start:18px">{payments}</ul>') if want('money') else ''}
-{card("⏰ תזכורות", f'<a href="/?s=me#reminderprefs" style="font-size:13px">🔕 הגדרות וכיבוי תזכורות</a> · <a href="/reminders">כל התזכורות</a><ul style="margin:8px 0;padding-inline-start:18px">{reminders}</ul><form method="post" action="/reminders_clear"><input type="hidden" name="t" value="{TOKEN}"><button class="ghost">ביטול כל התזכורות</button></form>') if want('focus', 'replies') else ''}
+{card("⏰ תזכורות", f'<a href="/?s=me#reminderprefs" style="font-size:13px">🔕 הגדרות וכיבוי תזכורות</a> · <a href="/reminders">כל התזכורות</a><ul style="margin:8px 0;padding-inline-start:18px"></ul><form method="post" action="/reminders_clear"><input type="hidden" name="t" value="{TOKEN}"><button class="ghost">ביטול כל התזכורות</button></form>') if want('focus', 'replies') else ''}
 {card("📌 מועדים מהמיילים", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(deadline_row(k, d) for k, d in due_soon[:6]) + '</ul>') if due_soon else ''}
 {card("⭐ מאנשים חשובים", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">' + (f'<a href="{e(r["link"])}" target="_blank">{e(r["subject"][:60])}</a>' if r.get('link') else e(r['subject'][:60])) + f' <span class="muted">— {e(r["from"])}</span></li>' for r in important[:6]) + '</ul>') if important else ''}
 {card(f"🕯️ לפני {e(prep['name'] or 'החג')} — מה לסגור", '<ul style="margin:0;padding-inline-start:18px">' + ''.join(f'<li dir="auto">{e(line)}</li>' for line in holiday_lines(prep)) + '</ul>') if prep and holiday_lines(prep) else ''}

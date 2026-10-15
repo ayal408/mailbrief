@@ -827,12 +827,14 @@ function loadList(opts){
   opts = opts || {}; var seq = ++listSeq;
   var params = {a: S.acc, f: S.folder, p: opts.more ? S.page : 0, q: S.q, unread: S.unread ? 1 : ''};
   if (!opts.more && !opts.quiet && !S.items.length) $('ib-rows').innerHTML = '<div class="ib-empty">טוען…</div>';
+  var shown = false;
   var show = function(d, cached){
     if (seq !== listSeq) return;
     S.items = opts.more ? S.items.concat(d.items) : d.items; S.total = d.total;
     if (!opts.more && !cached) { var keep = {}; group(S.items).forEach(function(g){ if (S.checked[g.key]) keep[g.key] = 1; }); S.checked = keep; }
     S.groups = group(S.items); drawList();
-    if (!opts.quiet && !opts.more) $('ib-rows').scrollTop = 0;
+    if (!shown && !opts.quiet && !opts.more) $('ib-rows').scrollTop = 0;
+    shown = true;
     if (d.offline) toast('📴 אין חיבור — מוצגת הרשימה האחרונה ששמורה במחשב');
     if (d.errors && d.errors.length) toast('⚠️ ' + d.errors[0]);
   };
@@ -1344,7 +1346,7 @@ var timer = setInterval(function(){
   if (!$('ibx')) return stop();
   if (document.hidden) return;
   api('/inbox_poll.json').then(function(d){ if (S.v >= 0 && d.v !== S.v) {
-    if (S.comp || S.open || S.page > 0 || Object.keys(S.checked).length || $('ib-menu').classList.contains('on')) {
+    if ($('ib-rows').scrollTop > 0 || S.comp || S.open || S.page > 0 || Object.keys(S.checked).length || $('ib-menu').classList.contains('on')) {
       $('ib-refresh').setAttribute('data-pending','1'); $('ib-refresh').title='יש עדכונים חדשים — לחיצה לרענון'; return;
     }
     loadList({quiet: 1}); loadAllFolders(true);

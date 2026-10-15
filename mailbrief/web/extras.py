@@ -205,8 +205,17 @@ HTML = """
   window.addEventListener('scroll', stuck, {passive: true}); stuck();
   var LINES = ['MailBrief — המייל שלך, מסודר ✨', 'בלי AI, בלי ענן — הכול נשאר במחשב שלך 🔒', 'קבלות, אוטומציות, יומן ומשימות — במקום אחד',
                'בשבת ובחג הכול נח 🕯️', 'Ctrl+K — לכל מקום בשנייה ⌨️'];
-  var typed = document.getElementById('mb-type');
-  if (typed) typed.textContent = LINES[0];
+  var typed = document.getElementById('mb-type'), li = 0, ci = 0, back = false;
+  function type(){
+    if (!typed) return;
+    if (window.MB_still && window.MB_still()) { typed.textContent = LINES[li]; return setTimeout(type, 1500); }
+    var line = LINES[li];
+    if (!back) { ci++; if (ci > line.length) { back = true; return setTimeout(type, 2200); } }
+    else { ci -= 2; if (ci <= 0) { ci = 0; back = false; li = (li + 1) % LINES.length; } }
+    typed.textContent = Array.from(line).slice(0, ci).join('');
+    setTimeout(type, back ? 25 : 55);
+  }
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { if (typed) typed.textContent = LINES[0]; } else type();
   window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') { hide(); close(); } });
 
   var ITEMS = [
@@ -472,7 +481,7 @@ HTML += """
   window.MB.confetti = confetti;
   function hello(){ var g = document.getElementById('mb-gift'), r = g ? g.getBoundingClientRect() : {top: 90};
     confetti(110, innerWidth * .25, r.top + 90); setTimeout(function(){ confetti(110, innerWidth * .75, r.top + 90); }, 180); }
-  // Celebrations only happen on an explicit click, never while someone is reading.
+  if (!/^[/]inbox/.test(location.pathname)) setTimeout(hello, 600);
   var gift = document.getElementById('mb-gift'); if (gift) gift.onclick = hello;   // the envelope throws confetti, like the gift
   window.MB.fx = function(){ fx(); draw(); };
 })();
@@ -555,7 +564,7 @@ HTML += """
   if (window.__mbA11y) return; window.__mbA11y = true;
   var root = document.documentElement, panel = document.getElementById('mb-a11y'), btn = document.getElementById('mb-a11y-btn');
   var FLAGS = ['contrast', 'still', 'spacing', 'links', 'cursor', 'focus'];
-  function get(){ try { return Object.assign({still:true}, JSON.parse(localStorage.getItem('mb-a11y') || '{}')); } catch(e){ return {still:true}; } }
+  function get(){ try { return Object.assign({}, JSON.parse(localStorage.getItem('mb-a11y') || '{}')); } catch(e){ return {}; } }
   function put(s){ try { localStorage.setItem('mb-a11y', JSON.stringify(s)); } catch(e){} }
   function apply(){
     var s = get();
@@ -714,14 +723,15 @@ HTML += """
   window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && box.classList.contains('on')) close(); });
   window.addEventListener('resize', function(){ if (box.classList.contains('on')) place(); });
   window.MB = window.MB || {}; window.MB.tour = start;
-  // The tour remains available from Help; it never interrupts a session automatically.
+  var seen = true; try { seen = localStorage.getItem(KEY) === 'done'; } catch(e){}
+  if (!seen && document.getElementById('mb-tabs') && !/^[/](welcome|oauth|inbox)/.test(location.pathname)) setTimeout(start, 900);
 })();
 </script>"""
 
 
 BOOT = ("<script>try{var d=document.documentElement,t=localStorage.getItem('mb-theme'),h=new Date().getHours();"
         "if(t==='night')t=(h>=19||h<6)?'dark':'light';if(t==='light'||t==='dark')"
-        "d.setAttribute('data-theme',t);var a=Object.assign({still:true},JSON.parse(localStorage.getItem('mb-a11y')||'{}'));if(a.fs)d.setAttribute('data-fs',a.fs);"
+        "d.setAttribute('data-theme',t);var a=Object.assign({},JSON.parse(localStorage.getItem('mb-a11y')||'{}'));if(a.fs)d.setAttribute('data-fs',a.fs);"
         "['contrast','still','spacing','links','cursor','focus'].forEach(function(f){if(a[f])d.setAttribute('data-'+f,'')})}catch(e){}</script>")
 
 

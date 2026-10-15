@@ -2,10 +2,13 @@
 import csv
 import datetime as dt
 import os
+import json
+import sqlite3
+from contextlib import closing
 from urllib.parse import quote
 
 from mailbrief import config
-from mailbrief.features.contacts import phone_of, pretty, whatsapp
+from mailbrief.features.contacts import pretty, whatsapp
 from mailbrief.storage import load_json
 from mailbrief.util import e
 from mailbrief.view import dot
@@ -26,10 +29,30 @@ def people():
         if h.get('date', '') >= p['last']:
             p['last'], p['account'] = h.get('date', ''), h.get('account', p['account'])
             p['name'] = h.get('name') or p['name']
-    for address, c in load_json(config.CONTACTS_FILE, {}).items():       # typed by hand, even without mail in the history
+    # The inbox cache exists even before the first classification/history scan.
+    cache = os.path.join(config.DATA, 'mailbox.db')
+    if os.path.isfile(cache):
+        with closing(sqlite3.connect(cache, timeout=2)) as db:
+            for acc, raw in db.execute('SELECT acc, data FROM heads ORDER BY at DESC'):
+                try:
+                    row = json.loads(raw)
+                except (ValueError, TypeError):
+                    continue
+                sender = row.get('from') or {}
+                candidates = row.get('to', []) + row.get('cc', []) if sender.get('email', '').lower() in own else ([] if row.get('news') else [sender])
+                for person in candidates:
+                    address = (person.get('email') or '').strip().lower()
+                    if not address or '@' not in address or address in own:
+                        continue
+                    entry = book.setdefault(address, {'name': '', 'email': address, 'count': 0, 'last': '', 'account': acc})
+                    if row.get('at', '') >= entry['last']:
+                        entry.update(last=row.get('at', ''), account=acc)
+                    entry['name'] = entry['name'] or person.get('name', '')
+    phones = load_json(config.CONTACTS_FILE, {})
+    for address, c in phones.items():       # typed by hand, even without mail in the history
         book.setdefault(address, {'name': '', 'email': address, 'count': 0, 'last': c.get('at', ''), 'account': ''})
     for p in book.values():
-        p['phone'] = phone_of(p['email'])
+        p['phone'] = (phones.get(p['email']) or {}).get('phone', '')
         p['name'] = p['name'] or p['email'].split('@')[0]
     return sorted(book.values(), key=lambda p: p['last'], reverse=True)
 
@@ -48,12 +71,12 @@ def contacts_page(msg=''):
         for p in rows)
     with_phone = sum(1 for p in rows if p['phone'])
     return page('אנשי קשר', f'''{heading('📇', 'אנשי קשר')}{note}
-<p class="muted">כל מי שהתכתבת איתו ב-90 הימים האחרונים ({len(rows)} אנשים, {with_phone} עם טלפון מהחתימה). הכול נשאר במחשב.</p>
+<p class="muted">אנשים מהדואר השמור במחשב ומהיסטוריית ההתכתבויות ({len(rows)} אנשים, {with_phone} עם טלפון מהחתימה). הכול נשאר במחשב.</p>
 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
 <input type="search" id="c-q" placeholder="🔍 חיפוש לפי שם, כתובת או טלפון…" style="flex:1;min-width:220px;font:inherit;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
 <form method="post" action="/contacts_export" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><button style="margin:0;padding:8px 16px">📥 ייצוא ל-Excel</button></form>
 <form method="post" action="/contacts_vcf" style="margin:0"><input type="hidden" name="t" value="{TOKEN}"><button class="ghost" style="margin:0;padding:8px 16px" title="קובץ vCard — לייבוא לטלפון או ל-Google Contacts">📱 לטלפון</button></form></div>
-{f'<div class="scroll"><table id="c-table"><thead><tr><th>שם</th><th>כתובת</th><th>טלפון</th><th>אחרון</th><th>מיילים</th></tr></thead><tbody>{body}</tbody></table></div>' if rows else '<p class="muted">עוד אין — הרשימה נבנית מההיסטוריה (אפשר ״בניית היסטוריה״ במדריך).</p>'}
+{f'<div class="scroll"><table id="c-table"><thead><tr><th>שם</th><th>כתובת</th><th>טלפון</th><th>אחרון</th><th>מיילים</th></tr></thead><tbody>{body}</tbody></table></div>' if rows else '<p class="muted">עוד אין — פתחו את הדואר הנכנס כדי לטעון הודעות; אנשי הקשר יופיעו מהדואר השמור במחשב.</p>'}
 <script>(function(){{var q=document.getElementById('c-q');if(!q)return;q.oninput=function(){{var t=q.value.trim().toLowerCase();
 document.querySelectorAll('#c-table tbody tr').forEach(function(tr){{tr.style.display=!t||tr.dataset.text.indexOf(t)>=0?'':'none';}});}};}})();</script>''', '/clients')
 

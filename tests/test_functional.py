@@ -258,3 +258,29 @@ class FastPages(Isolated):
             request.assert_not_called(); events.assert_not_called(); git.assert_not_called()
         self.assertIn('today_widgets.json', html)
         self.assertIn('הגדרות וכיבוי תזכורות', html)
+
+
+class ContactsAndMailboxDay(Isolated):
+    def test_contacts_available_from_inbox_without_classification(self):
+        from mailbrief.web.contacts import people
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'me@example.com'}])
+        mailbox._cache_heads('me@example.com', 'INBOX', 1, [
+            {'uid': 1, 'at': '2026-10-15', 'from': {'email': 'dana@example.com', 'name': 'Dana'}, 'to': [], 'cc': [], 'news': False},
+            {'uid': 2, 'at': '2026-10-15', 'from': {'email': 'news@example.com', 'name': 'News'}, 'to': [], 'cc': [], 'news': True}])
+        rows = people()
+        self.assertEqual([r['email'] for r in rows], ['dana@example.com'])
+        self.assertEqual(rows[0]['name'], 'Dana')
+
+    def test_my_day_separates_mailbox_waiting_lists(self):
+        from mailbrief.web.today import today_page
+        storage.save_json(config.ACCOUNTS_FILE, [{'email': 'one@example.com'}, {'email': 'two@example.com'}])
+        storage.save_json(config.SNAPSHOT_FILE, {'waiting': [
+            {'account': a, 'subject': subject, 'from': 'Dana', 'sender': 'dana@example.com', 'days': 2}
+            for a, subject in [('one@example.com', 'Only first mailbox'), ('two@example.com', 'Only second mailbox')]]})
+        html = today_page()
+        first = html.split('class="mailbox-day" data-account="one@example.com"', 1)[1].split('</section>', 1)[0]
+        second = html.split('class="mailbox-day" data-account="two@example.com"', 1)[1].split('</section>', 1)[0]
+        self.assertIn('Only first mailbox', first)
+        self.assertNotIn('Only second mailbox', first)
+        self.assertIn('Only second mailbox', second)
+        self.assertNotIn('Only first mailbox', second)
