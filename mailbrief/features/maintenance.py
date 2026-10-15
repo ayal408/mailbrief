@@ -225,3 +225,14 @@ def check_backups(state=None, force=False):
     if state is not None:
         state['_backup_check'] = month
     return ok, lines
+
+
+_SCHEDULE_STATUS = {}
+
+
+def cached_schedule_status(task=config.TASK_NAME):
+    from mailbrief.background import submit
+    def refresh():
+        _SCHEDULE_STATUS[task] = schedule_status(task)
+    submit('schedule-' + task, refresh, cooldown=60)
+    return _SCHEDULE_STATUS.get(task, 'נבדק ברקע…')

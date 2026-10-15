@@ -14,7 +14,9 @@ MAX_CHECKED = 40        # sent messages looked up per mailbox per check
 def replied(m, message_id):
     mid = message_id.replace('"', '')
     typ, data = m.uid('SEARCH', None, 'OR', 'HEADER', 'In-Reply-To', f'"{mid}"', 'HEADER', 'References', f'"{mid}"')
-    return bool(typ == 'OK' and data and data[0].strip())
+    if typ != 'OK' or not data or data[0] is None:
+        raise RuntimeError('לא ניתן לבדוק אם התקבלה תשובה — הבדיקה תידחה לניסיון הבא')
+    return bool(data[0].strip())
 
 
 def awaiting_replies(m, acc, own, min_days=None, max_days=14):

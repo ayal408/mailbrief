@@ -75,7 +75,7 @@ footer.foot{text-align:center;color:var(--muted);margin-top:40px;font-size:13px}
 """
 
 
-FONT = ('<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">'
+FONT = ('<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media=&quot;all&quot;">'
         + FAVICON + extras.BOOT)
 
 
@@ -130,10 +130,10 @@ def top_bar(active=''):
 
 def update_banner():
     """A friendly "new version" strip; quiet when offline or when running from source."""
-    from mailbrief.features.update import auto_enabled, can_self_update, update_available
+    from mailbrief.features.update import auto_enabled, can_self_update, cached_update
     from mailbrief.web.token import TOKEN
     try:
-        rel = update_available()
+        rel = cached_update()
     except Exception:
         rel = None
     if not rel:

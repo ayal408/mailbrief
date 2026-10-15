@@ -9,7 +9,7 @@ import urllib.request
 from urllib.parse import urlparse
 
 from mailbrief import config
-from mailbrief.storage import load_json, save_json
+from mailbrief.storage import file_lock, load_json, save_json
 
 
 # Every secure connection (HTTPS, IMAP, SMTP) uses this: certificates and host names are fully verified, against the
@@ -72,9 +72,19 @@ def cached_json(key, url, max_age_min):
             data = json.load(resp)
     except Exception:
         return hit['data'] if hit else None     # offline: show the last known value
-    cache[key] = {'url': url, 'at': dt.datetime.now().timestamp(), 'data': data}
-    save_json(config.CACHE_FILE, cache)
+    with file_lock(config.CACHE_FILE):
+        cache = load_json(config.CACHE_FILE, {})
+        cache[key] = {'url': url, 'at': dt.datetime.now().timestamp(), 'data': data}
+        save_json(config.CACHE_FILE, cache)
     return data
+
+
+def background_json(key, url, max_age_min):
+    from mailbrief.background import submit
+    hit = load_json(config.CACHE_FILE, {}).get(key)
+    if not hit or hit.get('url') != url or dt.datetime.now().timestamp() - hit.get('at', 0) >= max_age_min * 60:
+        submit('json-' + key, lambda: cached_json(key, url, max_age_min))
+    return hit.get('data') if hit and hit.get('url') == url else None
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

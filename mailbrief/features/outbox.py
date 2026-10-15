@@ -8,7 +8,7 @@ import secrets
 import shutil
 import smtplib
 from email.message import EmailMessage
-from email.utils import formataddr, formatdate, make_msgid
+from email.utils import formataddr, formatdate, getaddresses, make_msgid
 
 from mailbrief import config, net
 from mailbrief.features.calendar import holy_windows, is_holy_time
@@ -60,7 +60,10 @@ def when_for(choice, custom='', now=None, windows=None):
 
 
 def addresses(text):
-    return [a.strip() for a in re.split(r'[,;\s]+', text or '') if a.strip()]
+    text = text or ''
+    if '<' in text or '"' in text:
+        return [addr.strip() for _, addr in getaddresses([text.replace(';', ',')]) if addr.strip()]
+    return [a.strip() for a in re.split(r'[,;\s]+', text) if a.strip()]
 
 
 @locked(lambda: config.OUTBOX_FILE)
@@ -89,6 +92,7 @@ def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=
         item['forward'] = {k: forward[k] for k in ('account', 'folder', 'uid')}
     if draft:
         item['draft'] = {k: draft[k] for k in ('folder', 'uid')}
+        item['draft']['account'] = draft.get('account') or account
     if html.strip():                                   # ✍️ written with bold / colours / lists in the inbox editor
         item['html'] = rich_html(html)
     if follow and follow.get('days'):                  # ⏰ "no answer within N days -> a polite reminder"
@@ -125,7 +129,7 @@ def update(item_id, to=None, subject=None, body=None, send_at=None):
     if not it:
         raise ValueError('המייל כבר נשלח או בוטל')
     if to is not None:
-        to = [a.strip() for a in re.split(r'[,;\s]+', to) if a.strip()]
+        to = addresses(to)
         if not to or not all(EMAIL.fullmatch(a) for a in to):
             raise ValueError('כתובת הנמען לא נראית תקינה')
         it['to'] = to
@@ -190,7 +194,7 @@ def rich_html(html):
     return clean_html(html[:300000], images=True)[0]
 
 
-def build(item, acc):
+def build(item, acc, files_data=(), include_signature=True):
     msg = EmailMessage()
     msg['From'] = formataddr((acc['display_name'], acc['email'])) if acc.get('display_name') else acc['email']
     if item['to']:
@@ -209,8 +213,8 @@ def build(item, acc):
         item['message_id'] = make_msgid(domain=acc['email'].rsplit('@', 1)[-1])
     msg['Message-ID'] = item['message_id']
     quote = item.get('quote') or {}
-    msg.set_content(with_signature(item['body'], acc) + ('\n\n' + quote['text'] if quote.get('text') else ''))
-    sig_html, logo = signature_html(acc)
+    msg.set_content((with_signature(item['body'], acc) if include_signature else item['body']) + ('\n\n' + quote['text'] if quote.get('text') else ''))
+    sig_html, logo = signature_html(acc) if include_signature else ('', None)
     quoted = ''
     if quote.get('html'):
         quoted = f'<br><div class="mb-quote">{quote["html"]}</div>'
@@ -228,12 +232,20 @@ def build(item, acc):
         for _, name, ctype, _, part in mailbox.attachments(original):
             main, _, sub = ctype.partition('/')
             msg.add_attachment(part.get_payload(decode=True) or b'', maintype=main, subtype=sub or 'octet-stream', filename=name)
+    for name, data in files_data:
+        name = safe_name(name) or 'file'
+        ctype = mimetypes.guess_type(name)[0] or 'application/octet-stream'
+        main, sub = ctype.split('/', 1)
+        if not any(p.get_filename() == name and p.get_payload(decode=True) == data for p in msg.iter_attachments()):
+            msg.add_attachment(data, maintype=main, subtype=sub, filename=name)
     for name in item.get('files', []):
         path = os.path.join(config.DATA, 'outbox-files', item['id'], name)
         with open(path, 'rb') as f:
             ctype = mimetypes.guess_type(name)[0] or 'application/octet-stream'
             main, sub = ctype.split('/', 1)
-            msg.add_attachment(f.read(), maintype=main, subtype=sub, filename=name)
+            data = f.read()
+            if not any(p.get_filename() == name and p.get_payload(decode=True) == data for p in msg.iter_attachments()):
+                msg.add_attachment(data, maintype=main, subtype=sub, filename=name)
     return msg
 
 
@@ -245,7 +257,7 @@ def after_send(acc, item, message):
             del message['Bcc']
             mailbox.append(acc['email'], 'sent', message)
         if item.get('draft'):
-            mailbox.delete_for_good(acc['email'], item['draft']['folder'], [item['draft']['uid']])
+            mailbox.delete_for_good(item['draft'].get('account') or acc['email'], item['draft']['folder'], [item['draft']['uid']])
     except Exception:
         pass
     try:

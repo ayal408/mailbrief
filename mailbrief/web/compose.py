@@ -3,7 +3,7 @@ import datetime as dt
 import json
 
 from mailbrief import config
-from mailbrief.features.calendar import holy_status
+from mailbrief.features.calendar import holy_status, holy_windows
 from mailbrief.features.outbox import outbox, when_for
 from mailbrief.features.replies import reply_templates, template_files
 from mailbrief.profile import profile
@@ -15,7 +15,7 @@ from mailbrief.web.token import TOKEN
 
 def _preview(choice):
     try:
-        when = when_for(choice)
+        when = when_for(choice, windows=holy_windows(saved_only=True) or [])
         return f'{when:%d/%m %H:%M}'
     except Exception:
         return ''

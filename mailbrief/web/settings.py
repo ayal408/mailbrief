@@ -12,7 +12,7 @@ from mailbrief.features.clientcare import DATE_KINDS, REMINDER_DEFAULT, client_d
 from mailbrief.features.cloud_backup import cloud_cfg, drive_account
 from mailbrief.features.daily import daily_cfg
 from mailbrief.features.google_apps import API_PAGES, gapps_account
-from mailbrief.features.maintenance import schedule_status
+from mailbrief.features.maintenance import cached_schedule_status as schedule_status
 from mailbrief.features.replies import reply_templates, template_files, vacation_active, VACATION_DEFAULT
 from mailbrief.web import settings_search
 from mailbrief.web.settings_more import (backup_check_block, blocked_block, holiday_reply_block, income_block, payment_block,
@@ -40,7 +40,7 @@ SECTIONS = [('boxes', '📬', 'תיבות'), ('me', '👤', 'אישי והתרא
             ('auto', '🏷️', 'כללים ותבניות'), ('tidy', '🧹', 'ניקיון'), ('data', '💾', 'גיבוי ונתונים'), ('connect', '🔌', 'חיבורים')]
 
 # old links (#daily, #migrate ...) -> the sub-tab that holds them now
-ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'accountant': 'money', 'vendors': 'money', 'vat': 'money',
+ANCHORS = {'profile': 'me', 'daily': 'me', 'quiet': 'me', 'notify': 'me', 'reminderprefs': 'me', 'accountant': 'money', 'vendors': 'money', 'vat': 'money',
            'export': 'money', 'debts': 'clients', 'dates': 'clients', 'rules': 'auto', 'vacation': 'auto', 'templates': 'auto',
            'clean': 'tidy', 'unopened': 'tidy', 'cloud': 'data', 'migrate': 'data', 'gapps': 'connect', 'keys': 'connect',
            'simple': 'me', 'startup': 'me', 'quotes': 'clients', 'folders': 'clients', 'budget': 'money', 'compare': 'money', 'tax': 'money', 'share': 'clients', 'snippets': 'auto', 'leaks': 'me', 'missing': 'money',
@@ -133,6 +133,7 @@ def boxes_section():
 def me_section():
     me = profile()
     form_opts = ''.join(f'<option value="{k}"{" selected" if k == me.get("form") else ""}>{icon} {label}</option>' for k, (icon, label) in FORMS.items())
+    reminder_settings = load_json(config.SETTINGS_FILE, {})
     daily = daily_cfg()
     hour_opts = ''.join(f'<option value="{h}"{" selected" if h == daily["hour"] else ""}>{h:02d}:00</option>' for h in range(5, 23))
     quiet = load_json(config.SETTINGS_FILE, {}).get('quiet') or {}
@@ -167,6 +168,14 @@ def me_section():
 <button name="action" value="on" style="margin:0">{'שמירה' if daily['on'] else '✅ הפעלה'}</button>
 {'<button name="action" value="off" class="ghost" style="margin:0">כיבוי</button>' if daily['on'] else ''}
 <button formaction="/daily_test" class="ghost" style="margin:0">📨 לשלוח עכשיו לניסיון</button></form>
+
+{_h('reminderprefs', '🔕 שליטה בתזכורות והתראות')}
+<form method="post" action="/reminder_prefs" class="box">{_t()}
+<label><input type="checkbox" name="notifications_enabled" {"checked" if reminder_settings.get("notifications_enabled", True) else ""}> להציג התראות קופצות ב-Windows</label>
+<label><input type="checkbox" name="reminders_enabled" {"checked" if reminder_settings.get("reminders_enabled", True) else ""}> להציג תזכורות שביקשתי</label>
+<label><input type="checkbox" name="auto_reminders" {"checked" if reminder_settings.get("auto_reminders", False) else ""}> ליצור תזכורות אוטומטיות מהבטחות במייל, מועדים ופגישות</label>
+<p class="muted">תזכורות אוטומטיות כבויות עד שבוחרים להפעיל אותן. אפשר לבטל כל תזכורת ב״היום שלי״ או בלחיצה על ״לא להזכיר שוב״ בהתראה.</p>
+<button>שמירת העדפות</button> <a href="/reminders">ניהול כל התזכורות</a></form>
 
 {_h('quiet', '🔕 שעות שקטות')}
 <p class="muted">{'<b style="color:var(--good)">פעיל</b> — ' if quiet.get('on') else ''}בשעות האלה לא קופצות התראות — חוץ מאנשים חשובים (VIP) שבוחרים כאן.

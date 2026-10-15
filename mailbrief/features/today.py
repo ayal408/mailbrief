@@ -4,7 +4,7 @@ import os
 import subprocess
 
 from mailbrief import config
-from mailbrief.storage import load_json, save_json
+from mailbrief.storage import file_lock, load_json, save_json
 
 
 SKIP_DIRS = {'node_modules', '.venv', 'venv', '__pycache__', '.git', 'dist', 'build'}
@@ -71,7 +71,16 @@ def project_pulse():
         dirty = len([l for l in git('status', '--porcelain').splitlines() if l.strip()])
         last = git('log', '-1', '--format=%cI')
         rows.append({'name': rel, 'branch': git('rev-parse', '--abbrev-ref', 'HEAD'), 'dirty': dirty, 'last': last[:10]})
-    cache_all = load_json(config.CACHE_FILE, {})
-    cache_all['projects'] = {'at': dt.datetime.now().timestamp(), 'data': rows}
-    save_json(config.CACHE_FILE, cache_all)
+    with file_lock(config.CACHE_FILE):
+        cache_all = load_json(config.CACHE_FILE, {})
+        cache_all['projects'] = {'at': dt.datetime.now().timestamp(), 'data': rows}
+        save_json(config.CACHE_FILE, cache_all)
     return rows
+
+
+def cached_projects():
+    from mailbrief.background import submit
+    hit = load_json(config.CACHE_FILE, {}).get('projects')
+    if not hit or dt.datetime.now().timestamp() - hit.get('at', 0) >= 600:
+        submit('projects', project_pulse, cooldown=60)
+    return hit.get('data', []) if hit else []

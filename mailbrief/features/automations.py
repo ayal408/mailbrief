@@ -1,6 +1,7 @@
 """The automation engine: trigger -> conditions -> actions."""
 import datetime as dt
 import imaplib
+import hashlib
 import json
 import os
 import re
@@ -260,6 +261,8 @@ def run_action(a, wf, acc, ctx, m=None, it=None, msg=None, state=None):
         else:
             return f'⚠️ פעולה לא מוכרת: {kind}'
         return f'✓ {label}'
+    except (smtp.PartialDelivery, smtp.DeliveryUncertain) as exc:
+        return f'⛔ {label}: {exc} — יש לבדוק בדואר שנשלח לפני ניסיון נוסף'
     except Exception as exc:
         return f'⚠️ {label}: {friendly_error(exc, acc) if isinstance(exc, (imaplib.IMAP4.error, RuntimeError)) else exc}'
 
@@ -295,6 +298,30 @@ def log_run(wf, subject, results):
     save_json(config.WF_FILE, items)
 
 
+def _run_actions(wf, key, state, acc, ctx, m=None, it=None, msg=None):
+    """Remember successful actions separately; retry failures without repeating successful sends/webhooks."""
+    progress = state.setdefault('_wf_progress', {})
+    completed = set(progress.get(key, []))
+    results, all_done = [], True
+    for index, action in enumerate(wf['actions']):
+        identity = str(index) + ':' + hashlib.sha256(json.dumps(action, sort_keys=True).encode()).hexdigest()[:16]
+        if identity in completed:
+            results.append('— הפעולה כבר הושלמה')
+            continue
+        result = run_action(action, wf, acc, ctx, m, it, msg, state)
+        results.append(result)
+        if result.startswith('⚠️'):
+            all_done = False
+        else:
+            # Ambiguous SMTP delivery (⛔) is terminal and requires review, never an automatic resend.
+            completed.add(identity)
+    if all_done:
+        progress.pop(key, None)
+    else:
+        progress[key] = sorted(completed)
+    return results, all_done
+
+
 def run_workflows(m, acc, pairs, state, ledger, budget):
     wfs = [w for w in workflows(True) if w['trigger'] != 'schedule']
     if not wfs or not pairs:
@@ -310,9 +337,11 @@ def run_workflows(m, acc, pairs, state, ledger, budget):
             if key in done or budget[0] <= 0 or not matches(wf, acc, it, ledger):
                 continue
             budget[0] -= 1
-            done.add(key)
             ctx = wf_context(acc, it)
-            log_run(wf, it['subject'], [run_action(a, wf, acc, ctx, m, it, msg, state) for a in wf['actions']])
+            results, finished = _run_actions(wf, key, state, acc, ctx, m, it, msg)
+            if finished:
+                done.add(key)
+            log_run(wf, it['subject'], results)
     state['_wf_done'] = sorted(done)[-10000:]
 
 
@@ -341,9 +370,12 @@ def run_schedule_workflows(state, accounts):
         sched = wf.get('schedule') or {}
         if now.weekday() not in sched.get('days', []) or now.hour < int(sched.get('hour', 9)):
             continue
-        ran[wf['id']] = today
         ctx = schedule_context()
-        log_run(wf, f'⏰ {now:%H:%M}', [run_action(a, wf, accounts[0], ctx) for a in wf['actions']])
+        key = f'schedule|{wf["id"]}|{today}'
+        results, finished = _run_actions(wf, key, state, accounts[0], ctx)
+        if finished:
+            ran[wf['id']] = today
+        log_run(wf, f'⏰ {now:%H:%M}', results)
 
 
 def test_workflow(wf):

@@ -70,7 +70,7 @@ def learn(pairs, account, own=()):
                      'sentence': sentence, 'link': it.get('link', ''), 'account': account}
         eve = dt.datetime.combine(when - dt.timedelta(days=1), dt.time(9, 0)).astimezone()
         if eve > dt.datetime.now().astimezone():
-            remind_at(eve, f'מחר: {rows[key]["subject"]}', rows[key]['from'], rows[key]['link'], account, sentence)
+            remind_at(eve, f'מחר: {rows[key]["subject"]}', rows[key]['from'], rows[key]['link'], account, sentence, source='deadline')
         added += 1
     if added:
         save_json(config.DEADLINES_FILE, rows)

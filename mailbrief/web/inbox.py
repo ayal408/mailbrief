@@ -279,8 +279,12 @@ def compose_data(mode, address, folder='', uid=None):
             text = plain.get_content() if plain is not None else body_text(msg)
         except Exception:
             text = body_text(msg)
-        out.update(to=decode(msg.get('To') or ''), cc=decode(msg.get('Cc') or ''), bcc=decode(msg.get('Bcc') or ''),
-                   subject=subject, body=text.rstrip())
+        from mailbrief.features.outbox import addresses
+        rich = sanitize.message_html(msg, images=False)[0] if msg.get_body(preferencelist=('html',)) is not None else ''
+        rich = re.sub(r'(?is)<style\b[^>]*>.*?</style>', '', rich)
+        out.update(to=', '.join(addresses(str(msg.get('To') or ''))), cc=', '.join(addresses(str(msg.get('Cc') or ''))),
+                   bcc=', '.join(addresses(str(msg.get('Bcc') or ''))), subject=subject, body=text.rstrip(), html=rich,
+                   files=[name for _, name, _, _, _ in mailbox.attachments(msg)])
         return out
     if mode == 'fwd':
         out['subject'] = _re('Fwd', subject)
@@ -1032,16 +1036,16 @@ function compose(mode){
   var acc = src ? src.account : (S.acc !== '*' ? S.acc : B.accounts[0].email);
   if (!peopleLoaded) { peopleLoaded = true; api('/inbox_people.json').then(function(d){ $('ib-people').innerHTML = d.people.map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join(''); }).catch(function(){}); }
   var start = function(d){
-    S.comp = {mode: d.mode, ref: src ? {a: src.account, f: src.folder, u: src.uid} : null, draft: d.mode === 'edit' ? {f: src.folder, u: src.uid} : null, files: [], dirty: false};
+    S.comp = {mode: d.mode, ref: src ? {a: src.account, f: src.folder, u: src.uid} : null, draft: d.mode === 'edit' ? {a: src.account, f: src.folder, u: src.uid} : null, files: [], dirty: false};
     fillFrom(d.account || acc); $('ib-c-to').value = d.to || ''; $('ib-c-cc').value = d.cc || ''; $('ib-c-bcc').value = d.bcc || '';
-    $('ib-c-ccrow').hidden = !d.cc; $('ib-c-bccrow').hidden = !d.bcc; $('ib-c-subject').value = d.subject || ''; $('ib-c-body').innerText = d.body || '';
+    $('ib-c-ccrow').hidden = !d.cc; $('ib-c-bccrow').hidden = !d.bcc; $('ib-c-subject').value = d.subject || ''; $('ib-c-body').innerText = d.body || ''; if (d.html) $('ib-c-body').innerHTML = d.html;
     $('ib-c-title').textContent = {new: '✏️ הודעה חדשה', reply: '↩️ תשובה', all: '↩️↩️ תשובה לכולם', fwd: '↪️ העברה', edit: '📝 טיוטה'}[d.mode];
     $('ib-c-qrow').style.display = /reply|all|fwd/.test(d.mode) ? '' : 'none'; $('ib-c-quote').checked = true;
     $('ib-c-note').textContent = d.files && d.files.length ? '📎 הקבצים של ההודעה המקורית יצורפו: ' + d.files.join(', ') : '';
     $('ib-c-files').value = ''; $('ib-c-fn').textContent = ''; $('ib-c-when').value = 'now'; $('ib-c-at').value = ''; whenChanged();
     $('ib-comp').classList.add('on'); (d.to ? $('ib-c-body') : $('ib-c-to')).focus();
     if (d.to) { var r = document.createRange(), sel = window.getSelection(); r.setStart($('ib-c-body'), 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); $('ib-c-body').scrollTop = 0; }
-    clearInterval(S.autosave); S.autosave = setInterval(function(){ if (S.comp && S.comp.dirty) { S.comp.dirty = false; saveDraft(true).then(function(){ $('ib-c-note').textContent = '💾 נשמר בטיוטות ' + new Date().toLocaleTimeString('he-IL', {hour: '2-digit', minute: '2-digit'}); }).catch(function(){}); } }, 30000);
+    clearInterval(S.autosave); S.autosave = setInterval(function(){ if (S.comp && S.comp.dirty) { S.comp.dirty = false; saveDraft(true).then(function(){ $('ib-c-note').textContent = (S.comp && S.comp.warning) || '💾 נשמר בטיוטות ' + new Date().toLocaleTimeString('he-IL', {hour: '2-digit', minute: '2-digit'}); }).catch(function(){ if (S.comp) { S.comp.dirty = true; $('ib-c-note').textContent = '⚠️ הטיוטה לא נשמרה — ניסיון נוסף אוטומטית'; } }); } }, 30000);
   };
   if (!src) start({mode: 'new', account: acc}); else api('/inbox_compose.json', {mode: mode, a: src.account, f: src.folder, u: src.uid}).then(start).catch(fail);
 }
@@ -1050,7 +1054,7 @@ function compFields(){
     body: $('ib-c-body').innerText, html: hasFormat() ? $('ib-c-body').innerHTML : '', mode: c.mode, quote: $('ib-c-quote').checked ? 1 : '', when: $('ib-c-when').value,
     at: $('ib-c-at').value};
   if (c.ref) { f.ref_a = c.ref.a; f.ref_f = c.ref.f; f.ref_u = c.ref.u; }
-  if (c.draft) { f.draft_f = c.draft.f; f.draft_u = c.draft.u; }
+  if (c.draft) { f.draft_a = c.draft.a; f.draft_f = c.draft.f; f.draft_u = c.draft.u; }
   return f;
 }
 function whenChanged(){
@@ -1096,9 +1100,12 @@ function addFiles(list){
   input.files = dt.files; input.onchange();
 }
 function send(){
-  var btn = $('ib-c-send'); btn.disabled = true;
-  post('/inbox_send', compFields(), Array.prototype.slice.call($('ib-c-files').files)).then(function(d){
-    closeComp();
+  var btn = $('ib-c-send'), comp = S.comp; btn.disabled = true;
+  Promise.resolve(comp && comp.saving).then(function(){
+    if (S.comp !== comp) throw new Error('חלון הכתיבה השתנה — אפשר לנסות שוב');
+    return post('/inbox_send', compFields(), Array.prototype.slice.call($('ib-c-files').files));
+  }).then(function(d){
+    if (S.comp === comp) closeComp();
     if (d.id) toast(d.msg, '↩️ ביטול', function(){ post('/inbox_cancel', {id: d.id}).then(function(){ toast('✓ השליחה בוטלה'); }).catch(fail); }, d.undo || 10);
     else toast(d.msg);
   }).catch(fail).then(function(){ btn.disabled = false; });
@@ -1108,7 +1115,7 @@ function saveDraft(silent){
   if (S.comp.saving) return S.comp.saving.then(function(){ return saveDraft(silent); });
   var f = compFields(); if (!f.to.trim() && !f.subject.trim() && !f.body.trim()) return Promise.resolve();
   var comp = S.comp;
-  comp.saving = post('/inbox_draft', f).then(function(d){ comp.draft = {f: d.folder, u: d.uid}; if (!silent) toast('💾 נשמר בטיוטות'); })
+  comp.saving = post('/inbox_draft', f, Array.prototype.slice.call($('ib-c-files').files)).then(function(d){ comp.draft = {a: d.account || f.a, f: d.folder, u: d.uid}; if (d.warning) { comp.warning = d.warning; $('ib-c-note').textContent = d.warning; } else comp.warning = ''; if (!silent) toast(d.warning || '💾 נשמר בטיוטות'); })
     .then(function(){ comp.saving = null; }, function(e){ comp.saving = null; throw e; });
   return comp.saving;
 }
@@ -1204,6 +1211,7 @@ $('ib-adv').onclick = function(){ if ($('ib-menu').classList.contains('on')) clo
 $('ib-look').onclick = function(){ if ($('ib-menu').classList.contains('on')) closeMenu(); else lookMenu(this); };
 $('ib-folders').addEventListener('contextmenu', function(ev){ var b = ev.target.closest('.ib-f[data-folder]'); if (b && b.dataset.acc !== '*') { ev.preventDefault(); folderMenu(b); } });
 $('ib-fmt').addEventListener('mousedown', function(ev){ var b = ev.target.closest('button'); if (!b) return; ev.preventDefault(); if (b.dataset.color) fmt('color', b.dataset.color); else fmt(b.dataset.cmd); });
+$('ib-c-from').addEventListener('change', function(){ if (S.comp) S.comp.dirty = true; });
 $('ib-c-body').addEventListener('input', function(){ if (S.comp) S.comp.dirty = true; });
 ['ib-c-to', 'ib-c-cc', 'ib-c-bcc', 'ib-c-subject'].forEach(function(id){ $(id).addEventListener('input', function(){ if (S.comp) S.comp.dirty = true; }); });
 $('ib-c-body').addEventListener('paste', function(ev){
@@ -1232,7 +1240,10 @@ $('ib-all').onchange = function(){ var on = this.checked; S.checked = {}; if (on
 $('ib-c-ccb').onclick = function(){ $('ib-c-ccrow').hidden = false; $('ib-c-bccrow').hidden = false; $('ib-c-cc').focus(); };
 $('ib-c-big').onclick = function(){ $('ib-comp').classList.toggle('big'); };
 $('ib-c-close').onclick = function(){ saveDraft(true).then(closeComp).catch(function(e){ fail(e); closeComp(); }); };
-$('ib-c-discard').onclick = function(){ var d = S.comp && S.comp.draft; closeComp(); if (d && S.comp === null) post('/inbox_act', {a: $('ib-c-from').value, f: d.f, uids: d.u, act: 'delete_draft'}).catch(function(){}); toast('🗑️ הטיוטה נמחקה'); };
+$('ib-c-discard').onclick = function(){ var comp = S.comp, account = $('ib-c-from').value; closeComp();
+  Promise.resolve(comp && comp.saving).catch(function(){}).then(function(){ var d = comp && comp.draft;
+    if (d && d.u) return post('/inbox_act', {a: d.a || account, f: d.f, uids: d.u, act: 'delete_draft'});
+  }).then(function(){ toast('🗑️ הטיוטה נמחקה'); }).catch(fail); };
 $('ib-c-draft').onclick = function(){ saveDraft(false).catch(fail); };
 $('ib-c-send').onclick = send;
 $('ib-c-when').onchange = whenChanged;

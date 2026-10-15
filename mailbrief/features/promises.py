@@ -6,7 +6,7 @@ import email.utils
 import re
 from urllib.parse import quote
 
-from mailbrief.features.reminders import add_reminder
+from mailbrief.features.reminders import add_reminder, automatic_enabled
 from mailbrief.mail.imap import fetch_recent, is_gmail, special_folder
 from mailbrief.mail.message import body_text, decode
 
@@ -82,6 +82,8 @@ def find_promises(text, sent):
 
 def scan_sent(m, acc, state, own, days=2):
     """Looks at mail I sent in the last days and creates reminders for promises. Each message once. Returns how many."""
+    if not automatic_enabled():
+        return 0
     sent_folder = special_folder(m, r'\Sent')
     if not sent_folder:
         return 0
@@ -103,7 +105,7 @@ def scan_sent(m, acc, state, own, days=2):
             who = to[0][0] or to[0][1]
             link = f"https://mail.google.com/mail/?authuser={quote(acc['email'])}#all/{gid:x}" if gid else ''
             add_reminder(days_left, f'🤝 הבטחת ל{who}: {sentence[:120]}', who, link, acc['email'],
-                         note=decode(msg.get('Subject')) or '')
+                         note=decode(msg.get('Subject')) or '', source='promise')
             made += 1
     state['_promises'] = sorted(seen)[-800:]
     return made

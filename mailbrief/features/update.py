@@ -40,6 +40,12 @@ def latest_release():
     if not data or not data.get('tag_name'):
         _FAILED[0] = time.time()
         return None
+    return _release_info(data)
+
+
+def _release_info(data):
+    if not data or not data.get('tag_name'):
+        return None
     assets = {a.get('name', '').lower(): a for a in data.get('assets', [])}
     asset = assets.get('mailbrief-setup.exe') if config.INSTALLED else assets.get('mailbrief.exe')
     if not asset:
@@ -52,6 +58,17 @@ def latest_release():
 
 def update_available():
     rel = latest_release()
+    return rel if rel and version_tuple(rel['version']) > version_tuple(__version__) else None
+
+
+def cached_update():
+    """Read the last release immediately and refresh it off the request thread."""
+    from mailbrief.background import submit
+    cache = load_json(config.CACHE_FILE, {})
+    hit = cache.get('release')
+    if not hit or time.time() - hit.get('at', 0) >= 30 * 60:
+        submit('release', latest_release, cooldown=30 * 60)
+    rel = _release_info(hit.get('data') if hit else None)
     return rel if rel and version_tuple(rel['version']) > version_tuple(__version__) else None
 
 
