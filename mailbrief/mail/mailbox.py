@@ -131,6 +131,7 @@ def session(acc, folder=None, readonly=False):
                 typ, data = conn.select(quoted(real_folder(folder)[0]), readonly=readonly)
                 if typ != 'OK':
                     raise RuntimeError('התיקייה לא נמצאה בתיבה')
+                _invalidate_cache(acc['email'].lower(), folder, _validity(conn))
             yield conn
             _POOL[acc['id']] = (conn, time.monotonic())
         except (imaplib.IMAP4.abort, OSError):
@@ -170,9 +171,18 @@ def _db():
     return db
 
 
+def _invalidate_cache(acc, folder, validity):
+    if not validity:
+        return
+    with _DB_LOCK, contextlib.closing(_db()) as db, db:
+        for table in ('heads', 'bodies'):
+            db.execute(f'DELETE FROM {table} WHERE acc=? AND folder=? AND validity<>?', (acc, folder, validity))
+
+
 def _cache_heads(acc, folder, validity, rows, replace_from=None):
     with _DB_LOCK, contextlib.closing(_db()) as db, db:
         db.execute('DELETE FROM heads WHERE acc=? AND folder=? AND validity<>?', (acc, folder, validity))
+        db.execute('DELETE FROM bodies WHERE acc=? AND folder=? AND validity<>?', (acc, folder, validity))
         if replace_from is not None:                     # the newest page: whatever vanished from it was moved / deleted
             db.execute('DELETE FROM heads WHERE acc=? AND folder=? AND uid>=?', (acc, folder, replace_from))
         db.executemany('INSERT OR REPLACE INTO heads VALUES (?,?,?,?,?,?)',
@@ -481,20 +491,24 @@ def unified(addresses, page=0, query='', unread=False):
 def fetch_raw(address, folder, uid, mark_seen=True):
     """The whole message (bytes); from the cache when it was opened before. Opening it marks it read on the server."""
     acc = account(address)
-    raw = _cached_body(address.lower(), folder, uid)
-    if raw is not None:
-        if mark_seen:
-            with contextlib.suppress(Exception):
-                set_flag(address, folder, [uid], '\\Seen', True)
-        return raw
-    with session(acc, folder, readonly=not mark_seen) as m:
-        validity = _validity(m)
-        typ, data = m.uid('FETCH', str(uid).encode(), '(UID BODY[])' if mark_seen else '(UID BODY.PEEK[])')
-        recs = _records(data)
-        if typ != 'OK' or not recs:
-            raise LookupError('ההודעה כבר לא נמצאת בתיקייה (אולי הועברה או נמחקה)')
-        raw = recs[0][1]
-    _keep_body(address.lower(), folder, uid, validity, raw)
+    try:
+        with session(acc, folder, readonly=not mark_seen) as m:
+            validity = _validity(m)
+            raw = _cached_body(address.lower(), folder, uid)
+            if raw is not None:
+                if mark_seen:
+                    m.uid('STORE', _uidset([uid]), '+FLAGS.SILENT', r'(\Seen)')
+            else:
+                typ, data = m.uid('FETCH', str(uid).encode(), '(UID BODY[])' if mark_seen else '(UID BODY.PEEK[])')
+                recs = _records(data)
+                if typ != 'OK' or not recs:
+                    raise LookupError('ההודעה כבר לא נמצאת בתיקייה (אולי הועברה או נמחקה)')
+                raw = recs[0][1]
+                _keep_body(address.lower(), folder, uid, validity, raw)
+    except (OSError, imaplib.IMAP4.error, RuntimeError):
+        raw = _cached_body(address.lower(), folder, uid)
+        if raw is None:
+            raise
     if mark_seen:
         _set_cached_flags(address.lower(), folder, [uid], '\\Seen', True)
     return raw
@@ -639,6 +653,11 @@ def _copyuid(m, data):
     return []
 
 
+def _require_uidplus(m):
+    if 'UIDPLUS' not in m.capabilities:
+        raise RuntimeError('השרת אינו תומך במחיקה ממוקדת ובטוחה (UIDPLUS) — אפשר לבצע את הפעולה באתר הדואר')
+
+
 def move(address, folder, uids, target):
     """MOVE when the server knows it (almost all do); otherwise COPY + delete.
     Returns the messages' new UIDs in the target folder (for ↩️ undo), or [] when the server doesn't say."""
@@ -652,13 +671,13 @@ def move(address, folder, uids, target):
         if 'MOVE' in m.capabilities:
             typ, data = m.uid('MOVE', ids, quoted(target))
         else:
+            _require_uidplus(m)
             typ, data = m.uid('COPY', ids, quoted(target))
             if typ == 'OK':
-                m.uid('STORE', ids, '+FLAGS.SILENT', '(\\Deleted)')
-                if 'UIDPLUS' in m.capabilities:
-                    m.uid('EXPUNGE', ids)
-                else:
-                    m.expunge()
+                if m.uid('STORE', ids, '+FLAGS.SILENT', '(\\Deleted)')[0] != 'OK':
+                    raise RuntimeError('השרת לא אישר את המחיקה')
+                if m.uid('EXPUNGE', ids)[0] != 'OK':
+                    raise RuntimeError('השרת לא אישר את המחיקה')
         new = _copyuid(m, data) if typ == 'OK' else []
     if typ != 'OK':
         raise RuntimeError('השרת לא אישר את ההעברה')
@@ -722,11 +741,11 @@ def delete(address, folder, uids):
     acc = account(address)
     with session(acc, folder) as m:
         ids = _uidset(uids)
-        m.uid('STORE', ids, '+FLAGS.SILENT', '(\\Deleted)')
-        if 'UIDPLUS' in m.capabilities:
-            m.uid('EXPUNGE', ids)
-        else:
-            m.expunge()
+        _require_uidplus(m)
+        if m.uid('STORE', ids, '+FLAGS.SILENT', '(\\Deleted)')[0] != 'OK':
+            raise RuntimeError('השרת לא אישר את המחיקה')
+        if m.uid('EXPUNGE', ids)[0] != 'OK':
+            raise RuntimeError('השרת לא אישר את המחיקה')
     _forget(address.lower(), folder, uids)
     return None, []
 
@@ -765,11 +784,11 @@ def delete_for_good(address, folder, uids):
     acc = account(address)
     with session(acc, folder) as m:
         ids = _uidset(uids)
-        m.uid('STORE', ids, '+FLAGS.SILENT', '(\\Deleted)')
-        if 'UIDPLUS' in m.capabilities:
-            m.uid('EXPUNGE', ids)
-        else:
-            m.expunge()
+        _require_uidplus(m)
+        if m.uid('STORE', ids, '+FLAGS.SILENT', '(\\Deleted)')[0] != 'OK':
+            raise RuntimeError('השרת לא אישר את המחיקה')
+        if m.uid('EXPUNGE', ids)[0] != 'OK':
+            raise RuntimeError('השרת לא אישר את המחיקה')
     _forget(address.lower(), folder, uids)
 
 
@@ -994,6 +1013,7 @@ def prefetch(address, folder, rows, limit=25, max_size=3_000_000):
             try:
                 m.select(quoted(folder), readonly=True)
                 validity = _validity(m)
+                _invalidate_cache(address.lower(), folder, validity)
                 for uid in wanted:
                     typ, data = m.uid('FETCH', str(uid).encode(), '(UID BODY.PEEK[])')
                     recs = _records(data)

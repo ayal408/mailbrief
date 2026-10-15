@@ -6,13 +6,14 @@ import os
 import re
 import secrets
 import shutil
+import smtplib
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 
 from mailbrief import config, net
 from mailbrief.features.calendar import holy_windows, is_holy_time
 from mailbrief.mail import smtp
-from mailbrief.storage import load_json, save_json
+from mailbrief.storage import file_lock, locked, load_json, save_json
 from mailbrief.util import e, safe_name
 
 
@@ -62,6 +63,7 @@ def addresses(text):
     return [a.strip() for a in re.split(r'[,;\s]+', text or '') if a.strip()]
 
 
+@locked(lambda: config.OUTBOX_FILE)
 def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=None, cc='', bcc='', quote=None, forward=None,
              draft=None, html=''):
     """quote: {'text', 'html'} of the message answered / forwarded; forward: {account, folder, uid} — its files go along;
@@ -75,7 +77,7 @@ def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=
     if not subject.strip() and not body.strip():
         raise ValueError('המייל ריק')
     item = {'id': secrets.token_hex(4), 'account': account, 'to': to, 'subject': subject.strip()[:300], 'body': body[:50000],
-            'send_at': send_at.isoformat(timespec='minutes'), 'created': _now().isoformat(timespec='minutes'), 'status': 'waiting'}
+            'send_at': send_at.isoformat(), 'created': _now().isoformat(timespec='minutes'), 'status': 'waiting'}
     if thread:
         item['thread'] = {k: thread.get(k, '') for k in ('in_reply_to', 'references')}
     for key, value in (('cc', cc), ('bcc', bcc)):
@@ -104,14 +106,18 @@ def schedule(account, to, subject, body, send_at, files=(), thread=None, follow=
     return item
 
 
+@locked(lambda: config.OUTBOX_FILE)
 def cancel(item_id):
     items = outbox()
     for it in items:
-        if it['id'] == item_id and it['status'] == 'waiting':
+        if it['id'] == item_id:
+            if it['status'] != 'waiting':
+                raise ValueError('המייל כבר בתהליך שליחה, נשלח או בוטל')
             it['status'] = 'cancelled'
     save_json(config.OUTBOX_FILE, items)
 
 
+@locked(lambda: config.OUTBOX_FILE)
 def update(item_id, to=None, subject=None, body=None, send_at=None):
     """Change a mail that still waits: recipients, subject, text or time (a Shabbat/Yom Tov time moves to its end)."""
     items = outbox()
@@ -127,8 +133,9 @@ def update(item_id, to=None, subject=None, body=None, send_at=None):
         it['subject'] = subject.strip()[:300]
     if body is not None:
         it['body'] = body[:50000]
+        it.pop('html', None)  # the queue editor supplies plain text; discard the previous rich version
     if send_at is not None:
-        it['send_at'] = out_of_holy(send_at).isoformat(timespec='minutes')
+        it['send_at'] = out_of_holy(send_at).isoformat()
     it.pop('retry', None)
     save_json(config.OUTBOX_FILE, items)
     return it
@@ -248,42 +255,87 @@ def after_send(acc, item, message):
         pass
 
 
+@locked(lambda: config.OUTBOX_FILE + '.sender')
 def send_due(accounts=None, now=None):
-    """Sends every scheduled mail whose time came (never during Shabbat / Yom Tov). Returns how many went out."""
+    """One sender across processes. Claim and persist each message before contacting SMTP.
+
+    Queue changes use a separate short lock, so adding/cancelling other messages stays possible during network I/O.
+    An interrupted submission is never retried automatically: SMTP cannot guarantee exactly-once delivery.
+    """
+    fixed_now = now
     now = now or _now()
-    if is_holy_time(now):
-        return 0
-    if not net.online():                               # no internet: everything simply waits, and goes out when it's back
+    if is_holy_time(now) or not net.online():
         return 0
     accounts = load_json(config.ACCOUNTS_FILE, []) if accounts is None else accounts
-    items, sent = outbox(), 0
-    for it in items:
-        if it['status'] != 'waiting' or dt.datetime.fromisoformat(it['send_at']) > now:
-            continue
-        if sent >= MAX_PER_RUN:                        # greetings to many clients go out in small batches
+    with file_lock(config.OUTBOX_FILE):
+        items = outbox()
+        for it in items:
+            if it['status'] == 'sending':
+                it['status'] = 'uncertain'
+                it['error'] = 'התוכנה נסגרה בזמן שליחה — יש לבדוק בדואר שנשלח לפני שליחה נוספת'
+        save_json(config.OUTBOX_FILE, items)
+        ids = [it['id'] for it in items if it['status'] == 'waiting']
+    sent = attempts = 0
+    for item_id in ids:
+        now = fixed_now or _now()
+        if attempts >= MAX_PER_RUN or is_holy_time(now):
             break
+        with file_lock(config.OUTBOX_FILE):
+            items = outbox()
+            it = next((it for it in items if it['id'] == item_id and it['status'] == 'waiting'), None)
+            if not it or dt.datetime.fromisoformat(it['send_at']) > now:
+                continue
+            it['status'] = 'sending'
+            it.setdefault('message_id', make_msgid())
+            save_json(config.OUTBOX_FILE, items)
+        attempts += 1
         acc = next((a for a in accounts if a['email'].lower() == it['account'].lower()), None)
+        message = None
         try:
             if not acc:
                 raise RuntimeError('התיבה כבר לא מחוברת')
             message = build(it, acc)
             smtp.send_mail(acc, message)
-            it['status'], it['sent'] = 'sent', now.isoformat(timespec='minutes')
-            after_send(acc, it, message)
-            sent += 1
-            if it.get('follow'):
-                from mailbrief.features.autofollow import register
-                register(it, now)
-        except (OSError, TimeoutError) as exc:           # the connection dropped midway: try again next round
-            it['retry'] = f'{now.isoformat(timespec="minutes")} · {str(exc)[:120]}'
+        except smtp.PartialDelivery as exc:
+            it.update(status='partial', error=str(exc), refused=exc.refused, accepted=exc.accepted,
+                      sent=now.isoformat())
+        except smtp.DeliveryUncertain as exc:
+            it.update(status='uncertain', error=str(exc))
+        except smtplib.SMTPException as exc:
+            it.update(status='failed', error=str(exc)[:200])
+        except (OSError, TimeoutError) as exc:  # before SMTP submission (submission errors are DeliveryUncertain)
+            it.update(status='waiting', retry=f'{now.isoformat()} · {str(exc)[:120]}')
         except Exception as exc:
             if str(exc) == net.OFFLINE:
-                it['retry'] = f'{now.isoformat(timespec="minutes")} · {net.OFFLINE}'
-                continue
-            it['status'], it['error'] = 'failed', str(exc)[:200]
-    for it in items:                                  # sent or cancelled: their copies of the files can go
-        if it['status'] in ('sent', 'cancelled') and it.get('files'):
-            shutil.rmtree(os.path.join(config.DATA, 'outbox-files', it['id']), ignore_errors=True)
-    done = [it for it in items if it['status'] != 'waiting']
-    save_json(config.OUTBOX_FILE, [it for it in items if it['status'] == 'waiting'] + done[-50:])
+                it.update(status='waiting', retry=f'{now.isoformat()} · {net.OFFLINE}')
+            else:
+                it.update(status='failed', error=str(exc)[:200])
+        else:
+            it.update(status='sent', sent=now.isoformat())
+            it.pop('retry', None)
+            sent += 1
+        # Commit SMTP's result before optional bookkeeping; a follow-up/copy failure must never trigger resending.
+        with file_lock(config.OUTBOX_FILE):
+            items = outbox()
+            items = [it if old['id'] == item_id else old for old in items]
+            save_json(config.OUTBOX_FILE, items)
+            if it['status'] == 'sent' and it.get('files'):
+                shutil.rmtree(os.path.join(config.DATA, 'outbox-files', it['id']), ignore_errors=True)
+        if it['status'] == 'sent':
+            after_send(acc, it, message)
+            if it.get('follow'):
+                try:
+                    from mailbrief.features.autofollow import register
+                    register(it, now)
+                except Exception:
+                    from mailbrief.features.diag import log_error
+                    log_error('outbox follow-up')
+    with file_lock(config.OUTBOX_FILE):
+        items = outbox()
+        for it in items:
+            if it['status'] == 'cancelled' and it.get('files'):
+                shutil.rmtree(os.path.join(config.DATA, 'outbox-files', it['id']), ignore_errors=True)
+        active = [it for it in items if it['status'] not in ('sent', 'cancelled')]
+        done = [it for it in items if it['status'] in ('sent', 'cancelled')]
+        save_json(config.OUTBOX_FILE, active + done[-50:])
     return sent

@@ -1,27 +1,40 @@
 """Backups, restore and the health check."""
 import datetime as dt
+import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import zipfile
+from pathlib import PurePosixPath
 
 from mailbrief import config
 from mailbrief.features import google_apps
 from mailbrief.mail import imap
 from mailbrief.features.calendar import holy_status, holy_windows
 from mailbrief.mail.accounts import friendly_error
-from mailbrief.storage import load_json, save_json
+from mailbrief.storage import file_lock, locked, load_json, save_json
 
 
+@locked(lambda: config.OUTBOX_FILE)
 def make_backup(tag='auto'):
-    """Zip every settings / data JSON (not the report HTML or the web cache). Secrets stay DPAPI-encrypted."""
+    """Back up JSON and the local files needed by queued mail and signatures. Secrets stay DPAPI-encrypted."""
     os.makedirs(config.BACKUP_DIR, exist_ok=True)
-    path = os.path.join(config.BACKUP_DIR, f'mailbrief-{dt.datetime.now():%Y-%m-%d-%H%M%S}-{tag}.zip')
+    path = os.path.join(config.BACKUP_DIR, f'mailbrief-{dt.datetime.now():%Y-%m-%d-%H%M%S-%f}-{tag}.zip')
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
         for name in sorted(os.listdir(config.DATA)):
             if (name.endswith('.json') and name != 'cache.json') or name == 'token':
-                z.write(os.path.join(config.DATA, name), name)
+                with file_lock(os.path.join(config.DATA, name)):
+                    z.write(os.path.join(config.DATA, name), name)
+        for folder in ('outbox-files', 'signatures'):
+            root = os.path.join(config.DATA, folder)
+            for parent, dirs, names in os.walk(root, followlinks=False):
+                dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(parent, d))]
+                for name in names:
+                    source = os.path.join(parent, name)
+                    if not os.path.islink(source):
+                        z.write(source, os.path.relpath(source, config.DATA).replace(os.sep, '/'))
     for old in list_backups()[config.KEEP_BACKUPS:]:
         try:
             os.remove(os.path.join(config.BACKUP_DIR, old))
@@ -35,14 +48,49 @@ def list_backups():
         if os.path.isdir(config.BACKUP_DIR) else []
 
 
+def _backup_member(name):
+    parts = name.split('/')
+    if not all(parts) or '\\' in name or ':' in name or any(p in ('.', '..') for p in parts) or name.startswith('/'):
+        raise RuntimeError('נתיב לא תקין בגיבוי')
+    if len(parts) == 1 and (name.endswith('.json') or name == 'token'):
+        return True
+    if parts[0] == 'outbox-files' and len(parts) == 3:
+        return True
+    if parts[0] == 'signatures' and len(parts) == 2:
+        return True
+    raise RuntimeError('קובץ לא צפוי בגיבוי: ' + name)
+
+
+@locked(lambda: config.OUTBOX_FILE + '.sender')
+@locked(lambda: config.OUTBOX_FILE)
 def restore_backup(name):
     if name not in list_backups():
         raise RuntimeError('הגיבוי לא נמצא')
-    make_backup('before-restore')                 # so a restore can always be undone
-    with zipfile.ZipFile(os.path.join(config.BACKUP_DIR, name)) as z:
-        members = [m for m in z.namelist() if '/' not in m and '\\' not in m and (m.endswith('.json') or m == 'token')]
+    # Stage and validate the whole archive before touching live data. Keep old JSON-only backups compatible.
+    with tempfile.TemporaryDirectory(dir=config.DATA) as stage:
+        with zipfile.ZipFile(os.path.join(config.BACKUP_DIR, name)) as z:
+            members = [m for m in z.infolist() if not m.is_dir()]
+            if len({m.filename for m in members}) != len(members):
+                raise RuntimeError('קובץ כפול בגיבוי')
+            for member in members:
+                _backup_member(member.filename)
+                target = os.path.join(config.DATA, *PurePosixPath(member.filename).parts)
+                if os.path.commonpath([os.path.realpath(config.DATA), os.path.realpath(target)]) != os.path.realpath(config.DATA):
+                    raise RuntimeError('נתיב לא תקין בגיבוי')
+                content = z.read(member)
+                if member.filename.endswith('.json') and '/' not in member.filename:
+                    json.loads(content.decode('utf-8'))
+                dest = os.path.join(stage, *PurePosixPath(member.filename).parts)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, 'wb') as f:
+                    f.write(content)
+        make_backup('before-restore')
         for member in members:
-            z.extract(member, config.DATA)
+            parts = PurePosixPath(member.filename).parts
+            target = os.path.join(config.DATA, *parts)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with file_lock(target):
+                os.replace(os.path.join(stage, *parts), target)
     return len(members)
 
 

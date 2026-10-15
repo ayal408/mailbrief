@@ -63,6 +63,7 @@ def compose_page(msg='', to='', subject='', body=''):
                        f'<input type="hidden" name="id" value="{e(m["id"])}"><button class="ghost" style="margin:0;padding:5px 12px" title="לשלוח עכשיו במקום לחכות">📤 עכשיו</button></form> '
                        f'<form method="post" action="/schedule_cancel" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
                        f'<input type="hidden" name="id" value="{e(m["id"])}"><button class="ghost" style="margin:0;padding:5px 12px">ביטול</button></form>',
+            'sending': '<span>📤 נשלח כעת</span>',
             'sent': '<span style="color:var(--good)">✓ נשלח</span>', 'cancelled': '<span class="muted">בוטל</span>'}
            .get(m['status'], f'<span style="color:var(--bad)">⚠️ {e(m.get("error", ""))}</span>'))
         + '</td></tr>' for m in sorted(outbox(), key=lambda m: (m['status'] != 'waiting', m['send_at'])))
