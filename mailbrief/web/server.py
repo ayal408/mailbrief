@@ -878,11 +878,11 @@ class Handler(BaseHTTPRequestHandler):
                     if q.get('cached'):
                         rows = [dict(r, account=a) for a in view.emails() for r in mailbox.cached_list(a.lower(), 'INBOX')]
                         rows.sort(key=lambda r: r['at'], reverse=True)
-                        return self._json({'items': rows[:mailbox.PER_PAGE], 'total': len(rows), 'offline': False})
+                        return self._json({'items': rows[:mailbox.PER_PAGE], 'total': sum(mailbox.cached_total(a, 'INBOX') for a in view.emails()), 'offline': False})
                     return self._json(mailbox.unified(view.emails(), page_no, q.get('q', ''), bool(q.get('unread'))))
                 if q.get('cached'):
                     rows = mailbox.cached_list(q.get('a', '').lower(), q.get('f', 'INBOX'), page_no)
-                    return self._json({'items': rows, 'total': len(rows), 'offline': False})
+                    return self._json({'items': rows, 'total': mailbox.cached_total(q.get('a', ''), q.get('f', 'INBOX')), 'offline': False})
                 return self._json(mailbox.list_messages(q.get('a', ''), q.get('f', 'INBOX'), page_no, q.get('q', ''), bool(q.get('unread'))))
             if url.path == '/inbox_translate.json' and uid:
                 return self._json(inbox.translate(q.get('a', ''), q.get('f', 'INBOX'), uid))

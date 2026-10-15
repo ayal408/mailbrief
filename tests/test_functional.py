@@ -284,3 +284,26 @@ class ContactsAndMailboxDay(Isolated):
         self.assertNotIn('Only second mailbox', first)
         self.assertIn('Only second mailbox', second)
         self.assertNotIn('Only first mailbox', second)
+
+
+class InboxPagination(Isolated):
+    def test_unified_total_and_every_page_cover_all_mailboxes(self):
+        rows = {a: [{'uid': n, 'at': f'{n:04}', 'account': a} for n in range(top, 0, -1)]
+                for a, top in [('one@example.com', 130), ('two@example.com', 65)]}
+        def fetch(address, folder, page, query, unread):
+            items = rows[address]
+            return {'items': items[page * 50:(page + 1) * 50], 'total': len(items), 'offline': False}
+        with mock.patch.object(mailbox, 'list_messages', side_effect=fetch):
+            pages = [mailbox.unified(list(rows), page) for page in range(4)]
+        self.assertEqual([p['total'] for p in pages], [195] * 4)
+        self.assertEqual([len(p['items']) for p in pages], [50, 50, 50, 45])
+        keys = [(r['account'], r['uid']) for p in pages for r in p['items']]
+        self.assertEqual(len(set(keys)), 195)
+
+    def test_offline_pagination_reports_entire_cached_folder(self):
+        mailbox._cache_heads('me@example.com', 'INBOX', 1,
+                             [{'uid': uid, 'at': str(uid)} for uid in range(1, 121)])
+        with mock.patch.object(mailbox, 'account', return_value={'host': 'imap.example.com'}), mock.patch.object(mailbox, 'session', side_effect=OSError('offline')):
+            pages = [mailbox.list_messages('me@example.com', page=p) for p in range(3)]
+        self.assertEqual([p['total'] for p in pages], [120] * 3)
+        self.assertEqual([len(p['items']) for p in pages], [50, 50, 20])

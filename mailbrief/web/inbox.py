@@ -822,14 +822,21 @@ function drawBulk(){
   var n = Object.keys(S.checked).length; $('ib-bulk').classList.toggle('on', n > 0); $('ib-bulk-n').textContent = n ? n + ' נבחרו' : '';
   $('ib-all').checked = n > 0 && n === S.groups.length;
 }
-var listSeq = 0;
+var listSeq = 0, morePending = 0;
 function loadList(opts){
-  opts = opts || {}; var seq = ++listSeq;
-  var params = {a: S.acc, f: S.folder, p: opts.more ? S.page : 0, q: S.q, unread: S.unread ? 1 : ''};
+  opts = opts || {};
+  if (opts.more && morePending) return Promise.resolve();
+  var seq = ++listSeq, nextPage = opts.more ? S.page + 1 : 0;
+  morePending = opts.more ? seq : 0;
+  var moreButton = $('ib-more');
+  if (opts.more && moreButton) { moreButton.disabled = true; moreButton.textContent = 'טוען הודעות…'; }
+  var params = {a: S.acc, f: S.folder, p: nextPage, q: S.q, unread: S.unread ? 1 : ''};
   if (!opts.more && !opts.quiet && !S.items.length) $('ib-rows').innerHTML = '<div class="ib-empty">טוען…</div>';
   var shown = false;
   var show = function(d, cached){
     if (seq !== listSeq) return;
+    if (opts.more && !d.items.length && d.errors && d.errors.length) throw new Error(d.errors[0]);
+    if (!cached) S.page = nextPage;
     S.items = opts.more ? S.items.concat(d.items) : d.items; S.total = d.total;
     if (!opts.more && !cached) { var keep = {}; group(S.items).forEach(function(g){ if (S.checked[g.key]) keep[g.key] = 1; }); S.checked = keep; }
     S.groups = group(S.items); drawList();
@@ -839,7 +846,14 @@ function loadList(opts){
     if (d.errors && d.errors.length) toast('⚠️ ' + d.errors[0]);
   };
   if (!opts.more && !S.q && !S.unread && !opts.quiet) api('/inbox_list.json', Object.assign({}, params, {cached: 1})).then(function(d){ if (d.items.length && !S.items.length) show(d, true); }).catch(function(){});
-  return api('/inbox_list.json', params).then(function(d){ show(d, false); }).catch(function(e){ if (seq === listSeq && !S.items.length) $('ib-rows').innerHTML = '<div class="ib-empty">⚠️ ' + esc(e.message) + '</div>'; });
+  return api('/inbox_list.json', params).then(function(d){ show(d, false); }).catch(function(e){
+    if (seq !== listSeq) return;
+    if (!S.items.length) $('ib-rows').innerHTML = '<div class="ib-empty">⚠️ ' + esc(e.message) + '</div>';
+    else toast('⚠️ לא ניתן לטעון עוד הודעות — אפשר לנסות שוב. ' + e.message);
+  }).then(function(){
+    if (morePending === seq) morePending = 0;
+    if (seq === listSeq) { var b = $('ib-more'); if (b) { b.disabled = false; b.textContent = 'עוד הודעות ▾'; } }
+  });
 }
 $('ib-cats').addEventListener('click', function(ev){ var b = ev.target.closest('[data-cat]'); if (b) choose(S.acc, b.dataset.cat); });
 function choose(acc, folder){
@@ -1165,7 +1179,7 @@ $('ibx').addEventListener('click', function(ev){
   if ((el = t.closest('[data-view]'))) { viewFile(+el.dataset.view); return; }
   if ((el = t.closest('[data-bulk]'))) { var refs = selectedRefs(); if (refs.length) act(el.dataset.bulk, refs); return; }
   if ((el = t.closest('[data-do=compose]'))) { compose('new'); return; }
-  if (t.id === 'ib-more') { S.page++; loadList({more: 1}); return; }
+  if (t.closest('#ib-more')) { loadList({more: 1}); return; }
   if ((el = t.closest('[data-tmore]'))) { unfoldThread(); return; }
   if ((el = t.closest('[data-thread]'))) {              // 💬 the whole conversation open / closed
     if (el.dataset.thread === 'all') unfoldThread();

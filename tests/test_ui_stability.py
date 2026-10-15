@@ -46,11 +46,25 @@ drawList();assert.equal(rows.scrollTop,140);assert.equal(focused,true);
 
     def test_fresh_response_after_cached_list_keeps_user_scroll(self):
         fn = inbox.JS.split('function loadList(opts){', 1)[1].split("$('ib-cats').addEventListener", 1)[0]
-        self.run_js('''const assert=require('node:assert/strict');var listSeq=0,pending=[],rows={scrollTop:0},S={acc:'a',folder:'INBOX',page:0,q:'',unread:false,items:[],checked:{}};
+        self.run_js('''const assert=require('node:assert/strict');var listSeq=0,morePending=0,pending=[],rows={scrollTop:0},S={acc:'a',folder:'INBOX',page:0,q:'',unread:false,items:[],checked:{}};
 function $(){return rows;}function api(){return new Promise(resolve=>pending.push(resolve));}function group(items){return items;}function drawList(){}function toast(){}function esc(s){return s;}
 ''' + 'function loadList(opts){' + fn + '''
 (async()=>{loadList();pending[0]({items:[{key:'one'}],total:1});await new Promise(setImmediate);rows.scrollTop=320;
 pending[1]({items:[{key:'two'},{key:'one'}],total:2});await new Promise(setImmediate);assert.equal(rows.scrollTop,320);})();
+''')
+
+    def test_load_more_retries_failed_page_and_ignores_double_click(self):
+        fn = inbox.JS.split('function loadList(opts){', 1)[1].split("$('ib-cats').addEventListener", 1)[0]
+        self.run_js('''const assert=require('node:assert/strict');var listSeq=0,morePending=0,pending=[],requests=[],notices=[];
+var button={disabled:false,textContent:''},rows={scrollTop:280},S={acc:'a',folder:'INBOX',page:0,q:'',unread:false,items:[{key:'first'}],checked:{}};
+function $(id){return id==='ib-more'?button:rows;}function api(path,params){requests.push(params.p);return new Promise((resolve,reject)=>pending.push({resolve,reject}));}
+function group(items){return items;}function drawList(){}function toast(s){notices.push(s);}function esc(s){return s;}
+''' + 'function loadList(opts){' + fn + '''
+(async()=>{var first=loadList({more:1});loadList({more:1});assert.deepEqual(requests,[1]);assert.equal(button.disabled,true);
+pending[0].reject(new Error('offline'));await first;assert.equal(S.page,0);assert.equal(button.disabled,false);assert.equal(notices.length,1);
+var retry=loadList({more:1});assert.deepEqual(requests,[1,1]);pending[1].resolve({items:[{key:'second'}],total:150});await retry;
+assert.equal(S.page,1);assert.equal(S.items.length,2);assert.equal(rows.scrollTop,280);
+var next=loadList({more:1});assert.deepEqual(requests,[1,1,2]);pending[2].resolve({items:[{key:'third'}],total:150});await next;assert.equal(S.page,2);})();
 ''')
 
     def test_message_from_another_account_with_same_uid_cannot_overwrite_reader(self):

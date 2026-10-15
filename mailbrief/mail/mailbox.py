@@ -196,6 +196,11 @@ def cached_list(acc, folder, page=0):
     return [json.loads(r[0]) for r in rows]
 
 
+def cached_total(acc, folder):
+    with _DB_LOCK, contextlib.closing(_db()) as db:
+        return db.execute('SELECT COUNT(*) FROM heads WHERE acc=? AND folder=?', (acc.lower(), folder)).fetchone()[0]
+
+
 def _forget(acc, folder, uids):
     with _DB_LOCK, contextlib.closing(_db()) as db, db:
         db.executemany('DELETE FROM heads WHERE acc=? AND folder=? AND uid=?', [(acc, folder, int(u)) for u in uids])
@@ -465,25 +470,33 @@ def list_messages(address, folder='INBOX', page=0, query='', unread=False):
         rows = [] if query or unread else cached_list(address.lower(), folder, page)
         if not rows:
             raise
-        return {'items': rows, 'total': len(rows), 'offline': True, 'error': str(exc)}
+        return {'items': rows, 'total': cached_total(address, folder), 'offline': True, 'error': str(exc)}
 
 
 def unified(addresses, page=0, query='', unread=False):
     """📬 All the inboxes as one list, newest first."""
-    items, errors, offline = [], [], False
+    items, errors, offline, total = [], [], False, 0
     for address in addresses:
         try:
-            got = list_messages(address, 'INBOX', 0, query, unread) if page == 0 else \
-                {'items': sum((list_messages(address, 'INBOX', p, query, unread)['items'] for p in range(page + 1)), []), 'offline': False}
+            account_items = []
+            first = list_messages(address, 'INBOX', 0, query, unread)
+            account_items.extend(first['items'])
+            account_offline = first.get('offline', False)
+            for p in range(1, min(page + 1, (first['total'] + PER_PAGE - 1) // PER_PAGE)):
+                got = list_messages(address, 'INBOX', p, query, unread)
+                account_items.extend(got['items'])
+                account_offline |= got.get('offline', False)
         except Exception as exc:
             errors.append(f'{address}: {exc}')
             continue
-        offline |= got.get('offline', False)
-        for r in got['items']:
-            r['account'] = address
-            items.append(r)
+        total += first['total']
+        offline |= account_offline
+        for row in account_items:
+            items.append(dict(row, account=address))
+    if errors and not items:
+        raise RuntimeError('; '.join(errors))
     items.sort(key=lambda r: r['at'], reverse=True)
-    return {'items': items[page * PER_PAGE:(page + 1) * PER_PAGE], 'total': len(items), 'offline': offline, 'errors': errors}
+    return {'items': items[page * PER_PAGE:(page + 1) * PER_PAGE], 'total': total, 'offline': offline, 'errors': errors}
 
 
 # ---- one message ---------------------------------------------------------------------------------------------------------
