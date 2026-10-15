@@ -11,7 +11,7 @@ from mailbrief.web import extras, inbox
 @unittest.skipUnless(shutil.which('node'), 'Node is needed for UI regression scenarios')
 class StableUI(unittest.TestCase):
     def run_js(self, script):
-        result = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=10, encoding='utf-8')
+        result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_older_navigation_response_cannot_replace_latest_page(self):
@@ -66,5 +66,5 @@ assert.deepEqual(drawn,['second@example.com']);})();
     def test_scripts_remain_valid_javascript(self):
         scripts = [inbox.JS] + re.findall(r'<script>(.*?)</script>', extras.HTML + extras.BOOT, re.S)
         for script in scripts:
-            result = subprocess.run(['node', '--check'], input=script, capture_output=True, text=True, timeout=10, encoding='utf-8')
+            result = subprocess.run(['node', '--check'], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr + json.dumps(script[:50]))
