@@ -164,10 +164,14 @@ def dismiss_button(r):
                f'<button style="{SMALL}" title="לחסום את השולח — מיילים ממנו לא יגיעו יותר לדואר הנכנס">🚫</button></form>' if r.get('sender') else ''))
 
 
-TODAY_REFRESH = """<script>(function(){var attempts=0;function refresh(){if(++attempts>30||location.pathname!='/today')return;
+TODAY_REFRESH = """<script>(function(){var attempts=0,generation=window.__mbToday=(window.__mbToday||0)+1;function refresh(){if(++attempts>30||location.pathname!='/today'||generation!==window.__mbToday)return;
 fetch('/today_widgets.json',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
 Object.keys(d.cards||{}).forEach(function(key){var old=document.querySelector('[data-live="'+key+'"]');
-if(!old||old.contains(document.activeElement))return;var t=document.createElement('template');t.innerHTML=d.cards[key];old.replaceWith(t.content.firstElementChild);});
+if(!old||old.contains(document.activeElement)||old.matches(':hover'))return;var t=document.createElement('template');t.innerHTML=d.cards[key];
+var fresh=t.content.firstElementChild;if(!fresh||old.isEqualNode(fresh))return;
+var y=window.scrollY,anchor=Array.prototype.find.call(document.querySelectorAll('#today-grid>.box'),function(el){return el.getBoundingClientRect().bottom>0;});
+var top=anchor&&anchor.getBoundingClientRect().top;old.replaceWith(fresh);
+if(anchor&&anchor.isConnected)window.scrollTo(0,y+anchor.getBoundingClientRect().top-top);});
 if(d.pending)setTimeout(refresh,3000);}).catch(function(){});}setTimeout(refresh,1000);})();</script>"""
 
 
@@ -211,7 +215,7 @@ def today_page(msg='', show_all=False, print_now=False, widgets=False):
         key = next((key for prefix, key in (('🌤️', 'weather'), ('🕯️', 'shabbat'), ('📅 היום ביומן', 'calendar'),
                                              ('✅ משימות', 'tasks'), ('💻', 'projects')) if title.startswith(prefix)), '')
         result = (f'<div data-live="{key}" class="box{" imp" if title.startswith(IMPORTANT_CARDS) else ""}" '
-                  'style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px">'
+                  f'style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;{"min-height:220px;" if key else ""}">'
                   f'<h3 style="margin:0 0 8px">{title}</h3>{body}</div>')
         if key:
             live_cards[key] = result

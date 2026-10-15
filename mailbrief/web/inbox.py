@@ -352,7 +352,8 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 .ib-ic{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:6px 9px;font-size:14px;line-height:1}
 .ib-ic:hover{border-color:var(--accent)}.ib-ic.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .ib-bulk{display:none;gap:4px;width:100%;align-items:center;font-size:13px}.ib-bulk.on{display:flex}
-.ib-rows{overflow-y:auto;flex:1}
+.ib-rows{overflow-y:auto;flex:1;scrollbar-gutter:stable;overflow-anchor:none}
+#ib-refresh[data-pending]::after{content:"●";color:var(--accent);font-size:10px;margin-inline-start:4px}
 .ib-row{display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;padding:9px 10px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
 .ib-row:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
 .ib-row.sel{background:color-mix(in srgb,var(--accent) 13%,transparent)}.ib-row.kb{box-shadow:inset 3px 0 0 var(--accent-2)}
@@ -633,6 +634,11 @@ function ownTree(acc, own){
   }).join('');
 }
 function drawFolders(){
+  var side = document.querySelector('.ib-side'), top = side ? side.scrollTop : 0;
+  renderFolders();
+  if (side) side.scrollTop = top;
+}
+function renderFolders(){
   var html = '';
   if (multi) html += '<button type="button" class="ib-f' + (S.acc === '*' ? ' on' : '') + '" data-acc="*" data-folder="INBOX"><span>📬</span><span class="nm">כל התיבות</span></button>';
   B.accounts.forEach(function(a){
@@ -786,17 +792,30 @@ function rowName(r){
 function currentPath(){ var l = S.folders[S.acc] || []; var f = (l.filter ? l : []).filter(function(x){ return x.id === S.folder; })[0]; return f ? f.path : ''; }
 function currentRole(){ var l = S.folders[S.acc] || []; var f = (l.filter ? l : []).filter(function(x){ return x.id === S.folder; })[0]; return f ? f.role : (S.acc === '*' ? 'inbox' : ''); }
 function drawList(){
+  var rows = $('ib-rows'), top = rows.scrollTop, boxTop = rows.getBoundingClientRect().top;
+  var anchor = Array.prototype.find.call(rows.querySelectorAll('[data-key]'), function(el){return el.getBoundingClientRect().bottom > boxTop;});
+  var key = anchor && anchor.dataset.key, offset = anchor && anchor.getBoundingClientRect().top;
+  var active = document.activeElement, focused = active && rows.contains(active), activeRow = focused && active.closest('[data-key]');
+  var activeKey = activeRow && activeRow.dataset.key, isCheck = focused && active.matches('input[type=checkbox]');
+  renderList(); rows.scrollTop = top;
+  Array.prototype.forEach.call(rows.querySelectorAll('[data-key]'), function(el){
+    if (key && el.dataset.key === key) rows.scrollTop += el.getBoundingClientRect().top - offset;
+    if (activeKey && el.dataset.key === activeKey) { var control = el.querySelector(isCheck ? 'input[type=checkbox]' : 'button'); if(control)control.focus({preventScroll:true}); }
+  });
+}
+function renderList(){
   var rows = $('ib-rows');
-  if (!S.groups.length) { rows.innerHTML = '<div class="ib-empty">' + (S.q ? '🔍 לא נמצאו הודעות' : S.unread ? '🎉 אין הודעות שלא נקראו' : '📭 התיקייה ריקה') + '</div>'; return; }
-  rows.innerHTML = S.groups.map(function(g, i){
+  if (!S.groups.length) { rows.innerHTML = '<div class="ib-empty">' + (S.q ? '🔍 לא נמצאו הודעות' : S.unread ? '🎉 אין הודעות שלא נקראו' : '📭 התיקייה ריקה') + '</div>'; drawBulk(); return; }
+  var html = S.groups.map(function(g, i){
     var r = g.top, sel = S.open && S.open.account.toLowerCase() === g.account.toLowerCase() && g.rows.some(function(x){ return x.uid === S.open.uid; });
-    return '<div class="ib-row' + (g.unread ? ' unread' : '') + (sel ? ' sel' : '') + (i === S.kb ? ' kb' : '') + '" data-i="' + i + '" draggable="true">' +
+    return '<div class="ib-row' + (g.unread ? ' unread' : '') + (sel ? ' sel' : '') + (i === S.kb ? ' kb' : '') + '" data-key="' + esc(g.key) + '" data-i="' + i + '" draggable="true">' +
       '<div class="ck"><input type="checkbox" data-ck="' + i + '"' + (S.checked[g.key] ? ' checked' : '') + '><button type="button" class="ib-star' + (g.star ? ' on' : '') + '" data-star="' + i + '" title="כוכב (S)">⭐</button></div>' +
       '<div class="who" dir="auto">' + (multi && S.acc === '*' ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color(g.account) + ';margin-inline-end:6px"></span>' : '') +
         esc(rowName(r)) + (g.rows.length > 1 ? '<span class="cnt">' + g.rows.length + '</span>' : '') + '</div>' +
       '<div class="when">' + (g.attach ? '📎 ' : '') + when(r.at) + '</div>' +
       '<div class="sub" dir="auto">' + labelChips(g.account || S.acc, r.labels, currentPath()) + esc(r.subject || '(ללא נושא)') + ' <span class="sn">— ' + esc(r.snippet) + '</span></div></div>';
   }).join('') + (S.total > (S.page + 1) * 50 ? '<div class="ib-more"><button class="ib-ic" type="button" id="ib-more">עוד הודעות ▾</button></div>' : '');
+  if (rows.innerHTML !== html) rows.innerHTML = html;
   drawBulk();
 }
 function drawBulk(){
@@ -813,6 +832,7 @@ function loadList(opts){
     S.items = opts.more ? S.items.concat(d.items) : d.items; S.total = d.total;
     if (!opts.more && !cached) { var keep = {}; group(S.items).forEach(function(g){ if (S.checked[g.key]) keep[g.key] = 1; }); S.checked = keep; }
     S.groups = group(S.items); drawList();
+    if (!opts.quiet && !opts.more) $('ib-rows').scrollTop = 0;
     if (d.offline) toast('📴 אין חיבור — מוצגת הרשימה האחרונה ששמורה במחשב');
     if (d.errors && d.errors.length) toast('⚠️ ' + d.errors[0]);
   };
@@ -929,8 +949,8 @@ function openMessage(acc, folder, uid){
   S.open = {account: acc, folder: folder, uid: +uid}; S.imgs = false; syncUrl(); $('ibx').classList.add('reading'); $('ibx').classList.toggle('wide', WIDE);
   $('ib-read').innerHTML = '<div class="ib-none">טוען…</div>';
   api('/inbox_msg.json', {a: acc, f: folder, u: uid}).then(function(m){
-    if (!S.open || S.open.uid !== m.uid) return; S.open = m; S.imgs = m.images; drawMessage(); setTimeout(function(){ loadAllFolders(true); }, 800);
-  }).catch(function(e){ $('ib-read').innerHTML = '<div class="ib-none">⚠️ ' + esc(e.message) + '</div>'; });
+    if (!S.open || S.open.uid !== +uid || S.open.account !== acc || S.open.folder !== folder) return; S.open = m; S.imgs = m.images; drawMessage(); setTimeout(function(){ loadAllFolders(true); }, 800);
+  }).catch(function(e){ if (S.open && S.open.uid === +uid && S.open.account === acc && S.open.folder === folder) $('ib-read').innerHTML = '<div class="ib-none">⚠️ ' + esc(e.message) + '</div>'; });
 }
 function moveOptions(acc, here){
   var l = S.folders[acc]; if (!l || !l.filter) return '';
@@ -1206,7 +1226,7 @@ function msgAction(k){
 $('ib-q').value = S.q;
 var qTimer; $('ib-q').addEventListener('input', function(){ clearTimeout(qTimer); qTimer = setTimeout(function(){ S.q = $('ib-q').value.trim(); S.page = 0; syncUrl(); loadList(); }, 450); });
 $('ib-unread').onclick = function(){ S.unread = !S.unread; this.classList.toggle('on', S.unread); S.page = 0; loadList(); };
-$('ib-refresh').onclick = function(){ loadList({quiet: 1}); loadAllFolders(true); if (!S.open) drawHome(); };
+$('ib-refresh').onclick = function(){ S.page = 0; this.removeAttribute('data-pending'); this.title = 'רענון'; loadList({quiet: 1}); loadAllFolders(true); if (!S.open) drawHome(); };
 $('ib-adv').onclick = function(){ if ($('ib-menu').classList.contains('on')) closeMenu(); else searchMenu(this); };
 $('ib-look').onclick = function(){ if ($('ib-menu').classList.contains('on')) closeMenu(); else lookMenu(this); };
 $('ib-folders').addEventListener('contextmenu', function(ev){ var b = ev.target.closest('.ib-f[data-folder]'); if (b && b.dataset.acc !== '*') { ev.preventDefault(); folderMenu(b); } });
@@ -1322,7 +1342,13 @@ function keys(ev){
 }
 var timer = setInterval(function(){
   if (!$('ibx')) return stop();
-  api('/inbox_poll.json').then(function(d){ if (S.v >= 0 && d.v !== S.v) { loadList({quiet: 1}); loadAllFolders(true); } S.v = d.v; }).catch(function(){});
+  if (document.hidden) return;
+  api('/inbox_poll.json').then(function(d){ if (S.v >= 0 && d.v !== S.v) {
+    if (S.comp || S.open || S.page > 0 || Object.keys(S.checked).length || $('ib-menu').classList.contains('on')) {
+      $('ib-refresh').setAttribute('data-pending','1'); $('ib-refresh').title='יש עדכונים חדשים — לחיצה לרענון'; return;
+    }
+    loadList({quiet: 1}); loadAllFolders(true);
+  } S.v = d.v; }).catch(function(){});
 }, 8000);
 function fitBox(){                                     // 📐 the inbox fills the window below the tabs: the list and the email scroll, not the page
   var box = $('ibx'); if (!box) return;
@@ -1333,7 +1359,10 @@ function fitBox(){                                     // 📐 the inbox fills t
 function stop(){ window.removeEventListener('resize', fitBox); clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.removeEventListener('message', fitFrame); window.__ibx = null; }
 function unload(){ if (S.comp) saveDraft(true); }
 window.addEventListener('keydown', keys); window.addEventListener('beforeunload', unload); document.addEventListener('mousedown', outside); window.addEventListener('message', fitFrame);
-window.__ibx = {stop: stop};
+window.__ibx = {stop: stop, beforeLeave: function(){
+  if(!S.comp)return Promise.resolve();if(S.comp.saving)return S.comp.saving.then(function(){return S.comp&&S.comp.dirty?saveDraft(true):null;});
+  return S.comp.dirty?saveDraft(true):Promise.resolve();
+}};
 window.addEventListener('resize', fitBox); fitBox(); setTimeout(fitBox, 300);
 
 if (B.solo) { document.body.classList.add('solo'); setTimeout(fitBox, 50); }

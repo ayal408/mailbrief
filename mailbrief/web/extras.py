@@ -82,7 +82,7 @@ HTML = """
   function hide(){ clearTimeout(timer); clearInterval(ticker); el.classList.remove('on'); }
   function local(url){ try { var u = new URL(url, location.href); return u.origin === location.origin ? u : null; } catch(e){ return null; } }
   // ---- instant tab switching (like the surprise box): fetch the page, swap only <main> ----
-  var bar = document.getElementById('mb-bar'), cache = {};
+  var bar = document.getElementById('mb-bar'), cache = {}, navigation = 0;
   function progress(on){
     if (on) { bar.className = ''; void bar.offsetWidth; bar.className = 'on'; }
     else { bar.className = 'done'; setTimeout(function(){ if (bar.className === 'done') bar.className = ''; }, 700); }
@@ -112,26 +112,31 @@ HTML = """
     });
   }
   function navigate(href, push, trigger){
-    var u = new URL(href, location.href), main = document.querySelector('main');
+    var u = new URL(href, location.href), main = document.querySelector('main'), sequence = ++navigation;
     busy(trigger); progress(true); main.classList.add('fading');
-    var slow = setTimeout(function(){ show(u.pathname); }, 1600);   // really slow: the big loading card too
-    load(u.pathname + u.search).then(function(res){
+    var slow = setTimeout(function(){ if(sequence === navigation) show(u.pathname); }, 1600);   // really slow: the big loading card too
+    var ready = false, leaving = window.__ibx && window.__ibx.beforeLeave ? window.__ibx.beforeLeave() : Promise.resolve();
+    Promise.resolve(leaving).then(function(){ ready = true; return load(u.pathname + u.search); }).then(function(res){
+      if (sequence !== navigation) { clearTimeout(slow); if(trigger)trigger.classList.remove('busy'); return; }
       var doc = new DOMParser().parseFromString(res.html, 'text/html'), fresh = doc.querySelector('main');
       if (!fresh) throw new Error('no page');
       var final = new URL(res.url);
       document.title = doc.title;
+      if (window.__ibx) window.__ibx.stop();
+      if (push) history.pushState({mb: 1}, '', final.pathname + final.search + u.hash);
       main.innerHTML = fresh.innerHTML;
       runScripts(main);
-      if (push) history.pushState({mb: 1}, '', final.pathname + final.search + u.hash);
       setActive(final.pathname);
       clearTimeout(slow); hide(); progress(false);
-      main.classList.remove('fading', 'swap'); void main.offsetWidth; main.classList.add('swap');
+      main.classList.remove('fading', 'swap');
       if (trigger && trigger.classList) trigger.classList.remove('busy');
-      var target = u.hash && document.getElementById(u.hash.slice(1)), tabs = document.getElementById('mb-tabs');
-      if (target) target.scrollIntoView({behavior: 'smooth'});
-      else if (push && tabs && window.scrollY > tabs.offsetTop) window.scrollTo({top: tabs.offsetTop, behavior: 'smooth'});
+      var target = u.hash && document.getElementById(u.hash.slice(1));
+      if (target) target.scrollIntoView({behavior: 'auto', block: 'start'});
       if (window.MB.fx) window.MB.fx();
-    }).catch(function(){ location.href = href; });
+    }).catch(function(){
+      clearTimeout(slow); if(sequence !== navigation)return; hide();progress(false);if(trigger)trigger.classList.remove('busy');
+      if(ready)location.href=href;else{var note=document.getElementById('ib-c-note');if(note)note.textContent='הטיוטה לא נשמרה — יש לבדוק את החיבור ולנסות שוב לפני יציאה';}
+    });
   }
   document.addEventListener('click', function(ev){
     var a = ev.target.closest && ev.target.closest('a[href]');
@@ -200,17 +205,8 @@ HTML = """
   window.addEventListener('scroll', stuck, {passive: true}); stuck();
   var LINES = ['MailBrief — המייל שלך, מסודר ✨', 'בלי AI, בלי ענן — הכול נשאר במחשב שלך 🔒', 'קבלות, אוטומציות, יומן ומשימות — במקום אחד',
                'בשבת ובחג הכול נח 🕯️', 'Ctrl+K — לכל מקום בשנייה ⌨️'];
-  var typed = document.getElementById('mb-type'), li = 0, ci = 0, back = false;
-  function type(){
-    if (!typed) return;
-    if (window.MB_still && window.MB_still()) { typed.textContent = LINES[li]; return setTimeout(type, 1500); }
-    var line = LINES[li];
-    if (!back) { ci++; if (ci > line.length) { back = true; return setTimeout(type, 2200); } }
-    else { ci -= 2; if (ci <= 0) { ci = 0; back = false; li = (li + 1) % LINES.length; } }
-    typed.textContent = Array.from(line).slice(0, ci).join('');
-    setTimeout(type, back ? 25 : 55);
-  }
-  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { if (typed) typed.textContent = LINES[0]; } else type();
+  var typed = document.getElementById('mb-type');
+  if (typed) typed.textContent = LINES[0];
   window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') { hide(); close(); } });
 
   var ITEMS = [
@@ -476,7 +472,7 @@ HTML += """
   window.MB.confetti = confetti;
   function hello(){ var g = document.getElementById('mb-gift'), r = g ? g.getBoundingClientRect() : {top: 90};
     confetti(110, innerWidth * .25, r.top + 90); setTimeout(function(){ confetti(110, innerWidth * .75, r.top + 90); }, 180); }
-  try { if (!sessionStorage.getItem('mb-hello')) { sessionStorage.setItem('mb-hello', '1'); setTimeout(hello, 400); } } catch(e){}
+  // Celebrations only happen on an explicit click, never while someone is reading.
   var gift = document.getElementById('mb-gift'); if (gift) gift.onclick = hello;   // the envelope throws confetti, like the gift
   window.MB.fx = function(){ fx(); draw(); };
 })();
@@ -559,7 +555,7 @@ HTML += """
   if (window.__mbA11y) return; window.__mbA11y = true;
   var root = document.documentElement, panel = document.getElementById('mb-a11y'), btn = document.getElementById('mb-a11y-btn');
   var FLAGS = ['contrast', 'still', 'spacing', 'links', 'cursor', 'focus'];
-  function get(){ try { return JSON.parse(localStorage.getItem('mb-a11y') || '{}'); } catch(e){ return {}; } }
+  function get(){ try { return Object.assign({still:true}, JSON.parse(localStorage.getItem('mb-a11y') || '{}')); } catch(e){ return {still:true}; } }
   function put(s){ try { localStorage.setItem('mb-a11y', JSON.stringify(s)); } catch(e){} }
   function apply(){
     var s = get();
@@ -718,15 +714,14 @@ HTML += """
   window.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && box.classList.contains('on')) close(); });
   window.addEventListener('resize', function(){ if (box.classList.contains('on')) place(); });
   window.MB = window.MB || {}; window.MB.tour = start;
-  var seen = true; try { seen = localStorage.getItem(KEY) === 'done'; } catch(e){}
-  if (!seen && document.getElementById('mb-tabs') && !/^[/](welcome|oauth)/.test(location.pathname)) setTimeout(start, 900);
+  // The tour remains available from Help; it never interrupts a session automatically.
 })();
 </script>"""
 
 
 BOOT = ("<script>try{var d=document.documentElement,t=localStorage.getItem('mb-theme'),h=new Date().getHours();"
         "if(t==='night')t=(h>=19||h<6)?'dark':'light';if(t==='light'||t==='dark')"
-        "d.setAttribute('data-theme',t);var a=JSON.parse(localStorage.getItem('mb-a11y')||'{}');if(a.fs)d.setAttribute('data-fs',a.fs);"
+        "d.setAttribute('data-theme',t);var a=Object.assign({still:true},JSON.parse(localStorage.getItem('mb-a11y')||'{}'));if(a.fs)d.setAttribute('data-fs',a.fs);"
         "['contrast','still','spacing','links','cursor','focus'].forEach(function(f){if(a[f])d.setAttribute('data-'+f,'')})}catch(e){}</script>")
 
 
@@ -734,3 +729,11 @@ BOOT = ("<script>try{var d=document.documentElement,t=localStorage.getItem('mb-t
 from mailbrief.web import hebpicker  # noqa: E402
 STYLE += hebpicker.STYLE
 HTML += hebpicker.HTML
+
+# Stable status feedback: no full-screen overlay, hover movement or automatic decoration.
+STYLE += """
+#mb-load{inset:auto 16px 16px auto;background:var(--surface);backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none}
+#mb-load .card{min-width:220px;padding:12px 16px;border-radius:12px;max-width:360px}
+#mb-load .sky,#mb-load .track{display:none}#mb-load .x{pointer-events:auto}
+.busy::before{display:none}.box:hover h3{transform:none}
+"""

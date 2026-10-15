@@ -71,3 +71,11 @@ confidential; it is still kept out of git (`microsoft_client.json`, git-ignored)
 
 Work and school accounts whose organisation allows only verified publishers need Publisher verification in Azure;
 personal Outlook.com / Hotmail accounts don't. A user's own ID in the settings always wins over the built-in one.
+
+
+### Publishing a reviewed version from GitHub
+
+Merging a version bump in `mailbrief/__init__.py` into `main` also runs the Release workflow. It validates and tests
+that commit, builds both Windows downloads, and publishes the matching version tag and GitHub release. Existing
+published versions are skipped, so pushing `main` and its matching tag together does not publish twice. The existing
+`release.ps1` flow is still supported.
