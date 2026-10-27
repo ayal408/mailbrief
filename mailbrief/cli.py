@@ -3,6 +3,7 @@ import datetime as dt
 import os
 import sys
 import traceback
+from urllib.parse import urlsplit
 
 from mailbrief import config
 from mailbrief.features.alerts import check_alerts
@@ -10,7 +11,6 @@ from mailbrief.features.brief import run_all
 from mailbrief.features.calendar import is_holy_time, paused_until
 from mailbrief.features.maintenance import make_backup
 from mailbrief.features.reminders import fire_reminders
-from mailbrief.features.update import cleanup, finish_update
 from mailbrief.storage import load_json, save_json
 from mailbrief.web.server import serve
 
@@ -45,12 +45,27 @@ def set_weekly_pending(value):
     save_json(config.STATE_FILE, state)
 
 
+def activation_page(args=None):
+    """Page carried by a mailbrief:// notification link; empty for ordinary launches."""
+    for arg in args if args is not None else sys.argv[1:]:
+        parts = urlsplit(arg)
+        if parts.scheme.lower() != 'mailbrief' or parts.netloc.lower() != 'open':
+            continue
+        page = parts.path.lstrip('/')
+        if '..' in page.split('/') or '\\' in page:
+            return ''
+        return page + (('?' + parts.query) if parts.query else '') + (('#' + parts.fragment) if parts.fragment else '')
+    return ''
+
+
 def main():
     """Entry point used by main.py / MailBrief.exe."""
     from mailbrief.features.diag import setup_logging
     setup_logging()
     if '--uninstall' in sys.argv:               # before removing the program: scheduled runs and Start menu
         from mailbrief.features.setup import remove
+        from mailbrief.features.notify import clear
+        clear()
         remove()
         return
     if '--reset-pin' in sys.argv:                # forgot the PIN: whoever runs the program as this Windows user can clear it
@@ -59,11 +74,7 @@ def main():
         from mailbrief.features.notify import toast
         toast('🔓 הקוד בוטל', ['MailBrief נפתח עכשיו בלי קוד. אפשר להגדיר חדש בהגדרות → אישי.'], '')
         return
-    if '--replace' in sys.argv:                  # the downloaded update, finishing the swap
-        finish_update(sys.argv[sys.argv.index('--replace') + 1])
-        return
     os.makedirs(config.DATA, exist_ok=True)
-    cleanup()
     automatic = any(flag in sys.argv for flag in ('--run', '--check', '--today'))
     user_paused = paused_until() is not None and '--today' not in sys.argv
     if automatic and (is_holy_time() or user_paused):
@@ -94,4 +105,4 @@ def main():
         elif startup == 'page':
             serve('today')
     else:
-        serve()
+        serve(activation_page())

@@ -1,5 +1,5 @@
 ; MailBrief installer (Inno Setup 6). Per-user install: no admin rights, no UAC prompt.
-;   ISCC /DAppVersion=1.2.0 installer\mailbrief.iss      ->  dist\MailBrief-Setup.exe   (expects dist\MailBrief.exe)
+;   ISCC /DAppVersion=1.2.0 installer\mailbrief.iss      ->  dist\MailBrief-Setup.exe   (expects dist\MailBrief\*)
 ; Data is never inside the program folder: it lives in Documents\MailBrief and survives updates and uninstalling.
 
 #ifndef AppVersion
@@ -34,7 +34,8 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=no
+CloseApplications=yes
+RestartApplications=no
 ShowLanguageDialog=no
 LanguageDetectionMethod=none
 
@@ -51,7 +52,7 @@ hebrew.DeleteData=למחוק גם את הנתונים של MailBrief?%n%nהתי�
 Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 
 [Files]
-Source: "..\dist\MailBrief.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\MailBrief\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; Microsoft's WebView2 installer (downloaded at build time) — only unpacked on a computer that doesn't have WebView2 yet
@@ -61,17 +62,25 @@ Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterin
 Name: "{autoprograms}\MailBrief"; Filename: "{app}\MailBrief.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\MailBrief"; Filename: "{app}\MailBrief.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\mailbrief"; ValueType: string; ValueName: ""; ValueData: "URL:MailBrief"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\mailbrief"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\mailbrief\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\MailBrief.exe,0"
+Root: HKCU; Subkey: "Software\Classes\mailbrief\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MailBrief.exe"" ""%1"""
+
 [Run]
 ; the engine of MailBrief's own window. Part of Windows 11 on most computers; without it MailBrief opens in the browser.
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "{cm:InstallingWebView2}"; Flags: waituntilterminated; Check: NeedsWebView2
 ; after a normal install: offer to start it
 Filename: "{app}\MailBrief.exe"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
-; after an update from inside MailBrief (silent install with /RELAUNCH=1): start it again by itself
-Filename: "{app}\MailBrief.exe"; Flags: nowait; Check: Relaunch
 
 [UninstallRun]
-; the scheduled runs (weekly brief, hourly check, "My day" at sign-in) of this copy
+; First let the app clear delivered notifications and its own registrations.
 Filename: "{app}\MailBrief.exe"; Parameters: "--uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveSchedule"
+; Defense in depth: remove every known task directly even if the app cannot start during uninstall.
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MailBrief"" /F"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveWeekly"; StatusMsg: "Removing MailBrief tasks..."
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MailBrief Alerts"" /F"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveAlerts"; StatusMsg: "Removing MailBrief tasks..."
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MailBrief Today"" /F"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveToday"; StatusMsg: "Removing MailBrief tasks..."
 
 [Code]
 function HasWebView2(Root: Integer; Key: String): Boolean;
@@ -87,32 +96,6 @@ begin
   Result := not (HasWebView2(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')
               or HasWebView2(HKLM, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')
               or HasWebView2(HKCU, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'));
-end;
-
-function Relaunch(): Boolean;
-begin
-  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
-end;
-
-procedure StopMailBrief();
-var
-  Code: Integer;
-begin
-  { close MailBrief so its file can be replaced. Not /T: this installer was started by MailBrief, so its process tree includes us }
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM MailBrief.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Sleep(800);
-end;
-
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-begin
-  StopMailBrief();
-  Result := '';
-end;
-
-function InitializeUninstall(): Boolean;
-begin
-  StopMailBrief();
-  Result := True;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

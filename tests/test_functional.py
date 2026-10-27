@@ -179,9 +179,9 @@ class ReminderControl(Isolated):
 
     def test_disabled_notifications_do_no_network_or_process_work(self):
         storage.save_json(config.SETTINGS_FILE, {'notifications_enabled': False})
-        with mock.patch.object(notify, 'is_holy_time') as holy, mock.patch.object(notify.subprocess, 'Popen') as launch:
+        with mock.patch.object(notify, 'is_holy_time') as holy, mock.patch.object(notify, '_show') as show:
             self.assertFalse(notify.toast('x', ['y'], vip=True))
-            holy.assert_not_called(); launch.assert_not_called()
+            holy.assert_not_called(); show.assert_not_called()
 
     def test_disabled_reminders_stay_available_without_notifications(self):
         reminders.add_reminder(0, 's', 'A', '', 'me@example.com')
