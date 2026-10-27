@@ -8,3 +8,18 @@ bottle==0.13.4
 cffi==2.1.1
 pycparser==3.0
 typing_extensions==4.16.0
+
+# Direct Windows Runtime access. Keeping notifications and OCR in-process avoids
+# spawning hidden PowerShell scripts, which also makes the packaged app easier
+# for endpoint-protection products to inspect accurately.
+winrt-runtime==3.2.1
+winrt-Windows.Foundation==3.2.1
+winrt-Windows.Foundation.Collections==3.2.1
+winrt-Windows.Data.Xml.Dom==3.2.1
+winrt-Windows.UI.Notifications==3.2.1
+winrt-Windows.Storage==3.2.1
+winrt-Windows.Storage.Streams==3.2.1
+winrt-Windows.Media.Ocr==3.2.1
+winrt-Windows.Graphics.Imaging==3.2.1
+winrt-Windows.Data.Pdf==3.2.1
+winrt-Windows.Globalization==3.2.1

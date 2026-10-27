@@ -4,11 +4,10 @@ import sys
 from mailbrief import __version__, config
 from mailbrief.util import e
 from mailbrief.web.layout import heading, page
-from mailbrief.web.token import TOKEN
 
 
 def about_page(msg=''):
-    from mailbrief.features.update import can_self_update, update_available
+    from mailbrief.features.update import update_available
     try:
         rel = update_available()
     except Exception:
@@ -18,9 +17,8 @@ def about_page(msg=''):
     if rel:
         update = (f'<div class="item" style="border-color:var(--accent)">🎁 <b>גרסה חדשה {e(rel["version"])} זמינה</b> · '
                   f'<a href="{e(rel["page"])}" target="_blank">מה חדש בה?</a>'
-                  + (f'<form method="post" action="/update" style="display:inline;margin:0 8px"><input type="hidden" name="t" value="{TOKEN}">'
-                     '<button style="margin:0;padding:7px 16px">✨ עדכון עכשיו</button></form>' if can_self_update() else
-                     ' · <code dir="ltr">winget upgrade mailbrief</code>') + '</div>')
+                  + f' · <a href="{e(rel["url"])}" style="margin:0 8px">הורדה והתקנה</a>'
+                  + ' · <code dir="ltr">winget upgrade mailbrief</code></div>')
     else:
         update = '<p>✓ זו הגרסה האחרונה. MailBrief בודק עדכונים לבד ומודיע כשיש חדשה.</p>'
     return page('אודות', f'''{heading('ℹ️', 'אודות MailBrief')}{note}

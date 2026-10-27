@@ -114,9 +114,7 @@ def run_app(url, on_hidden=None):
     win.events.closing += closing
     def shown():
         from mailbrief import badge                                # 🔴 unread count on the taskbar icon
-        from mailbrief.features import update                      # 🔄 new versions install by themselves
         badge.watch()
-        update.watch_auto()
     win.events.shown += shown
     APP['window'] = win
     os.makedirs(os.path.join(config.DATA, 'window'), exist_ok=True)

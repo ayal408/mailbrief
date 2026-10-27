@@ -1,94 +1,115 @@
-"""Setting MailBrief up on a new computer by itself: the three scheduled runs and a Start-menu shortcut (no admin rights)."""
-import base64
+"""Register MailBrief's scheduled runs with Windows Task Scheduler, without script interpreters."""
 import os
 import subprocess
 import sys
+import winreg
+import xml.etree.ElementTree as ET
 
 from mailbrief import config
 
 
 TASKS = {config.TASK_NAME: '--run', config.ALERTS_TASK: '--check', 'MailBrief Today': '--today'}
+NO_WINDOW = 0x08000000
 
 
-INSTALL_PS = r'''
-$ErrorActionPreference = 'Stop'
-$exe = $env:MB_EXE; $dir = Split-Path $exe
-$set = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2)
-function Act($arg) { New-ScheduledTaskAction -Execute $exe -Argument $arg -WorkingDirectory $dir }
-# weekly brief: Sunday 08:00
-Register-ScheduledTask -TaskName $env:MB_WEEKLY -Action (Act '--run') -Settings $set -Force `
-    -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 08:00) | Out-Null
-# hourly check 07:00-23:00
-$hourly = New-ScheduledTaskTrigger -Daily -At 07:00
-$hourly.Repetition = (New-ScheduledTaskTrigger -Once -At 07:00 -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Hours 16)).Repetition
-Register-ScheduledTask -TaskName $env:MB_ALERTS -Action (Act '--check') -Settings $set -Trigger $hourly -Force | Out-Null
-# "My day" when signing in to Windows
-Register-ScheduledTask -TaskName 'MailBrief Today' -Action (Act '--today') -Force `
-    -Trigger (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME") | Out-Null
-# Start menu
-$lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'MailBrief.lnk'
-$s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-$s.TargetPath = $exe; $s.WorkingDirectory = $dir; $s.IconLocation = "$exe,0"; $s.Description = 'MailBrief'; $s.Save()
-'''
+def _run(args):
+    return subprocess.run(args, capture_output=True, timeout=60, creationflags=NO_WINDOW)
 
 
-REMOVE_PS = r'''
-foreach ($n in @($env:MB_WEEKLY, $env:MB_ALERTS, 'MailBrief Today')) {
-  $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
-  if ($t -and (-not $env:MB_EXE -or $t.Actions[0].Execute -eq $env:MB_EXE)) { Unregister-ScheduledTask -TaskName $n -Confirm:$false }
-}
-$lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'MailBrief.lnk'
-if ((Test-Path $lnk) -and (-not $env:MB_EXE -or (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath -eq $env:MB_EXE)) { Remove-Item $lnk }
-'''
+def _task_path(name):
+    result = _run(['schtasks.exe', '/Query', '/TN', name, '/XML'])
+    if result.returncode != 0:
+        return '-'
+    # schtasks labels redirected XML as UTF-16 even when it writes the active console encoding.
+    for encoding in ('utf-8', 'utf-16', 'mbcs'):
+        try:
+            text = result.stdout.decode(encoding)
+            start = text.find('<Task')
+            if start < 0:
+                continue
+            root = ET.fromstring(text[start:])
+            command = root.find('.//{*}Exec/{*}Command')
+            return (command.text or '-').strip('"') if command is not None else '-'
+        except (ET.ParseError, UnicodeError):
+            continue
+    return '-'
 
 
-QUERY_PS = r'''
-foreach ($n in @($env:MB_WEEKLY, $env:MB_ALERTS, 'MailBrief Today')) {
-  $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
-  if ($t) { $t.Actions[0].Execute } else { '-' }
-}
-'''
+def installed_paths():
+    return [_task_path(name) for name in TASKS]
 
 
-def _powershell(script, exe=''):
-    """Runs a script given as -EncodedCommand (UTF-16) so a Hebrew program path survives intact."""
-    encoded = base64.b64encode(script.encode('utf-16-le')).decode()
-    env = {**os.environ, 'MB_EXE': exe, 'MB_WEEKLY': config.TASK_NAME, 'MB_ALERTS': config.ALERTS_TASK}
-    return subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-                          capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, timeout=60,
-                          creationflags=0x08000000)
+def schedule_ok(exe=None):
+    exe = exe or program_path()
+    paths = installed_paths()
+    return len(paths) == len(TASKS) and all(os.path.normcase(p) == os.path.normcase(exe) for p in paths)
 
 
 def program_path():
     return sys.executable if getattr(sys, 'frozen', False) else ''
 
 
-def installed_paths():
-    out = _powershell('[Console]::OutputEncoding = [Text.Encoding]::UTF8\n' + QUERY_PS).stdout
-    return [line.strip() for line in out.splitlines() if line.strip()]
-
-
-def schedule_ok(exe=None):
-    exe = exe or program_path()
-    paths = installed_paths()
-    return len(paths) == 3 and all(os.path.normcase(p) == os.path.normcase(exe) for p in paths)
+def _create(name, exe, flag, schedule):
+    action = f'"{exe}" {flag}'
+    result = _run(['schtasks.exe', '/Create', '/TN', name, '/TR', action, *schedule, '/F'])
+    if result.returncode != 0:
+        message = result.stderr.decode('mbcs', 'replace').strip() or result.stdout.decode('mbcs', 'replace').strip()
+        raise RuntimeError('רישום התזמונים נכשל: ' + message[-200:])
 
 
 def install(exe=None):
     exe = exe or program_path()
     if not exe:
         raise RuntimeError('התזמונים נרשמים רק מ-MailBrief.exe (לא מקוד המקור)')
-    done = _powershell(INSTALL_PS, exe)
-    if done.returncode != 0:
-        raise RuntimeError('רישום התזמונים נכשל: ' + (done.stderr.strip().splitlines() or ['?'])[-1][:200])
+    _create(config.TASK_NAME, exe, '--run', ['/SC', 'WEEKLY', '/D', 'SUN', '/ST', '08:00'])
+    _create(config.ALERTS_TASK, exe, '--check', ['/SC', 'DAILY', '/ST', '07:00', '/RI', '60', '/DU', '16:00'])
+    _create('MailBrief Today', exe, '--today', ['/SC', 'ONLOGON'])
+    _register_protocol(exe)
+
+
+def _register_protocol(exe):
+    root = r'Software\Classes\mailbrief'
+    values = ((root, '', 'URL:MailBrief'), (root, 'URL Protocol', ''),
+              (root + r'\DefaultIcon', '', f'{exe},0'),
+              (root + r'\shell\open\command', '', f'"{exe}" "%1"'))
+    for key_name, value_name, value in values:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_name) as key:
+            winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, value)
+
+
+def _remove_protocol(exe=''):
+    root = r'Software\Classes\mailbrief'
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, root + r'\shell\open\command') as key:
+            command = winreg.QueryValueEx(key, '')[0]
+    except OSError:
+        return
+    if exe and os.path.normcase(exe) not in os.path.normcase(command):
+        return
+    for child in (r'\shell\open\command', r'\shell\open', r'\shell', r'\DefaultIcon', ''):
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, root + child)
+        except OSError:
+            pass
 
 
 def remove(only_this_copy=True):
-    _powershell(REMOVE_PS, program_path() if only_this_copy else '')
+    exe = program_path() if only_this_copy else ''
+    for name in TASKS:
+        if not exe or os.path.normcase(_task_path(name)) == os.path.normcase(exe):
+            _run(['schtasks.exe', '/Delete', '/TN', name, '/F'])
+    _remove_protocol(exe)
+    appdata = os.environ.get('APPDATA', '')
+    shortcut = os.path.join(appdata, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'MailBrief.lnk') if appdata else ''
+    if shortcut and os.path.isfile(shortcut):
+        try:
+            os.remove(shortcut)                  # legacy shortcut; the installer manages current shortcuts itself
+        except OSError:
+            pass
 
 
 def ensure():
-    """On start: register the runs when missing or pointing at another copy (e.g. after winget moved the program)."""
+    """On start: register the runs when missing or pointing at another copy (e.g. after an installer upgrade)."""
     exe = program_path()
     if exe and not schedule_ok(exe):
         from mailbrief.features.migrate import remember_previous

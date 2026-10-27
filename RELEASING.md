@@ -16,11 +16,11 @@
 
 1. בודק שהתגית תואמת לגרסה בקוד
 2. מריץ שוב את הבדיקות
-3. בונה `MailBrief.exe` עם האייקון
-4. יוצר Release עם הקובץ ורשימת השינויים (מתוך הקומיטים)
+3. בונה תיקיית יישום, `MailBrief-Portable.zip` ומתקין `MailBrief-Setup.exe`
+4. חותם את קובצי ההפצה כאשר סודות החתימה מוגדרים, ויוצר Release עם רשימת השינויים
 5. שולח את הגרסה ל-winget
 
-מי שהוריד ידנית יקבל בתוכנה „✨ עדכון עכשיו”; מי שהתקין ב-winget — `winget upgrade mailbrief`.
+מי שהוריד ידנית יקבל בתוכנה הודעה וקישור לגרסה החדשה; מי שהתקין ב-winget — `winget upgrade mailbrief`.
 
 **מספרי גרסה:** תיקון קטן `1.1.0 → 1.1.1` · תכונה חדשה `1.1.0 → 1.2.0` · שינוי גדול `1.x → 2.0.0`.
 
@@ -48,7 +48,7 @@ repository secret.
 
 1. In MailBrief -> Settings -> "Google one-time setup", save the Client ID and secret of the MailBrief project
    (a **Desktop app** client; in Google Auth Platform -> Audience the app must be **In production**).
-2. Run `powershell -ExecutionPolicy Bypass -File set-google-key.ps1`: it writes `google_client.json` for local builds
+2. Run `.\set-google-key.ps1`: it writes `google_client.json` for local builds
    and sets the GitHub secret. The key is not printed.
 3. The next `build.ps1` / release includes it ("Built-in Google key: yes" in the log).
 
@@ -65,12 +65,24 @@ confidential; it is still kept out of git (`microsoft_client.json`, git-ignored)
 1. In Azure, the app registration: "Any organizational directory and personal Microsoft accounts", platform
    **Mobile and desktop applications** with the redirect URI `http://localhost:8765/oauth/callback`.
 2. In MailBrief -> Settings -> "Microsoft one-time setup", save its Application (client) ID.
-3. Run `powershell -ExecutionPolicy Bypass -File set-microsoft-key.ps1`: it writes `microsoft_client.json` and sets the
+3. Run `.\set-microsoft-key.ps1`: it writes `microsoft_client.json` and sets the
    GitHub secret.
 4. The next `build.ps1` / release includes it ("Built-in Microsoft key: yes" in the log).
 
 Work and school accounts whose organisation allows only verified publishers need Publisher verification in Azure;
 personal Outlook.com / Hotmail accounts don't. A user's own ID in the settings always wins over the built-in one.
+
+## Windows code signing
+
+Authenticode signing is the strongest signal for Windows publisher identity and SmartScreen reputation. Add these two
+GitHub Actions secrets before publishing:
+
+- `WINDOWS_SIGNING_CERTIFICATE` — the Base64 content of the code-signing `.pfx` file.
+- `WINDOWS_SIGNING_PASSWORD` — the `.pfx` password.
+
+The release workflow signs both `MailBrief.exe` and `MailBrief-Setup.exe` with SHA-256 and a trusted timestamp, then
+fails the release if a configured signature is not valid. Local `build.ps1` uses `MAILBRIEF_SIGN_CERT` (a PFX path) and
+`MAILBRIEF_SIGN_PASSWORD` in the same way. The private certificate file must never be committed.
 
 
 ### Publishing a reviewed version from GitHub

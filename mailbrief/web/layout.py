@@ -131,21 +131,18 @@ def top_bar(active=''):
 
 def update_banner():
     """A friendly "new version" strip; quiet when offline or when running from source."""
-    from mailbrief.features.update import auto_enabled, can_self_update, cached_update
-    from mailbrief.web.token import TOKEN
+    from mailbrief.features.update import cached_update
     try:
         rel = cached_update()
     except Exception:
         rel = None
     if not rel:
         return ''
-    action = (f'<form method="post" action="/update" style="display:inline;margin:0"><input type="hidden" name="t" value="{TOKEN}">'
-              '<button style="margin:0 8px;padding:7px 16px">✨ עדכון עכשיו</button></form>' if can_self_update() else
+    action = (f'<a href="{e(rel["url"])}" target="_blank" style="margin:0 8px">הורדה והתקנה</a>'
               '<code dir="ltr" style="margin:0 8px">winget upgrade mailbrief</code>')
     return (f'<div class="item" style="border-color:var(--accent);display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
             f'🎁 <b>גרסה חדשה {e(rel["version"])} זמינה</b> <span class="muted">(עכשיו {__version__})</span>{action}'
             f'<a href="{e(rel["page"])}" target="_blank" class="muted" style="font-size:13px">מה חדש?</a>'
-            + ('<span class="muted" style="font-size:13px">· אחרת תותקן לבד כשלא עובדים ב-MailBrief</span>' if can_self_update() and auto_enabled() else '')
             + '</div>')
 
 

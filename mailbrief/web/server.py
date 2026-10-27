@@ -72,7 +72,6 @@ from mailbrief.money import accountant
 from mailbrief.util import money
 from mailbrief.features.insights import first_look
 from mailbrief.features.daily import daily_account, send_daily
-from mailbrief.features.update import start_update, update_available
 from mailbrief.features import setup
 from mailbrief.web.token import TOKEN
 from mailbrief.web import inbox
@@ -556,8 +555,6 @@ class Handler(BaseHTTPRequestHandler):
             settings['badge'] = f['badge']
             from mailbrief import badge
             badge.refresh()
-        if f.get('auto_update') in ('on', 'off'):
-            settings['auto_update'] = f['auto_update'] == 'on'
         save_json(config.SETTINGS_FILE, settings)
         return '✓ נשמר'
 
@@ -1946,21 +1943,6 @@ class Handler(BaseHTTPRequestHandler):
         threading.Thread(target=self.server.shutdown, daemon=True).start()
         close_tray()
         window.quit_app()
-        return None
-
-    def post_update(self, f):
-        rel = update_available()
-        if not rel:
-            return 'יש כבר את הגרסה האחרונה ✓'
-        start_update(rel)
-        self._send(f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">{FONT}<style>{STYLE}</style></head>'
-                   f'<body><main style="text-align:center;margin-top:60px"><div style="font-size:64px" class="floaty">✨</div>'
-                   f'<h1>מתעדכן לגרסה {e(rel["version"])}…</h1><p class="muted">MailBrief ייפתח מחדש בעוד רגע. אפשר לסגור את הלשונית הזו.</p>'
-                   '<script>setTimeout(function(){ setInterval(function(){ fetch("/today", {cache: "no-store"}).then(function(r){ if (r.ok) location.href = "/today"; }).catch(function(){}); }, 1500); }, 4000);</script>'
-                   '</main></body></html>')
-        threading.Thread(target=self.server.shutdown, daemon=True).start()
-        close_tray()
-        threading.Timer(1.5, window.quit_app).start()      # let the page above show first
         return None
 
     def post_setup(self, f):

@@ -55,7 +55,7 @@ jobs:
         if: steps.version.outputs.publish == 'true'
         run: python -m unittest discover -s tests
 
-      - name: Build MailBrief.exe
+      - name: Build MailBrief application folder
         if: steps.version.outputs.publish == 'true'
         shell: pwsh
         env:
@@ -74,10 +74,27 @@ jobs:
             $data += @('--add-data', "$PWD\microsoft_client.json;.")
             Write-Host 'Built-in Microsoft key: yes'
           } else { Write-Host '::warning::No MICROSOFT_CLIENT_JSON secret - users will have to set up their own Microsoft key' }
-          pyinstaller --onefile --noconsole --name MailBrief --icon (Resolve-Path assets/mailbrief.ico).Path @data `
+          pyinstaller --onedir --noconsole --noupx --clean --name MailBrief --icon (Resolve-Path assets/mailbrief.ico).Path @data `
             --paths . --distpath dist --workpath build --specpath build --noconfirm --log-level WARN main.py
           Remove-Item google_client.json, microsoft_client.json -ErrorAction SilentlyContinue
           if ($LASTEXITCODE) { throw 'PyInstaller failed' }
+
+      - name: Sign MailBrief.exe when a certificate is configured
+        if: steps.version.outputs.publish == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_SIGNING_CERTIFICATE) { Write-Host '::notice::No Windows signing certificate configured'; exit 0 }
+          $certificate = Join-Path $env:RUNNER_TEMP 'mailbrief-signing.pfx'
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE))
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signTool) { throw 'signtool.exe was not found' }
+          & $signTool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certificate /p $env:WINDOWS_SIGNING_PASSWORD dist\MailBrief\MailBrief.exe
+          if ($LASTEXITCODE) { throw 'Signing MailBrief.exe failed' }
+          Remove-Item -LiteralPath $certificate -Force
 
       - name: Build the installer (MailBrief-Setup.exe)
         if: steps.version.outputs.publish == 'true'
@@ -94,16 +111,42 @@ jobs:
           & $iscc /Q "/DAppVersion=$env:VERSION" installer\mailbrief.iss
           if ($LASTEXITCODE) { throw 'Inno Setup failed' }
 
+      - name: Sign installer and create portable ZIP
+        if: steps.version.outputs.publish == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+        run: |
+          if ($env:WINDOWS_SIGNING_CERTIFICATE) {
+            $certificate = Join-Path $env:RUNNER_TEMP 'mailbrief-signing.pfx'
+            [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE))
+            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+              Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $signTool) { throw 'signtool.exe was not found' }
+            & $signTool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certificate /p $env:WINDOWS_SIGNING_PASSWORD dist\MailBrief-Setup.exe
+            if ($LASTEXITCODE) { throw 'Signing MailBrief-Setup.exe failed' }
+            Remove-Item -LiteralPath $certificate -Force
+          }
+          Compress-Archive -Path dist\MailBrief\* -DestinationPath dist\MailBrief-Portable.zip -CompressionLevel Optimal
+
       - name: Check the EXE
         if: steps.version.outputs.publish == 'true'
         shell: pwsh
         run: |
-          $exe = 'dist\MailBrief.exe'
-          if ((Get-Item $exe).Length -lt 5MB) { throw 'MailBrief.exe is suspiciously small' }
+          $exe = 'dist\MailBrief\MailBrief.exe'
+          if ((Get-Item $exe).Length -lt 500KB) { throw 'MailBrief.exe is suspiciously small' }
           $bytes = [IO.File]::ReadAllBytes((Resolve-Path $exe))[0..1]
           if ([Text.Encoding]::ASCII.GetString($bytes) -ne 'MZ') { throw 'MailBrief.exe is not a Windows program' }
           Write-Host "SHA256 $((Get-FileHash $exe -Algorithm SHA256).Hash)"
+          $folderSize = (Get-ChildItem dist\MailBrief -File -Recurse | Measure-Object Length -Sum).Sum
+          if ($folderSize -lt 10MB) { throw 'MailBrief application folder is incomplete' }
+          if ((Get-Item dist\MailBrief-Portable.zip).Length -lt 5MB) { throw 'MailBrief-Portable.zip is suspiciously small' }
           if ((Get-Item dist\MailBrief-Setup.exe).Length -lt 5MB) { throw 'MailBrief-Setup.exe is suspiciously small' }
+          if ($env:WINDOWS_SIGNING_CERTIFICATE -and (Get-AuthenticodeSignature $exe).Status -ne 'Valid') { throw 'MailBrief.exe signature is not valid' }
+          if ($env:WINDOWS_SIGNING_CERTIFICATE -and (Get-AuthenticodeSignature dist\MailBrief-Setup.exe).Status -ne 'Valid') { throw 'Installer signature is not valid' }
+        env:
+          WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
 
       - name: GitHub release
         if: steps.version.outputs.publish == 'true'
@@ -112,17 +155,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = @"
-          **התקנה:** להוריד את ``MailBrief-Setup.exe`` למטה ולהריץ (בלי הרשאות מנהל) · או ``winget install mailbrief`` · או ``MailBrief.exe`` נייד בלי התקנה.
-          מי שכבר מותקן יקבל בתוכנה כפתור „✨ עדכון עכשיו”.
+          **התקנה:** להוריד את ``MailBrief-Setup.exe`` למטה ולהריץ (בלי הרשאות מנהל) · או ``winget install mailbrief`` · או לחלץ את ``MailBrief-Portable.zip`` לגרסה ניידת.
+          מי שכבר מותקן יקבל בתוכנה הודעה וקישור להורדת הגרסה החדשה.
 
           **מה חדש בגרסה הזו:**
-          - תוקנה טעינת ״עוד הודעות״, כולל בתצוגת כל התיבות ובדואר השמור ללא חיבור.
-          - ניסיון חוזר אחרי שגיאה טוען את אותו עמוד, בלי לדלג על הודעות.
-          - חיווי טעינה ומניעת לחיצות כפולות; מיקום הגלילה נשמר.
+          - הוסרו הרצת PowerShell מוסתרת והחלפה עצמית של קובץ ההפעלה.
+          - ההפצה נארזת כתיקייה שקופה יותר לסריקת אנטי-וירוס, עם תמיכה בחתימה דיגיטלית.
+          - הסרת התוכנה מוחקת משימות ותזכורות; לחיצה על התראה מפעילה קודם את MailBrief.
 
-          > בהורדה ידנית Windows SmartScreen עשוי להזהיר כי הקובץ לא חתום: „מידע נוסף” ← „הפעל בכל זאת”.
+          > אם אישור החתימה אינו מוגדר עדיין, Windows SmartScreen עדיין עשוי להציג אזהרת מוניטין לקובץ חדש.
           "@
-          gh release create $env:RELEASE_TAG dist/MailBrief-Setup.exe dist/MailBrief.exe --target '${{ github.sha }}' --title "MailBrief $env:VERSION" --notes $notes --generate-notes
+          gh release create $env:RELEASE_TAG dist/MailBrief-Setup.exe dist/MailBrief-Portable.zip --target '${{ github.sha }}' --title "MailBrief $env:VERSION" --notes $notes --generate-notes
 
       - name: Send the new version to winget
         if: steps.version.outputs.publish == 'true'
@@ -132,5 +175,5 @@ jobs:
         run: |
           if (-not $env:WINGET_TOKEN) { Write-Host '::notice::No WINGET_TOKEN secret - skipping winget (see RELEASING.md)'; exit 0 }
           Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          $url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MailBrief.exe"
+          $url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MailBrief-Setup.exe"
           .\wingetcreate.exe update MailBrief.App --version $env:VERSION --urls $url --submit --token $env:WINGET_TOKEN

@@ -459,16 +459,12 @@ class Personal(Isolated):
         self.assertTrue(update.version_tuple('v1.10.0') > update.version_tuple('1.9.3'))
         self.assertEqual(update.version_tuple('2'), (2, 0, 0))
         release = {'tag_name': 'v9.0.0', 'html_url': 'https://github.com/x', 'body': '',
-                   'assets': [{'name': 'MailBrief.exe', 'browser_download_url': 'https://github.com/x/MailBrief.exe', 'size': 10,
+                   'assets': [{'name': 'MailBrief-Setup.exe', 'browser_download_url': 'https://github.com/x/MailBrief-Setup.exe', 'size': 10,
                                'digest': 'sha256:ab'}]}
         update._FAILED[0] = 0
         with mock.patch.object(net, 'cached_json', return_value=release):
             self.assertEqual(update.update_available()['sha256'], 'ab')
-        setup_asset = {'name': 'MailBrief-Setup.exe', 'browser_download_url': 'https://github.com/x/MailBrief-Setup.exe', 'size': 20}
-        with mock.patch.object(net, 'cached_json', return_value=release | {'assets': release['assets'] + [setup_asset]}), \
-                mock.patch.object(config, 'INSTALLED', True):
-            rel = update.update_available()
-            self.assertEqual((rel['url'], rel['setup']), ('https://github.com/x/MailBrief-Setup.exe', True))   # installed copy: new setup
+            self.assertEqual(update.update_available()['url'], 'https://github.com/x/MailBrief-Setup.exe')
         with mock.patch.object(net, 'cached_json', return_value=release | {'tag_name': 'v0.1'}):
             self.assertIsNone(update.update_available())
         with mock.patch.object(net, 'cached_json', return_value=None) as offline:
@@ -559,15 +555,29 @@ class Outbox(Isolated):
 
 
 class Comfort(Isolated):
+    def test_notification_links_start_mailbrief_before_opening_local_page(self):
+        from mailbrief import cli
+        self.assertEqual(notify.activation_url('http://mailbrief.localhost:8765/today#reminders'),
+                         'mailbrief://open/today#reminders')
+        action = notify.activation_url('http://127.0.0.1:8765/toast_act?id=a&do=hour&sig=b')
+        self.assertEqual(action, 'mailbrief://open/toast_act?id=a&do=hour&sig=b')
+        self.assertEqual(cli.activation_page([action]), 'toast_act?id=a&do=hour&sig=b')
+        self.assertEqual(cli.activation_page(['mailbrief://open/../secrets']), '')
+
+    def test_uninstall_clears_current_and_legacy_notifications(self):
+        with mock.patch.object(notify, '_clear_history') as clear:
+            notify.clear()
+        self.assertEqual([call.args[0] for call in clear.call_args_list], [notify.APP_ID, notify.LEGACY_APP_ID])
+
     def test_quiet_hours_cross_midnight(self):
         storage.save_json(config.SETTINGS_FILE, {'quiet': {'on': True, 'from': 22, 'to': 7}})
         self.assertTrue(notify.quiet_now(dt.datetime(2026, 9, 24, 23, 0)))
         self.assertTrue(notify.quiet_now(dt.datetime(2026, 9, 24, 6, 0)))
         self.assertFalse(notify.quiet_now(dt.datetime(2026, 9, 24, 12, 0)))
-        with mock.patch.object(notify.subprocess, 'Popen') as run, mock.patch.object(notify, 'is_holy_time', return_value=False), \
+        with mock.patch.object(notify, '_show') as show, mock.patch.object(notify, 'is_holy_time', return_value=False), \
                 mock.patch.object(notify, 'quiet_now', return_value=True):
             notify.toast('x', ['y'])
-        run.assert_not_called()
+        show.assert_not_called()
 
     def test_triage_done_hides_from_queue(self):
         from mailbrief.features import triage
@@ -753,6 +763,27 @@ class Setup(Isolated):
             self.assertFalse(setup.ensure())                                    # from source: never touches Task Scheduler
         install.assert_not_called()
 
+    def test_run_registration_uses_schtasks_without_a_script_interpreter(self):
+        from mailbrief.features import setup
+        result = mock.Mock(returncode=0, stdout=b'', stderr=b'')
+        exe = r'C:\Program Files\MailBrief\MailBrief.exe'
+        with mock.patch.object(setup, '_run', return_value=result) as run, mock.patch.object(setup, '_register_protocol') as protocol:
+            setup.install(exe)
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(len(commands), 3)
+        self.assertTrue(all(command[:2] == ['schtasks.exe', '/Create'] for command in commands))
+        self.assertTrue(all('powershell' not in ' '.join(command).lower() for command in commands))
+        self.assertIn(f'"{exe}" --check', commands[1])
+        protocol.assert_called_once_with(exe)
+
+    def test_task_query_tolerates_schtasks_incorrect_xml_encoding_label(self):
+        from mailbrief.features import setup
+        xml = (b'<?xml version="1.0" encoding="UTF-16"?>\r\n'
+               b'<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Actions><Exec>'
+               b'<Command>C:\\MailBrief\\MailBrief.exe</Command></Exec></Actions></Task>')
+        with mock.patch.object(setup, '_run', return_value=mock.Mock(returncode=0, stdout=xml)):
+            self.assertEqual(setup._task_path('MailBrief'), r'C:\MailBrief\MailBrief.exe')
+
 
 class Address(Isolated):
     def test_nice_address_with_and_without_port(self):
@@ -865,7 +896,7 @@ class Diagnostics(Isolated):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, 'THIRD-PARTY-NOTICES.txt'), encoding='utf-8') as f:
             text = f.read()
-        for name in ('pywebview', 'pythonnet', 'clr_loader', 'bottle', 'cffi', 'pycparser', 'typing_extensions', 'PyInstaller'):
+        for name in ('pywebview', 'pythonnet', 'clr_loader', 'bottle', 'cffi', 'pycparser', 'typing_extensions', 'PyWinRT', 'PyInstaller'):
             self.assertIn(name, text)
 
 
@@ -950,14 +981,14 @@ class Comforts(Isolated):
 
     def test_vip_breaks_quiet_hours_only(self):
         with mock.patch.object(notify, 'is_holy_time', return_value=False), mock.patch.object(notify, 'paused_until', return_value=None), \
-                mock.patch.object(notify, 'quiet_now', return_value=True), mock.patch.object(notify.subprocess, 'Popen') as run:
+                mock.patch.object(notify, 'quiet_now', return_value=True), mock.patch.object(notify, '_show') as show:
             notify.toast('x', ['y'])
-            self.assertFalse(run.called)
+            self.assertFalse(show.called)
             notify.toast('x', ['y'], vip=True)
-            self.assertTrue(run.called)
-        with mock.patch.object(notify, 'is_holy_time', return_value=True), mock.patch.object(notify.subprocess, 'Popen') as run:
+            self.assertTrue(show.called)
+        with mock.patch.object(notify, 'is_holy_time', return_value=True), mock.patch.object(notify, '_show') as show:
             notify.toast('x', ['y'], vip=True)
-            self.assertFalse(run.called)                                               # never on Shabbat, VIP or not
+            self.assertFalse(show.called)                                               # never on Shabbat, VIP or not
         storage.save_json(config.SETTINGS_FILE, {'quiet': {'vip': ['Boss@Corp.co.il', '@client.co.il']}})
         self.assertEqual(notify.vip_list(), {'boss@corp.co.il', 'client.co.il'})
 

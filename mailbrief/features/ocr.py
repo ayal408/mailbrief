@@ -1,102 +1,90 @@
-"""🧾 Reading scanned receipts: pictures and image-only PDFs, through the text recognition built into Windows
-(Windows.Media.Ocr) — on this computer, nothing is sent anywhere, nothing to install. Windows has no Hebrew recognition,
-so this reads digits and English: amounts, dates, invoice numbers and English supplier names."""
-import json
+"""Read scanned receipts with Windows' local OCR APIs, without launching scripts or sending data anywhere."""
+import asyncio
 import os
-import subprocess
-import tempfile
-
-from mailbrief import config
 
 
 IMAGES = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.gif')
 BATCH = 40                   # files per run of the recognizer (about half a second each)
 
-SCRIPT = r'''# Windows' built-in text recognition (Windows.Media.Ocr) for pictures and scanned PDFs — on this computer only.
-# Input: a JSON file with a list of paths. Output: a JSON file {path: text}. English and digits (Windows has no Hebrew OCR).
-param([string]$InFile, [string]$OutFile)
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$ext = [System.WindowsRuntimeSystemExtensions].GetMethods()
-$asTaskOp = ($ext | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
-$asTaskAction = ($ext | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' })[0]
-function Await($op, [Type]$type) { $t = $asTaskOp.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
-function AwaitAction($action) { $t = $asTaskAction.Invoke($null, @($action)); $t.Wait(-1) | Out-Null }
-
-$null = [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
-$null = [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage.Streams, ContentType = WindowsRuntime]
-$null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
-$null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
-$null = [Windows.Data.Pdf.PdfDocument, Windows.Data.Pdf, ContentType = WindowsRuntime]
-
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
-if (-not $engine) { $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new('en-US')) }
-
-function Read-Bitmap($stream) {
-    $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
-    Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
-}
-function Read-Text($bitmap) {
-    if ($bitmap.PixelWidth -gt [Windows.Media.Ocr.OcrEngine]::MaxImageDimension -or $bitmap.PixelHeight -gt [Windows.Media.Ocr.OcrEngine]::MaxImageDimension) { return '' }
-    $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-    ($result.Lines | ForEach-Object { $_.Text }) -join "`n"
-}
-
-$paths = Get-Content -LiteralPath $InFile -Raw -Encoding UTF8 | ConvertFrom-Json
-$out = @{}
-foreach ($path in $paths) {
-    try {
-        $file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($path)) ([Windows.Storage.StorageFile])
-        if ($path.ToLower().EndsWith('.pdf')) {                 # a scanned PDF: its first pages as pictures
-            $doc = Await ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($file)) ([Windows.Data.Pdf.PdfDocument])
-            $parts = @()
-            for ($i = 0; $i -lt [Math]::Min(3, $doc.PageCount); $i++) {
-                $page = $doc.GetPage($i)
-                $options = [Windows.Data.Pdf.PdfPageRenderOptions]::new()
-                $options.DestinationWidth = 1800                 # sharp enough for small print
-                $stream = [Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
-                AwaitAction ($page.RenderToStreamAsync($stream, $options))
-                $parts += Read-Text (Read-Bitmap $stream)
-            }
-            $out[$path] = $parts -join "`n"
-        } else {
-            $stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
-            $out[$path] = Read-Text (Read-Bitmap $stream)
-        }
-    } catch {
-        $out[$path] = ''
-    }
-}
-$out | ConvertTo-Json -Compress | Out-File -LiteralPath $OutFile -Encoding UTF8
-'''
-
 
 def available():
-    return os.name == 'nt'
+    if os.name != 'nt':
+        return False
+    try:
+        return _engine() is not None
+    except (ImportError, OSError, RuntimeError):
+        return False
+
+
+def _engine():
+    from winrt.windows.globalization import Language
+    from winrt.windows.media.ocr import OcrEngine
+    return OcrEngine.try_create_from_user_profile_languages() or OcrEngine.try_create_from_language(Language('en-US'))
+
+
+async def _bitmap(stream):
+    from winrt.windows.graphics.imaging import BitmapDecoder
+    decoder = await BitmapDecoder.create_async(stream)
+    return await decoder.get_software_bitmap_async()
+
+
+async def _text(engine, bitmap):
+    from winrt.windows.media.ocr import OcrEngine
+    if bitmap.pixel_width > OcrEngine.max_image_dimension or bitmap.pixel_height > OcrEngine.max_image_dimension:
+        return ''
+    result = await engine.recognize_async(bitmap)
+    return '\n'.join(line.text for line in result.lines)
+
+
+async def _read_one(engine, path):
+    from winrt.windows.data.pdf import PdfDocument, PdfPageRenderOptions
+    from winrt.windows.storage import FileAccessMode, StorageFile
+    from winrt.windows.storage.streams import InMemoryRandomAccessStream
+
+    source = await StorageFile.get_file_from_path_async(os.path.abspath(path))
+    if path.lower().endswith('.pdf'):
+        document = await PdfDocument.load_from_file_async(source)
+        parts = []
+        for index in range(min(3, document.page_count)):
+            page = document.get_page(index)
+            options = PdfPageRenderOptions()
+            options.destination_width = 1800                 # sharp enough for small print
+            stream = InMemoryRandomAccessStream()
+            await page.render_to_stream_async(stream, options)
+            stream.seek(0)
+            parts.append(await _text(engine, await _bitmap(stream)))
+            page.close()
+            stream.close()
+        return '\n'.join(parts)
+    stream = await source.open_async(FileAccessMode.READ)
+    try:
+        return await _text(engine, await _bitmap(stream))
+    finally:
+        stream.close()
+
+
+async def _read_all(paths):
+    engine = _engine()
+    if not engine:
+        return {}
+    found = {}
+    for path in paths:
+        try:
+            found[path] = await _read_one(engine, path)
+        except (OSError, RuntimeError, ValueError):
+            found[path] = ''
+    return found
 
 
 def ocr_files(paths):
-    """{path: text} for pictures and PDFs (the first 3 pages of a PDF). '' for a file that couldn't be read."""
+    """{path: text} for pictures and PDFs (the first 3 pages of a PDF). '' when a file cannot be read."""
     paths = [p for p in paths if os.path.isfile(p)][:BATCH]
-    if not paths or not available():
+    if not paths or os.name != 'nt':
         return {}
-    os.makedirs(config.DATA, exist_ok=True)
-    script = os.path.join(config.DATA, 'ocr.ps1')
-    if not os.path.exists(script) or open(script, encoding='utf-8-sig').read() != SCRIPT:
-        with open(script, 'w', encoding='utf-8-sig') as f:        # with a BOM: Windows PowerShell reads it as UTF-8
-            f.write(SCRIPT)
-    with tempfile.TemporaryDirectory() as tmp:
-        src, dst = os.path.join(tmp, 'in.json'), os.path.join(tmp, 'out.json')
-        with open(src, 'w', encoding='utf-8') as f:
-            json.dump(paths, f, ensure_ascii=False)
-        try:
-            subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, src, dst],
-                           capture_output=True, timeout=30 + 5 * len(paths), creationflags=0x08000000)
-            with open(dst, encoding='utf-8-sig') as f:
-                found = json.load(f)
-        except (OSError, subprocess.TimeoutExpired, ValueError):
-            return {}
-    return {p: (t or '') for p, t in found.items()} if isinstance(found, dict) else {}
+    try:
+        return asyncio.run(_read_all(paths))
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return {}
 
 
 def ocr_file(path):
