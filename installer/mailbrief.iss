@@ -34,7 +34,10 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=yes
+; MailBrief normally turns a window-close request into "hide to tray". Ask it to
+; quit gracefully in PrepareToInstall, then let Restart Manager force-close an
+; older/unresponsive copy so upgrades never get stuck on MailBrief.exe.
+CloseApplications=force
 RestartApplications=no
 ShowLanguageDialog=no
 LanguageDetectionMethod=none
@@ -83,6 +86,53 @@ Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MailBrief Alerts"" /F
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MailBrief Today"" /F"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveToday"; StatusMsg: "Removing MailBrief tasks..."
 
 [Code]
+function IsMailBriefLocalURL(Value: String): Boolean;
+begin
+  Value := Lowercase(Trim(Value));
+  Result := (Value = 'http://mailbrief.localhost')
+         or (Value = 'http://mailbrief.localhost:8765')
+         or (Value = 'http://127.0.0.1:8765')
+         or (Value = 'http://localhost:8765');
+end;
+
+procedure StopRunningMailBrief();
+var
+  BaseURL, Token: String;
+  BaseURLBytes, TokenBytes: AnsiString;
+  Request: Variant;
+begin
+  { Since 1.4.3 MailBrief has a CSRF-protected local quit endpoint. Calling it
+    preserves queued data and closes the tray and WebView before files change. }
+  if not LoadStringFromFile(ExpandConstant('{userdocs}\MailBrief\data\url.txt'), BaseURLBytes) then
+    Exit;
+  if not LoadStringFromFile(ExpandConstant('{userdocs}\MailBrief\data\token'), TokenBytes) then
+    Exit;
+  BaseURL := String(BaseURLBytes);
+  Token := String(TokenBytes);
+  BaseURL := Trim(BaseURL);
+  Token := Trim(Token);
+  if (not IsMailBriefLocalURL(BaseURL)) or (Length(Token) < 20) then
+    Exit;
+  try
+    Request := CreateOleObject('WinHttp.WinHttpRequest.5.1');
+    { Never send the local CSRF token through a configured system proxy. }
+    Request.SetProxy(1);  { WINHTTP_ACCESS_TYPE_NO_PROXY }
+    Request.Open('POST', BaseURL + '/quit', False);
+    Request.SetRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    Request.SetTimeouts(1000, 1000, 1000, 3000);
+    Request.Send('t=' + Token);
+    Sleep(1200);
+  except
+    { Restart Manager's force-close fallback handles an old or hung process. }
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopRunningMailBrief();
+  Result := '';
+end;
+
 function HasWebView2(Root: Integer; Key: String): Boolean;
 var
   Version: String;

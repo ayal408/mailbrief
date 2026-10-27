@@ -34,6 +34,16 @@ class DistributionSafety(unittest.TestCase):
         self.assertIn('uninsdeletekey', installer)
         self.assertIn('clear()', cli)
 
+    def test_upgrade_closes_the_tray_copy_before_replacing_files(self):
+        installer = (ROOT / 'installer/mailbrief.iss').read_text(encoding='utf-8')
+        server = (ROOT / 'mailbrief/web/server.py').read_text(encoding='utf-8')
+        self.assertIn('CloseApplications=force', installer)
+        self.assertIn("BaseURL + '/quit'", installer)
+        self.assertIn("Request.Send('t=' + Token)", installer)
+        self.assertIn('Request.SetProxy(1)', installer)
+        self.assertIn('function PrepareToInstall', installer)
+        self.assertIn("route not in ('/unlock', '/quit')", server)
+
     def test_release_supports_authenticode_signing(self):
         workflow = (ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8')
         self.assertIn('WINDOWS_SIGNING_CERTIFICATE', workflow)

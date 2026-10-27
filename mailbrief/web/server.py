@@ -343,7 +343,10 @@ class Handler(BaseHTTPRequestHandler):
         if not secrets.compare_digest(form.get('t', ''), TOKEN):
             return self._redirect('/?msg=' + quote('הדף היה ישן (MailBrief עודכן או הופעל מחדש) — הפעולה לא בוצעה. אפשר לנסות שוב עכשיו.'))
         route = urlparse(self.path).path
-        if route != '/unlock' and not self._unlocked():
+        # The installer owns TOKEN through this Windows user's private data
+        # folder and uses /quit to stop the tray copy before an upgrade. A PIN
+        # protects the UI, but must not turn a safe upgrade into a forced kill.
+        if route not in ('/unlock', '/quit') and not self._unlocked():
             return self._redirect('/today')
         try:
             msg = getattr(self, 'post_' + route.strip('/'))(form)
