@@ -3,7 +3,9 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from mailbrief.web import extras, inbox
 
@@ -11,7 +13,12 @@ from mailbrief.web import extras, inbox
 @unittest.skipUnless(shutil.which('node'), 'Node is needed for UI regression scenarios')
 class StableUI(unittest.TestCase):
     def run_js(self, script):
-        result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
+        # Run a CommonJS file explicitly: do not depend on Node's stdin/REPL
+        # detection on Windows. Allow for cold-start scanning on hosted runners.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'scenario.cjs'
+            path.write_text(script, encoding='utf-8')
+            result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_page_navigation_collapses_header_and_restores_focus(self):
