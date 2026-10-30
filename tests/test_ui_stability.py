@@ -14,6 +14,28 @@ class StableUI(unittest.TestCase):
         result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_display_presets_preserve_palette_and_reset_every_setting(self):
+        functions = inbox.JS.split('var LOOK = ', 1)[1].split('function lookMenu(btn){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var saved=JSON.stringify({palette:'forest',font:'',rows:'cards'}),notices=[];
+var localStorage={getItem(){return saved;},setItem(k,v){saved=v;}},classes={};
+var box={dataset:{},style:{},classList:{toggle(k,v){classes[k]=v;}}},workspace={dataset:{}};
+function $(id){return id==='ibx'?box:workspace;}function fitBox(){}function toast(t){notices.push(t);}
+''' + 'var LOOK = ' + functions + '''
+lookPreset('reading');assert.equal(workspace.dataset.palette,'forest');assert.equal(classes.bottom,true);assert.equal(classes.cards,false);
+assert.equal(box.dataset.textSize,'large');assert.equal(JSON.parse(saved).palette,'forest');
+lookPreset('compact');assert.equal(classes.dense,true);assert.equal(classes.comfortable,false);assert.equal(classes['no-snippet'],true);
+lookPreset('cards');assert.equal(classes.cards,true);assert.equal(classes.nopane,true);assert.equal(classes.dense,false);
+lookPreset('reset');assert.deepEqual(JSON.parse(saved),{});assert.equal(workspace.dataset.palette,'purple');assert.equal(classes.cards,false);
+LOOK={palette:'__proto__',font:'__proto__'};applyLook();assert.equal(workspace.dataset.palette,'purple');assert.equal(box.style.fontFamily,'');
+localStorage.setItem=()=>{throw Error('blocked');};lookPreset('reading');assert.equal(classes.bottom,true);assert.equal(notices.length,1);
+''')
+
+    def test_invalid_stored_display_preferences_use_defaults(self):
+        expression = inbox.JS.split('var LOOK = ', 1)[1].split('var PALETTES', 1)[0]
+        for stored in ['null', '[]', '"invalid"', '{bad']:
+            self.run_js('const assert=require("node:assert/strict");var localStorage={getItem(){return ' + json.dumps(stored) + ';}};var LOOK = ' + expression + ';assert.deepEqual(LOOK,{});')
+
     def test_csv_exports_only_selection_and_escapes_formulas_and_quotes(self):
         functions = inbox.JS.split('function csvCell(value){', 1)[1].split('function exportMessages(', 1)[0]
         self.run_js('''

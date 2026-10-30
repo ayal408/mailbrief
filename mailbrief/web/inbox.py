@@ -330,6 +330,26 @@ def receipt_from(address, msg):
 # ---- the page ----------------------------------------------------------------------------------------------------------------
 
 CSS = r"""
+#ib-workspace{--on-accent:#fff}
+#ib-workspace[data-palette=purple]{--tone:#7c3aed;--tone-dark:#c4b5fd;--tone-2:#a21caf;--tone-2-dark:#f0abfc}
+#ib-workspace[data-palette=ocean]{--tone:#1d4ed8;--tone-dark:#93c5fd;--tone-2:#0369a1;--tone-2-dark:#7dd3fc}
+#ib-workspace[data-palette=forest]{--tone:#047857;--tone-dark:#6ee7b7;--tone-2:#0f766e;--tone-2-dark:#5eead4}
+#ib-workspace[data-palette=rose]{--tone:#be185d;--tone-dark:#f9a8d4;--tone-2:#9d174d;--tone-2-dark:#fda4af}
+#ib-workspace[data-palette=slate]{--tone:#475569;--tone-dark:#cbd5e1;--tone-2:#334155;--tone-2-dark:#94a3b8}
+#ib-workspace[data-palette=amber]{--tone:#b45309;--tone-dark:#fcd34d;--tone-2:#9a3412;--tone-2-dark:#fdba74}
+:root:not([data-contrast]) #ib-workspace[data-palette]{--accent:var(--tone);--accent-2:var(--tone-2)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]):not([data-contrast]) #ib-workspace[data-palette]{--accent:var(--tone-dark);--accent-2:var(--tone-2-dark);--on-accent:#17202b}}
+:root[data-theme=dark]:not([data-contrast]) #ib-workspace[data-palette]{--accent:var(--tone-dark);--accent-2:var(--tone-2-dark);--on-accent:#17202b}
+#ib-workspace .ib-new,#ib-workspace .ib-ic.on{color:var(--on-accent)}
+#ibx.comfortable .ib-row{padding:16px 14px;gap:6px 10px}
+#ibx.cards .ib-rows{padding:10px;background:var(--bg)}
+#ibx.cards .ib-row{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--surface)}
+#ibx.cards .ib-row.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+#ibx.cards .ib-row:hover{border-color:var(--accent)}
+#ibx.no-snippet .sn{display:none}
+#ibx[data-text-size=large] .who{font-size:16px}#ibx[data-text-size=large] .ib-rows .ib-row .sub{font-size:15px}#ibx[data-text-size=large] .when{font-size:13px}
+#ibx[data-text-size=larger] .who{font-size:18px}#ibx[data-text-size=larger] .ib-rows .ib-row .sub{font-size:17px}#ibx[data-text-size=larger] .when{font-size:14px}
+.ib-pop{max-height:calc(100dvh - 24px);max-width:calc(100vw - 24px);overflow-y:auto}
 body:has(#ibx) .mbxs{display:none}
 .ib-mailboxes{display:flex;gap:8px;overflow-x:auto;padding:0 0 12px;align-items:stretch}
 .ib-mailbox{flex:none;display:flex;align-items:center;gap:10px;text-align:start;border:1px solid var(--line);border-inline-start:4px solid var(--mailbox-color,var(--accent));border-radius:12px;background:var(--surface);color:var(--ink);padding:9px 12px;font:inherit;cursor:pointer}
@@ -473,6 +493,7 @@ background:var(--surface);border:1px solid var(--line);border-radius:16px;box-sh
 @media(max-width:820px){#ibx{grid-template-columns:1fr;grid-template-rows:none;height:auto;min-height:0}.ib-side{display:flex;gap:4px;overflow-x:auto;padding:8px;border:0;border-bottom:1px solid var(--line)}
 .ib-side .ib-new{width:auto;margin:0;white-space:nowrap}.ib-acc{display:none}.ib-f{width:auto;white-space:nowrap}.ib-rows{max-height:none}
 .ib-read{display:none;position:fixed;inset:0;z-index:40;background:var(--surface)}#ibx.reading .ib-read{display:flex}.ib-back{display:inline-block}}
+@media(max-width:820px){#ibx.bottom,#ibx.nopane{grid-template-columns:1fr;grid-template-rows:none}#ibx.bottom .ib-side{grid-row:auto}}
 """
 
 
@@ -490,7 +511,7 @@ def inbox_page(start=None):
             'folder': start.get('f') or 'INBOX', 'uid': start.get('u') or '', 'token': TOKEN, 'q': start.get('q') or '', 'compose': bool(start.get('compose')), 'to': start.get('to') or '', 'solo': bool(start.get('solo'))}
     data = json.dumps(boot, ensure_ascii=False).replace('</', '<\\/')
     body = f'''<style>{CSS}</style>
-<div class="ib-mailboxes" id="ib-mailboxes" role="group" aria-label="בחירת תיבת דואר"></div>
+<div id="ib-workspace"><div class="ib-mailboxes" id="ib-mailboxes" role="group" aria-label="בחירת תיבת דואר"></div>
 <div id="ibx">
   <aside class="ib-side"><button class="ib-new" type="button" data-do="compose" title="הודעה חדשה (C)">✏️ הודעה חדשה</button><div id="ib-folders"></div></aside>
   <section class="ib-list">
@@ -556,7 +577,7 @@ def inbox_page(start=None):
 <div id="ib-view" role="dialog" aria-label="צפייה בקובץ"><header><b id="ib-view-name" dir="auto" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
   <button type="button" id="ib-view-open">פתיחה בתוכנה</button><button type="button" id="ib-view-save">💾 שמירה</button><button type="button" id="ib-view-x">✕ סגירה</button></header><div class="stage" id="ib-view-stage"></div></div>
 <div id="ib-toast"><span id="ib-toast-t"></span><button type="button" id="ib-toast-b"></button></div>
-<script>window.IBX={data};</script><script>{JS}</script>'''
+</div><script>window.IBX={data};</script><script>{JS}</script>'''
     from mailbrief.web.layout import update_banner
     return page('דואר נכנס', update_banner() + body, '/inbox')
 
@@ -835,24 +856,49 @@ function searchMenu(btn){
     Array.prototype.forEach.call($('ib-menu').querySelectorAll('input[type=text]'), function(i){ i.onkeydown = function(ev){ if (ev.key === 'Enter') go(); }; });
   });
 }
-var LOOK = (function(){ try { return JSON.parse(localStorage.getItem('ibx-look') || '{}'); } catch (e) { return {}; } })();
+var LOOK = (function(){ try { var value = JSON.parse(localStorage.getItem('ibx-look') || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch (e) { return {}; } })();
+var PALETTES = {purple: ['סגול', '#7c3aed'], ocean: ['כחול ים', '#1d4ed8'], forest: ['ירוק יער', '#047857'], rose: ['ורוד', '#be185d'], slate: ['אפור אלגנטי', '#475569'], amber: ['ענבר', '#b45309']};
 var FONTS = {Rubik: '', Heebo: 'Heebo:wght@400;500;700', 'Noto Sans Hebrew': 'Noto+Sans+Hebrew:wght@400;500;700', 'Assistant': 'Assistant:wght@400;600;700'};
 function applyLook(){
   var box = $('ibx'); box.classList.toggle('dense', LOOK.density === 'dense'); box.classList.toggle('nopane', LOOK.pane === 'none'); box.classList.toggle('bottom', LOOK.pane === 'bottom');
-  var font = LOOK.font && FONTS[LOOK.font] !== undefined ? LOOK.font : '';
+  box.classList.toggle('comfortable', LOOK.density === 'comfortable'); box.classList.toggle('cards', LOOK.rows === 'cards');
+  box.classList.toggle('no-snippet', LOOK.snippet === 'hide');
+  var workspace = $('ib-workspace');
+  workspace.dataset.palette = Object.prototype.hasOwnProperty.call(PALETTES, LOOK.palette) ? LOOK.palette : 'purple';
+  box.dataset.textSize = ['large', 'larger'].indexOf(LOOK.textSize) >= 0 ? LOOK.textSize : '';
+  var font = LOOK.font && Object.prototype.hasOwnProperty.call(FONTS, LOOK.font) ? LOOK.font : '';
   if (font && FONTS[font] && !document.getElementById('ib-font-' + font.replace(/ /g, ''))) {
     var l = document.createElement('link'); l.rel = 'stylesheet'; l.id = 'ib-font-' + font.replace(/ /g, '');
     l.href = 'https://fonts.googleapis.com/css2?family=' + FONTS[font] + '&display=swap'; document.head.appendChild(l);
   }
   box.style.fontFamily = font ? '"' + font + '",Rubik,system-ui,sans-serif' : '';
 }
+function saveLook(){
+  try { localStorage.setItem('ibx-look', JSON.stringify(LOOK)); }
+  catch (e) { toast('התצוגה הוחלה כעת, אך לא ניתן לשמור אותה בדפדפן'); }
+  applyLook(); fitBox();
+}
+function lookPreset(name){
+  var presets = {compact: {density: 'dense', rows: '', pane: '', snippet: 'hide', textSize: ''},
+    reading: {density: 'comfortable', rows: '', pane: 'bottom', snippet: '', textSize: 'large'},
+    cards: {density: 'comfortable', rows: 'cards', pane: 'none', snippet: '', textSize: ''}};
+  if (name === 'reset') LOOK = {};
+  else if (presets[name]) Object.assign(LOOK, presets[name]);
+  saveLook();
+}
 function lookMenu(btn){
-  var opt = function(name, value, label){ return '<label style="display:flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;padding:3px 0"><input type="radio" name="' + name + '" value="' + value + '"' + ((LOOK[name] || '') === value ? ' checked' : '') + '> ' + label + '</label>'; };
-  menu(btn, '<div class="row"><b>🎛️ תצוגה</b></div>' +
-    '<div class="row" style="display:block"><label>צפיפות הרשימה</label>' + opt('density', '', 'רגילה') + opt('density', 'dense', 'צפופה — יותר מיילים במסך') + '</div>' +
+  var opt = function(name, value, label){ return '<label style="display:flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;padding:3px 0"><input type="radio" name="' + name + '" value="' + value + '"' + ((LOOK[name] || (name === 'palette' ? 'purple' : '')) === value ? ' checked' : '') + '> ' + label + '</label>'; };
+  menu(btn, '<div class="row"><b>🎛️ התצוגה שלי</b></div>' +
+    '<div class="row" style="flex-wrap:wrap"><button class="ib-ic" type="button" data-look-preset="compact">עבודה מהירה</button><button class="ib-ic" type="button" data-look-preset="reading">קריאה נוחה</button><button class="ib-ic" type="button" data-look-preset="cards">כרטיסים</button></div>' +
+    '<fieldset style="border:0;margin:0;padding:6px"><legend>ערכת צבעים</legend>' + Object.keys(PALETTES).map(function(k){ return '<span style="display:inline-flex;align-items:center;gap:4px;margin-inline-end:8px"><i aria-hidden="true" style="width:12px;height:12px;border-radius:50%;background:' + PALETTES[k][1] + '"></i>' + opt('palette', k, PALETTES[k][0]) + '</span>'; }).join('') + '</fieldset>' +
+    '<div class="row" style="display:block"><label>סגנון הרשימה</label>' + opt('rows', '', 'שורות') + opt('rows', 'cards', 'כרטיסים') + '</div>' +
+    '<div class="row" style="display:block"><label>צפיפות הרשימה</label>' + opt('density', '', 'רגילה') + opt('density', 'dense', 'צפופה — יותר מיילים במסך') + opt('density', 'comfortable', 'מרווחת') + '</div>' +
     '<div class="row" style="display:block"><label>חלונית קריאה</label>' + opt('pane', '', 'בצד הרשימה') + opt('pane', 'bottom', 'מתחת לרשימה — הודעה רחבה') + opt('pane', 'none', 'בלי — ההודעה נפתחת במקום הרשימה') + '</div>' +
-    '<div class="row" style="display:block"><label>גופן</label>' + opt('font', '', 'Rubik') + opt('font', 'Heebo', 'Heebo') + opt('font', 'Noto Sans Hebrew', 'Noto Sans Hebrew') + opt('font', 'Assistant', 'Assistant') + '</div>', function(m){
-    m.onchange = function(ev){ if (ev.target.name) { LOOK[ev.target.name] = ev.target.value; try { localStorage.setItem('ibx-look', JSON.stringify(LOOK)); } catch (e) {} applyLook(); } };
+    '<div class="row" style="display:block"><label>גודל טקסט ברשימה</label>' + opt('textSize', '', 'רגיל') + opt('textSize', 'large', 'גדול') + opt('textSize', 'larger', 'גדול מאוד') + '</div>' +
+    '<div class="row" style="display:block"><label>תקציר ההודעה</label>' + opt('snippet', '', 'הצגת שורת תקציר') + opt('snippet', 'hide', 'נושא בלבד') + '</div>' +
+    '<div class="row" style="display:block"><label>גופן</label>' + opt('font', '', 'Rubik') + opt('font', 'Heebo', 'Heebo') + opt('font', 'Noto Sans Hebrew', 'Noto Sans Hebrew') + opt('font', 'Assistant', 'Assistant') + '</div><div class="row"><button class="ib-ic" type="button" data-look-preset="reset">איפוס התצוגה</button><small>השינויים מוצגים מיד ונשמרים במחשב הזה.</small></div>', function(m){
+    m.onchange = function(ev){ if (ev.target.name) { LOOK[ev.target.name] = ev.target.value; saveLook(); } };
+    m.onclick = function(ev){ var b = ev.target.closest('[data-look-preset]'); if (b) { lookPreset(b.dataset.lookPreset); lookMenu(btn); } };
   });
 }
 function unreadTitle(){
