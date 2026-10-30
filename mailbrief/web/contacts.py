@@ -4,6 +4,7 @@ import datetime as dt
 import os
 import json
 import sqlite3
+import logging
 from contextlib import closing
 from urllib.parse import quote
 
@@ -32,30 +33,36 @@ def people():
     # The inbox cache exists even before the first classification/history scan.
     cache = os.path.join(config.DATA, 'mailbox.db')
     if os.path.isfile(cache):
-        with closing(sqlite3.connect(cache, timeout=2)) as db:
-            for acc, raw in db.execute('SELECT acc, data FROM heads ORDER BY at DESC'):
-                try:
-                    row = json.loads(raw)
-                except (ValueError, TypeError):
-                    continue
-                sender = row.get('from') or {}
-                candidates = row.get('to', []) + row.get('cc', []) if sender.get('email', '').lower() in own else ([] if row.get('news') else [sender])
-                for person in candidates:
-                    address = (person.get('email') or '').strip().lower()
-                    if not address or '@' not in address or address in own:
-                        continue
-                    entry = book.setdefault(address, {'name': '', 'email': address, 'count': 0, 'last': '', 'account': acc})
-                    if row.get('at', '') >= entry['last']:
-                        entry.update(last=row.get('at', ''), account=acc)
-                    entry['name'] = entry['name'] or person.get('name', '')
+        try:
+            cached_people(book, own, cache)
+        except sqlite3.Error:
+            logging.getLogger(__name__).warning('Contact cache unavailable', exc_info=True)
     phones = load_json(config.CONTACTS_FILE, {})
-    for address, c in phones.items():       # typed by hand, even without mail in the history
+    for address, c in phones.items():
         book.setdefault(address, {'name': '', 'email': address, 'count': 0, 'last': c.get('at', ''), 'account': ''})
     for p in book.values():
         p['phone'] = (phones.get(p['email']) or {}).get('phone', '')
         p['name'] = p['name'] or p['email'].split('@')[0]
     return sorted(book.values(), key=lambda p: p['last'], reverse=True)
 
+
+def cached_people(book, own, cache):
+    with closing(sqlite3.connect(cache, timeout=2)) as db:
+        for acc, raw in db.execute('SELECT acc, data FROM heads ORDER BY at DESC'):
+            try:
+                row = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            sender = row.get('from') or {}
+            candidates = row.get('to', []) + row.get('cc', []) if sender.get('email', '').lower() in own else ([] if row.get('news') else [sender])
+            for person in candidates:
+                address = (person.get('email') or '').strip().lower()
+                if not address or '@' not in address or address in own:
+                    continue
+                entry = book.setdefault(address, {'name': '', 'email': address, 'count': 0, 'last': '', 'account': acc})
+                if row.get('at', '') >= entry['last']:
+                    entry.update(last=row.get('at', ''), account=acc)
+                entry['name'] = entry['name'] or person.get('name', '')
 
 def contacts_page(msg=''):
     rows = people()
