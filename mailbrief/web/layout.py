@@ -94,6 +94,11 @@ SIMPLE_TABS = ('/inbox', '/today', '/contacts', '/calendar', '/', '/search', '/h
 PRIMARY_TABS = ('/inbox', '/today', '/contacts', '/calendar', '/search')
 
 WORKSPACE_STYLE = """
+.nav-shell{max-width:1640px;margin:0 auto 8px;border-bottom:1px solid var(--line)}
+.nav-shell>summary{cursor:pointer;padding:10px 20px;font-size:14px;font-weight:600;color:var(--ink);background:var(--surface)}
+.nav-shell>summary::marker{color:var(--accent)}
+.nav-shell nav.tabs{position:static;top:auto;box-shadow:none;backdrop-filter:none;margin-bottom:8px}
+.nav-shell:not([open]){margin-bottom:8px}
 .skip-link{position:fixed;top:-80px;inset-inline-start:16px;z-index:100;background:var(--surface);padding:12px;border:2px solid var(--accent)}
 .skip-link:focus{top:8px}
 :focus-visible{outline:3px solid var(--accent);outline-offset:3px}
@@ -145,7 +150,7 @@ def top_bar(active=''):
     more = ''.join(link(t) for t in shown if t[0] not in PRIMARY_TABS)
     tabs += f'<details class="nav-more"><summary>כלים והגדרות ▾</summary><div class="nav-panel">{more}</div></details>'
     me = profile()
-    return (f'<style>{extras.STYLE}</style><header class="hero"><div class="corner">'
+    return (f'<style>{extras.STYLE}</style><details class="nav-shell" id="mb-navigation"><summary>☰ MailBrief · ניווט וכלים</summary><header class="hero"><div class="corner">'
             '<button class="tbtn" id="mb-theme" type="button" onclick="MB.theme()" aria-label="החלפת ערכת צבעים">🌗</button>'
             '<button class="kbtn" type="button" onclick="MB.open()" title="מעבר מהיר לכל דף ופעולה">⌨️ Ctrl+K</button>'
             f'<a class="kbtn" href="/about" title="אודות MailBrief, הגרסה ועדכונים" style="text-decoration:none">ℹ️ {__version__}</a>'
@@ -154,7 +159,7 @@ def top_bar(active=''):
             f'<span class="gift" id="mb-gift" title="🎉">📬</span><h1 class="name g" id="mb-hello" data-name="{e(me.get("name", ""))}" '
             f'data-back="{e(welcome_back() if me.get("form") else "")}">שלום!</h1>'
             '<p class="tag"><span id="mb-type"></span><span class="caret"></span></p></header>'
-            f'<nav class="tabs" id="mb-tabs" aria-label="ניווט ראשי">{tabs}</nav>{view.switcher()}')
+            f'<nav class="tabs" id="mb-tabs" aria-label="ניווט ראשי">{tabs}</nav>{view.switcher()}</details>')
 
 
 def update_banner():

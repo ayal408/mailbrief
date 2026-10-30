@@ -108,6 +108,8 @@ HTML = """
       if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     var menu = document.querySelector('.nav-more'); if (menu) menu.open = false;
+    var shell = document.getElementById('mb-navigation');
+    if (shell) { var focusInMenu = shell.contains(document.activeElement); shell.open = false; if (focusInMenu) shell.querySelector('summary').focus({preventScroll:true}); }
   }
   function runScripts(root){
     Array.prototype.forEach.call(root.querySelectorAll('script'), function(old){
@@ -204,6 +206,8 @@ HTML = """
     hello.textContent = greet + (who ? ' ' + who : '') + (back ? ', ' + back : '') + '!';
   }
   var nav = document.getElementById('mb-tabs');
+  var navigationShell = document.getElementById('mb-navigation');
+  if (navigationShell) navigationShell.addEventListener('toggle', function(){ window.dispatchEvent(new Event('resize')); });
   document.addEventListener('click', function(ev){
     var menu = document.querySelector('.nav-more');
     if (menu && !menu.contains(ev.target)) menu.open = false;

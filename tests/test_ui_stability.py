@@ -14,6 +14,26 @@ class StableUI(unittest.TestCase):
         result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_page_navigation_collapses_header_and_restores_focus(self):
+        fn = extras.HTML.split('  function setActive(path){', 1)[1].split('  function runScripts(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var focused=false,menu={open:true},shell={open:true,contains(){return true;},querySelector(){return {focus(){focused=true;}};}};
+var document={activeElement:{},querySelectorAll(){return [];},querySelector(){return menu;},getElementById(){return shell;}};
+''' + 'function setActive(path){' + fn + '''
+setActive('/inbox');assert.equal(shell.open,false);assert.equal(menu.open,false);assert.equal(focused,true);
+''')
+
+    def test_enter_searches_immediately_and_escape_clears(self):
+        functions = inbox.JS.split('function runSearch(){', 1)[1].split("$('ib-q').value = S.q;", 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={q:'old',checked:{x:1},items:[1],groups:[1]},qTimer=1,input={value:'new'},queries=[];
+function $(){return input;}function drawQuickFilters(){}function listContext(){}function syncUrl(){}function loadList(){queries.push(S.q);}
+''' + 'function runSearch(){' + functions + '''
+function event(key,composing){return {key,isComposing:composing,preventDefault(){},stopPropagation(){}};}
+searchKey(event('Enter',true));assert.equal(queries.length,0);searchKey(event('Enter',false));assert.deepEqual(queries,['new']);assert.deepEqual(S.checked,{});
+searchKey(event('Escape',false));assert.deepEqual(queries,['new','']);assert.equal(input.value,'');
+''')
+
     def test_display_presets_preserve_palette_and_reset_every_setting(self):
         functions = inbox.JS.split('var LOOK = ', 1)[1].split('function lookMenu(btn){', 1)[0]
         self.run_js('''

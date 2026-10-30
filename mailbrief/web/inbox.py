@@ -330,6 +330,9 @@ def receipt_from(address, msg):
 # ---- the page ----------------------------------------------------------------------------------------------------------------
 
 CSS = r"""
+.ib-context{padding:10px 12px;border-bottom:1px solid var(--line);min-width:0}
+.ib-context strong{display:block;font-size:16px}.ib-context small{display:block;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-status{font-size:12px;color:var(--muted);min-height:18px;margin-top:3px}
 #ib-workspace{--on-accent:#fff}
 #ib-workspace[data-palette=purple]{--tone:#7c3aed;--tone-dark:#c4b5fd;--tone-2:#a21caf;--tone-2-dark:#f0abfc}
 #ib-workspace[data-palette=ocean]{--tone:#1d4ed8;--tone-dark:#93c5fd;--tone-2:#0369a1;--tone-2-dark:#7dd3fc}
@@ -407,7 +410,7 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 #ibx.bottom .ib-list{border-inline-end:0;border-bottom:1px solid var(--line)}#ibx.bottom .ib-split{display:none}
 #ibx.wide{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}
 /* 🗗 a message in a window of its own: only the message */
-body.solo header.hero,body.solo nav.tabs,body.solo .mbxs,body.solo footer.foot,body.solo main>.item{display:none}body.solo main{max-width:none;padding:8px}
+body.solo #mb-navigation,body.solo header.hero,body.solo nav.tabs,body.solo .mbxs,body.solo footer.foot,body.solo main>.item{display:none}body.solo main{max-width:none;padding:8px}
 body.solo #ibx{grid-template-columns:1fr}body.solo .ib-side,body.solo .ib-list,body.solo [data-m="wide"],body.solo [data-m="pop"],body.solo .ib-back{display:none!important}#ibx.wide .ib-side,#ibx.wide .ib-list{display:none}#ibx.wide .ib-read{display:flex}
 .ib-mtools{display:flex;gap:4px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center}
 .ib-mtools select{font:inherit;font-size:13px;padding:5px 8px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:150px}
@@ -515,13 +518,15 @@ def inbox_page(start=None):
 <div id="ibx">
   <aside class="ib-side"><button class="ib-new" type="button" data-do="compose" title="הודעה חדשה (C)">✏️ הודעה חדשה</button><div id="ib-folders"></div></aside>
   <section class="ib-list">
+    <div class="ib-context"><strong id="ib-folder-title">דואר נכנס</strong><small id="ib-account-title" dir="auto"></small><div id="ib-status" class="ib-status" role="status" aria-live="polite"></div></div>
     <div class="ib-tools">
       <input type="checkbox" id="ib-all" title="בחירת הכול (X לבחירת שורה)">
       <input type="search" id="ib-q" aria-label="חיפוש בתיקייה" placeholder="🔍 חיפוש בתיקייה… (/)" autocomplete="off">
+      <button class="ib-ic" type="button" id="ib-clear-search" title="ניקוי החיפוש" aria-label="ניקוי החיפוש">✕</button>
       <button class="ib-ic" type="button" id="ib-adv" title="אפשרויות חיפוש">⚙️</button>
       <button class="ib-ic" type="button" id="ib-unread" title="רק לא נקראו" aria-label="רק הודעות שלא נקראו" aria-pressed="false">●</button>
-      <button class="ib-ic" type="button" id="ib-refresh" title="רענון">⟳</button>
-      <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️</button>
+      <button class="ib-ic" type="button" id="ib-refresh" title="רענון">⟳ רענון</button>
+      <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️ תצוגה</button>
       <button class="ib-ic" type="button" id="ib-list-actions" title="בחירה מהירה וייצוא" aria-label="פעולות על רשימת ההודעות">⋯</button>
       <div class="ib-bulk" id="ib-bulk"><span id="ib-bulk-n"></span>
         <button class="ib-ic" type="button" data-bulk="read" title="סימון כנקרא">✉️</button><button class="ib-ic" type="button" data-bulk="unread" title="סימון כלא נקרא">●</button>
@@ -750,6 +755,7 @@ function drawFolders(){
   var side = document.querySelector('.ib-side'), top = side ? side.scrollTop : 0;
   renderFolders();
   drawMailboxes();
+  listContext();
   if (side) side.scrollTop = top;
 }
 function renderFolders(){
@@ -958,8 +964,18 @@ function renderList(){
   drawBulk();
 }
 function drawBulk(){
+  listContext();
   var n = Object.keys(S.checked).length; $('ib-bulk').classList.toggle('on', n > 0); $('ib-bulk-n').textContent = n ? n + ' נבחרו' : '';
   $('ib-all').checked = n > 0 && n === S.groups.length;
+  $('ib-all').indeterminate = n > 0 && n < S.groups.length;
+}
+function listContext(){
+  var folders = S.folders[S.acc], folder = Array.isArray(folders) ? folders.find(function(f){ return f.id === S.folder; }) : null;
+  $('ib-folder-title').textContent = folder ? folder.name : S.folder === 'INBOX' ? 'דואר נכנס' : S.folder;
+  $('ib-account-title').textContent = S.acc === '*' ? 'כל תיבות הדואר' : S.acc;
+  var n = S.items.length, selected = Object.keys(S.checked).length;
+  $('ib-status').textContent = n + ' הודעות נטענו' + (S.total > n ? ' מתוך ' + S.total : '') + (selected ? ' · ' + selected + ' שיחות נבחרו' : '') + (S.q || S.unread ? ' · סינון פעיל' : '');
+  $('ib-clear-search').disabled = !$('ib-q').value && !S.q;
 }
 var listSeq = 0, morePending = 0;
 function loadList(opts){
@@ -1000,7 +1016,7 @@ function loadList(opts){
 $('ib-cats').addEventListener('click', function(ev){ var b = ev.target.closest('[data-cat]'); if (b) choose(S.acc, b.dataset.cat); });
 function choose(acc, folder){
   clearTimeout(qTimer); closeMenu();
-  S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1;
+  S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1; S.total = 0;
   S.open = null; $('ibx').classList.remove('reading', 'wide');
   drawFolders(); drawQuickFilters(); drawSavedSearches(); syncUrl(); loadList(); drawHome();
   if (acc !== '*' && !S.folders[acc]) loadFolders(acc);
@@ -1443,8 +1459,19 @@ function msgAction(k){
   if (k === 'unread') { act('unread', ref); closeMessage(); return; }
   act(k, ref);
 }
+function runSearch(){
+  clearTimeout(qTimer); S.q = $('ib-q').value.trim(); S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1; S.total = 0;
+  drawQuickFilters(); listContext(); syncUrl(); loadList();
+}
+function searchKey(ev){
+  if (ev.isComposing) return;
+  if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); runSearch(); }
+  else if (ev.key === 'Escape' && ($('ib-q').value || S.q)) { ev.preventDefault(); ev.stopPropagation(); $('ib-q').value = ''; runSearch(); }
+}
 $('ib-q').value = S.q;
-var qTimer; $('ib-q').addEventListener('input', function(){ clearTimeout(qTimer); qTimer = setTimeout(function(){ S.q = $('ib-q').value.trim(); S.page = 0; drawQuickFilters(); syncUrl(); loadList(); }, 450); });
+var qTimer; $('ib-q').addEventListener('input', function(){ clearTimeout(qTimer); $('ib-clear-search').disabled = !this.value && !S.q; qTimer = setTimeout(runSearch, 450); });
+$('ib-q').addEventListener('keydown', searchKey);
+$('ib-clear-search').onclick = function(){ $('ib-q').value = ''; runSearch(); $('ib-q').focus(); };
 $('ib-mailboxes').addEventListener('click', function(ev){ var b = ev.target.closest('[data-mailbox]'); if (b) switchMailbox(b.dataset.mailbox); });
 $('ib-filters').addEventListener('click', function(ev){ var b = ev.target.closest('[data-filter]'); if (b) quickFilter(b.dataset.filter); });
 $('ib-save-search').onclick = saveSearch;
