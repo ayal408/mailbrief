@@ -209,6 +209,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(reminders_page(int(number) if number.isdigit() else 0))
         if url.path == '/today_widgets.json':
             return self._json(today_page(widgets=True))
+        if url.path == '/sent-tracking':
+            from mailbrief.web.sent_tracking import tracking_page
+            q = parse_qs(url.query)
+            address = q.get('a', [view.current_account()])[0]
+            if address == '*':
+                address = ''
+            elif address and address.lower() not in {a.lower() for a in view.emails()}:
+                return self._send('תיבת הדואר לא נמצאה', code=400)
+            return self._send(tracking_page(address, q.get('status', ['all'])[0], q.get('q', [''])[0][:200]))
         if url.path == '/today':
             q = parse_qs(url.query)
             return self._send(today_page(q.get('msg', [''])[0], show_all=q.get('all', [''])[0] == '1',
@@ -634,7 +643,7 @@ class Handler(BaseHTTPRequestHandler):
         link = f.get('link', '')
         due = add_reminder(days, f.get('subject', '')[:200], f.get('from', '')[:100],
                            link if link.startswith('https://mail.google.com/') else '', f.get('account', ''))
-        return ('/today', None) if due else 'שגיאה'
+        return (('/sent-tracking' if f.get('back') == '/sent-tracking' else '/today'), None) if due else 'שגיאה'
 
     def post_gapps_connect(self, f):
         accounts = load_json(config.ACCOUNTS_FILE, [])
@@ -868,6 +877,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(inbox.inbox_page({k: q.get(k, '') for k in ('a', 'f', 'u', 'q', 'compose', 'to', 'solo')}))
             if url.path == '/inbox_poll.json':
                 return self._json({'v': live.version()})
+            if url.path == '/inbox_sender.json':
+                return self._json(inbox.sender_profile(q.get('a', ''), q.get('email', '')))
             if url.path == '/inbox_folders.json':
                 return self._json({'folders': inbox.with_prefs(q.get('a', ''), mailbox.folders(q.get('a', ''), fresh=bool(q.get('fresh'))))})
             if url.path == '/inbox_overview.json':

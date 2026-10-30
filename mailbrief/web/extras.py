@@ -645,8 +645,8 @@ HTML += """
     var k = (ev.code && ev.code.indexOf('Key') === 0) ? ev.code.slice(3).toLowerCase() : (HE[ev.key] || ev.key.toLowerCase());
     if (ev.altKey && k === 'a') { ev.preventDefault(); toggle(); return; }
     if (ev.key === 'Escape') { keys.classList.remove('on'); if (panel.classList.contains('on')) toggle(false); stop(); return; }
-    if (typing || ev.ctrlKey || ev.metaKey || ev.altKey || document.getElementById('tri-acts')) return;   // quick sort has its own keys
-    if (ev.key === '?') { keys.classList.toggle('on'); return; }
+    if (typing || ev.ctrlKey || ev.metaKey || ev.altKey || document.getElementById('tri-acts') || document.querySelector('dialog[open], #ib-menu.on[role=dialog]')) return;   // dialogs and quick sort have their own keys
+    if (ev.key === '?') { if (document.getElementById('ibx')) return; keys.classList.toggle('on'); return; }
     if (k === 'g') { pending = Date.now(); return; }
     if (pending && Date.now() - pending < 1500 && GO[k]) {
       pending = 0; ev.preventDefault();

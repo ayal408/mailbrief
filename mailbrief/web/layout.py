@@ -80,7 +80,7 @@ footer.foot{text-align:center;color:var(--muted);margin-top:40px;font-size:13px}
 FONT = FAVICON + extras.BOOT
 
 
-TABS = [('/inbox', '📥', 'דואר נכנס'), ('/today', '☀️', 'היום שלי'), ('/', '⚙️', 'הגדרות'), ('/dashboard', '📊', 'לוח בקרה'), ('/stats', '📈', 'במספרים'),
+TABS = [('/inbox', '📥', 'דואר נכנס'), ('/today', '☀️', 'היום שלי'), ('/sent-tracking', '📤', 'מעקב נשלח'), ('/', '⚙️', 'הגדרות'), ('/dashboard', '📊', 'לוח בקרה'), ('/stats', '📈', 'במספרים'),
         ('/automations', '⚡', 'אוטומציות'), ('/contacts', '📇', 'אנשי קשר'), ('/calendar', '📅', 'לוח שנה'), ('/clients', '👥', 'לקוחות'), ('/reading', '📰', 'ניוזלטרים'),
         ('/search', '🔍', 'חיפוש'), ('/help', '❓', 'מדריך')]
 

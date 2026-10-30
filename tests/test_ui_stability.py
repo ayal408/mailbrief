@@ -21,6 +21,87 @@ class StableUI(unittest.TestCase):
             result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_sender_search_leaves_standalone_mode_and_url(self):
+        choose = inbox.JS.split('function choose(acc, folder){', 1)[1].split('function selectedRefs(){', 1)[0]
+        sender = inbox.JS.split('function findSender(){', 1)[1].split('function copySender(){', 1)[0]
+        sync = inbox.JS.split('function syncUrl(){', 1)[1].split('function ', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var B={solo:true},qTimer=0,input={},removed=false,fitted=false,queries=[],url='';
+var S={acc:'one@example.com',folder:'INBOX',q:'',unread:true,open:{account:'one@example.com',folder:'Archive',uid:7,from:{email:'sender@example.com'}},folders:{}};
+var box={classList:{remove(){}}};function $(id){return id==='ib-q'?input:box;}
+var document={body:{classList:{remove(name){assert.equal(name,'solo');removed=true;}}}};
+var location={href:'http://mailbrief.localhost/inbox?a=one%40example.com&f=Archive&u=7&solo=1'};
+var history={state:null,replaceState(s,t,u){url=u;}};
+function closeSenderProfile(){}function closeMenu(){}function fitBox(){fitted=true;}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function drawHome(){}function loadFolders(){}function toast(){}
+function loadList(){queries.push([S.acc,S.folder,S.q]);}
+''' + 'function syncUrl(){' + sync + 'function choose(acc, folder){' + choose + 'function findSender(){' + sender + '''
+findSender();assert.equal(B.solo,false);assert.equal(removed,true);assert.equal(fitted,true);assert.equal(S.open,null);
+assert.deepEqual(queries,[['one@example.com','Archive','from:"sender@example.com"']]);
+var result=new URL(url,location.href);assert.equal(result.searchParams.has('solo'),false);assert.equal(result.searchParams.has('u'),false);assert.equal(result.searchParams.get('q'),'from:"sender@example.com"');
+''')
+
+    def test_help_enter_preserves_button_activation_and_escape_closes(self):
+        fn = inbox.JS.split('function keys(ev){', 1)[1].split('var timer = setInterval(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={kb:0,groups:[{}]},opened=0,focused=false,closed=false;
+var menu={classList:{contains(){return !closed;}},getAttribute(){return 'dialog';}};
+function $(id){return id==='ib-menu'?menu:id==='ib-profile'?{open:false}:id==='ib-view'?{classList:{contains(){return false;}}}:id==='ib-shortcuts'?{focus(){focused=true;}}:{};}
+function closeMenu(){closed=true;}function openGroup(){opened++;}
+var document={activeElement:{tagName:'BUTTON',isContentEditable:false}};
+''' + 'function keys(ev){' + fn + '''
+var prevented=false;keys({key:'Enter',preventDefault(){prevented=true;}});assert.equal(opened,0);assert.equal(prevented,false);
+keys({key:'j',preventDefault(){throw Error('shortcut captured');}});assert.equal(opened,0);
+keys({key:'Escape'});assert.equal(closed,true);assert.equal(focused,true);assert.equal(opened,0);
+''')
+
+    def test_profile_ignores_old_responses_and_closed_dialog(self):
+        fn = inbox.JS.split('var profileSeq = 0;', 1)[1].split('function outside(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var profileSeq=0,pending=[];
+var button={focus(){}},dialog={open:false,innerHTML:'',showModal(){this.open=true;},close(){this.open=false;},querySelector(){return button;}};
+function $(id){return id==='ib-profile'?dialog:button;}function api(){return new Promise(resolve=>pending.push(resolve));}function esc(s){return String(s||'');}function avatar(){return '';}
+''' + fn + '''
+(async()=>{showSenderProfile('one@example.com',{email:'old@example.com'});showSenderProfile('two@example.com',{email:'new@example.com'});
+var row={account:'two@example.com',email:'new@example.com',name:'New sender',recent:[],count:0,waiting:0};
+pending[1](row);await new Promise(setImmediate);var current=dialog.innerHTML;assert.ok(current.includes('New sender'));
+pending[0]({...row,name:'Old sender'});await new Promise(setImmediate);assert.equal(dialog.innerHTML,current);
+showSenderProfile('one@example.com',{email:'late@example.com'});closeSenderProfile();var closed=dialog.innerHTML;
+pending[2]({...row,name:'Late sender'});await new Promise(setImmediate);assert.equal(dialog.innerHTML,closed);assert.equal(dialog.open,false);})();
+''')
+
+    def test_date_sections_and_quick_read_keep_account_scope(self):
+        functions = inbox.JS.split('function dateSection(value, now){', 1)[1].split('function drawBulk(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={folder:'INBOX',groups:[{account:'work@example.com',unread:true,rows:[{uid:7,folder:'Archive'},{uid:8}]}]},actions=[];
+function act(a,r){actions.push([a,r]);}
+''' + 'function dateSection(value, now){' + functions + '''
+var now=new Date(2026,0,1,12);assert.equal(dateSection(new Date(2026,0,1,8),now),'היום');assert.equal(dateSection(new Date(2025,11,31,23),now),'אתמול');assert.equal(dateSection('invalid',now),'ללא תאריך');
+quickRead(0);assert.deepEqual(actions,[['read',[{a:'work@example.com',f:'Archive',u:7},{a:'work@example.com',f:'INBOX',u:8}]]]);
+S.groups[0].unread=false;quickRead(0);assert.equal(actions[1][0],'unread');quickRead(99);assert.equal(actions.length,2);
+''')
+
+    def test_sender_search_uses_message_account_and_folder(self):
+        fn = inbox.JS.split('function findSender(){', 1)[1].split('function copySender(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var input={},picked=[];
+var S={acc:'*',unread:true,open:{account:'work@example.com',folder:'Archive',from:{email:'sender@example.com'}}};
+function $(){return input;}function choose(a,f){picked.push([a,f]);S.open=null;}function toast(){}
+''' + 'function findSender(){' + fn + '''
+findSender();assert.deepEqual(picked,[['work@example.com','Archive']]);assert.equal(S.unread,false);assert.equal(S.q,'from:"sender@example.com"');assert.equal(input.value,S.q);
+findSender();assert.equal(picked.length,1);
+''')
+
+    def test_copy_sender_handles_clipboard_success_and_rejection(self):
+        fn = inbox.JS.split('function copySender(){', 1)[1].split('function outside(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={open:{from:{email:'sender@example.com'}}},copied=[],notices=[];
+var navigator={clipboard:{writeText(s){copied.push(s);return Promise.resolve();}}};function toast(t){notices.push(t);}
+''' + 'function copySender(){' + fn + '''
+(async()=>{copySender();await new Promise(setImmediate);assert.deepEqual(copied,['sender@example.com']);assert.match(notices[0],/הועתקה/);
+navigator.clipboard.writeText=()=>Promise.reject(Error('blocked'));copySender();await new Promise(setImmediate);assert.match(notices[1],/נחסמה/);
+navigator.clipboard=null;copySender();assert.match(notices[2],/לסמן/);})();
+''')
+
     def test_page_navigation_collapses_header_and_restores_focus(self):
         fn = extras.HTML.split('  function setActive(path){', 1)[1].split('  function runScripts(', 1)[0]
         self.run_js('''
@@ -46,7 +127,7 @@ searchKey(event('Escape',false));assert.deepEqual(queries,['new','']);assert.equ
         self.run_js('''
 const assert=require('node:assert/strict');var saved=JSON.stringify({palette:'forest',font:'',rows:'cards'}),notices=[];
 var localStorage={getItem(){return saved;},setItem(k,v){saved=v;}},classes={};
-var box={dataset:{},style:{},classList:{toggle(k,v){classes[k]=v;}}},workspace={dataset:{}};
+var box={dataset:{},style:{},classList:{toggle(k,v){classes[k]=v;}}},workspace={dataset:{},setAttribute(){}};var S={};
 function $(id){return id==='ibx'?box:workspace;}function fitBox(){}function toast(t){notices.push(t);}
 ''' + 'var LOOK = ' + functions + '''
 lookPreset('reading');assert.equal(workspace.dataset.palette,'forest');assert.equal(classes.bottom,true);assert.equal(classes.cards,false);
@@ -105,7 +186,7 @@ const assert=require('node:assert/strict');var B={accounts:[{email:'a@example.co
 var S={acc:'a@example.com',folder:'Sent',q:'invoice',unread:true,open:{uid:7},checked:{old:1},items:[1],groups:[1],folders:{}};
 var MAILBOX_STATE=Object.create(null),qTimer=1,input={},box={classList:{remove(){}}},requests=[];
 function $(id){return id==='ib-q'?input:box;}var localStorage={setItem(){}};
-function closeMenu(){}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function syncUrl(){}
+function closeMenu(){}function closeSenderProfile(){}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function syncUrl(){}
 function loadList(){requests.push([S.acc,S.folder,S.q,S.unread]);}function drawHome(){}function loadFolders(){}
 ''' + 'function choose(acc, folder){' + choose + 'function switchMailbox(acc){' + switch + '''
 switchMailbox('b@example.com');assert.deepEqual(requests[0],['b@example.com','INBOX','',false]);assert.equal(S.open,null);assert.deepEqual(S.checked,{});
