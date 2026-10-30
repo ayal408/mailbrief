@@ -977,6 +977,12 @@ function listContext(){
   $('ib-status').textContent = n + ' הודעות נטענו' + (S.total > n ? ' מתוך ' + S.total : '') + (selected ? ' · ' + selected + ' שיחות נבחרו' : '') + (S.q || S.unread ? ' · סינון פעיל' : '');
   $('ib-clear-search').disabled = !$('ib-q').value && !S.q;
 }
+function loadOnScroll(){
+  var rows = $('ib-rows'), button = $('ib-more');
+  if (button && !button.disabled && !morePending && rows.scrollTop > 0 &&
+      rows.scrollHeight - rows.scrollTop - rows.clientHeight < 160) loadList({more: 1});
+}
+$('ib-rows').addEventListener('scroll', loadOnScroll, {passive: true});
 var listSeq = 0, morePending = 0;
 function loadList(opts){
   opts = opts || {};
@@ -1616,7 +1622,7 @@ function fitBox(){                                     // 📐 the inbox fills t
   var top = box.getBoundingClientRect().top + window.scrollY;
   box.style.minHeight = '260px'; box.style.height = Math.max(260, window.innerHeight - top - 14) + 'px';
 }
-function stop(){ window.removeEventListener('resize', fitBox); clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.removeEventListener('message', fitFrame); window.__ibx = null; }
+function stop(){ $('ib-rows').removeEventListener('scroll', loadOnScroll); ++listSeq; window.removeEventListener('resize', fitBox); clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.removeEventListener('message', fitFrame); window.__ibx = null; }
 function unload(){ if (S.comp) saveDraft(true); }
 window.addEventListener('keydown', keys); window.addEventListener('beforeunload', unload); document.addEventListener('mousedown', outside); window.addEventListener('message', fitFrame);
 window.__ibx = {stop: stop, beforeLeave: function(){
