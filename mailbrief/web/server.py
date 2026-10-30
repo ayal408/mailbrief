@@ -877,6 +877,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(inbox.inbox_page({k: q.get(k, '') for k in ('a', 'f', 'u', 'q', 'compose', 'to', 'solo')}))
             if url.path == '/inbox_poll.json':
                 return self._json({'v': live.version()})
+            if url.path == '/inbox_sender.json':
+                return self._json(inbox.sender_profile(q.get('a', ''), q.get('email', '')))
             if url.path == '/inbox_folders.json':
                 return self._json({'folders': inbox.with_prefs(q.get('a', ''), mailbox.folders(q.get('a', ''), fresh=bool(q.get('fresh'))))})
             if url.path == '/inbox_overview.json':

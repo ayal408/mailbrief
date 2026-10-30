@@ -22,6 +22,30 @@ def gmail_link(address, gid):
     return f'https://mail.google.com/mail/?authuser={quote(address)}#all/{gid}' if gid else ''
 
 
+def sender_profile(address, sender_email):
+    """A local profile, with correspondence counts restricted to one mailbox."""
+    acc = mailbox.account(address)
+    sender_email = (sender_email or '').strip().lower()
+    if '@' not in sender_email or len(sender_email) > 320:
+        raise ValueError('כתובת השולח אינה תקינה')
+    history = [h for h in load_json(config.HISTORY_FILE, {}).values()
+               if (h.get('account') or '').lower() == acc['email'].lower()
+               and (h.get('sender') or '').lower() == sender_email]
+    history.sort(key=lambda h: h.get('date', ''), reverse=True)
+    contact = load_json(config.CONTACTS_FILE, {}).get(sender_email) or {}
+    known = view.account(sender_email)
+    photo = known.get('avatar') or ''
+    photo = '/avatar/' + quote(photo) if re.fullmatch(r'[a-zA-Z0-9_.-]+', photo) else ''
+    return {'account': acc['email'], 'email': sender_email,
+            'name': contact.get('name') or next((h['name'] for h in history if h.get('name')), '') or known.get('display_name', ''),
+            'phone': contact.get('phone') or '', 'photo': photo, 'count': len(history),
+            'first': history[-1].get('date', '') if history else '', 'last': history[0].get('date', '') if history else '',
+            'waiting': sum(h.get('answered') is False for h in history),
+            'recent': [{'subject': h.get('subject') or '(ללא נושא)', 'date': h.get('date', ''),
+                        'link': h.get('link') if (h.get('link') or '').startswith('https://mail.google.com/') else ''}
+                       for h in history[:5]]}
+
+
 def contact_card(address, sender_email):
     """👤 Who wrote: how many emails, when last, how fast you answer, the client card and the receipts / invoices."""
     sender_email = (sender_email or '').lower()
@@ -330,6 +354,11 @@ def receipt_from(address, msg):
 # ---- the page ----------------------------------------------------------------------------------------------------------------
 
 CSS = r"""
+.ib-profile-name{font:inherit;border:0;background:none;color:inherit;padding:0;text-align:start;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.ib-profile-name:hover{text-decoration-color:var(--accent)}
+#ib-profile{width:min(480px,calc(100vw - 24px));max-height:85dvh;overflow:auto;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);padding:20px;box-shadow:var(--shadow)}
+#ib-profile::backdrop{background:rgba(0,0,0,.4)}#ib-profile header{display:flex;align-items:center;gap:12px;margin-bottom:14px}#ib-profile h2{font-size:20px;margin:0;direction:inherit;text-align:start;overflow-wrap:anywhere}
+#ib-profile .ib-av,#ib-profile img{width:52px;height:52px;flex:none;border-radius:50%;object-fit:cover}#ib-profile .profile-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}#ib-profile .recent-mail{padding:8px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
 .ib-day{font-size:12px;font-weight:700;color:var(--muted);padding:12px 12px 6px;background:var(--bg)}
 .ib-row.unread{background:color-mix(in srgb,var(--accent) 4%,var(--surface))}
 .ib-who-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -597,6 +626,7 @@ def inbox_page(start=None):
 <div id="ib-view" role="dialog" aria-label="צפייה בקובץ"><header><b id="ib-view-name" dir="auto" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
   <button type="button" id="ib-view-open">פתיחה בתוכנה</button><button type="button" id="ib-view-save">💾 שמירה</button><button type="button" id="ib-view-x">✕ סגירה</button></header><div class="stage" id="ib-view-stage"></div></div>
 <div id="ib-toast"><span id="ib-toast-t"></span><button type="button" id="ib-toast-b"></button></div>
+<dialog id="ib-profile" aria-label="פרופיל השולח"></dialog>
 </div><script>window.IBX={data};</script><script>{JS}</script>'''
     from mailbrief.web.layout import update_banner
     return page('דואר נכנס', update_banner() + body, '/inbox')
@@ -826,6 +856,33 @@ function copySender(){
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(address).then(function(){ toast('כתובת השולח הועתקה'); }).catch(function(){ toast('ההעתקה נחסמה — אפשר לסמן את כתובת השולח ולהעתיק'); });
   else toast('אפשר לסמן את כתובת השולח ולהעתיק');
 }
+var profileSeq = 0;
+function closeSenderProfile(){ var dialog = $('ib-profile'); ++profileSeq; if (dialog && dialog.open) dialog.close(); }
+function showSenderProfile(account, person){
+  if (!person || !person.email) return;
+  var dialog = $('ib-profile'), seq = ++profileSeq;
+  var closeButton = '<button type="button" class="ib-ic" data-profile-close="1" aria-label="סגירת הפרופיל" style="margin-inline-start:auto">✕</button>';
+  dialog.innerHTML = '<header><b>פרופיל השולח</b>' + closeButton + '</header><p role="status">טוען פרטים שנשמרו במחשב…</p>';
+  if (!dialog.open) dialog.showModal();
+  api('/inbox_sender.json', {a: account, email: person.email}).then(function(p){
+    if (seq !== profileSeq || !dialog.open || $('ib-profile') !== dialog) return;
+    dialog.innerHTML = '<header>' + (p.photo ? '<img src="' + esc(p.photo) + '" alt="תמונת פרופיל">' : avatar(p.name || person.name, p.email, 52)) +
+      '<div style="min-width:0"><h2 dir="auto">' + esc(p.name || person.name || p.email) + '</h2><span dir="ltr">' + esc(p.email) + '</span></div>' + closeButton + '</header>' +
+      (p.phone ? '<p>📞 <span dir="ltr">' + esc(p.phone) + '</span></p>' : '') +
+      '<p class="muted" dir="auto">נתוני ההתכתבות בתיבה: ' + esc(p.account) + '</p>' +
+      '<div class="kpis"><div class="kpi"><b>' + p.count + '</b><span>הודעות בהיסטוריה</span></div><div class="kpi"><b>' + p.waiting + '</b><span>מחכות לתשובה ממך</span></div></div>' +
+      (p.last ? '<p class="muted">התכתבות אחרונה: ' + esc(p.last) + ' · ראשונה בהיסטוריה: ' + esc(p.first) + '</p>' : '<p class="muted">טרם נשמרה היסטוריית התכתבות עם השולח בתיבה הזו.</p>') +
+      '<div class="profile-actions"><button class="ib-ic" type="button" id="ib-profile-search">🔍 חיפוש בתיבה</button><button class="ib-ic" type="button" id="ib-profile-copy">📋 העתקת כתובת</button><a href="/contacts">אנשי קשר</a></div>' +
+      (p.recent.length ? '<h3>הודעות אחרונות שנשמרו</h3>' + p.recent.map(function(r){ return '<div class="recent-mail">' + (r.link ? '<a href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.subject) + '</a>' : esc(r.subject)) + '<div class="muted">' + esc(r.date) + '</div></div>'; }).join('') : '') +
+      '<p class="muted" style="font-size:12px">הנתונים מבוססים על ההיסטוריה המקומית, ולא על כל הדואר שבתיבה. פרטי הקשר משותפים לפי כתובת האימייל.</p>';
+    $('ib-profile-search').onclick = function(){ closeSenderProfile(); S.q = 'from:"' + p.email.replace(/["\\\r\n]/g, '') + '"'; S.unread = false; $('ib-q').value = S.q; choose(account, 'INBOX'); };
+    $('ib-profile-copy').onclick = function(){
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(p.email).then(function(){ toast('כתובת השולח הועתקה'); }).catch(function(){ toast('אפשר לסמן את הכתובת ולהעתיק'); });
+      else toast('אפשר לסמן את הכתובת ולהעתיק');
+    };
+    dialog.querySelector('[data-profile-close]').focus();
+  }).catch(function(error){ if (seq === profileSeq && dialog.open && $('ib-profile') === dialog) dialog.innerHTML = '<header><b>פרופיל השולח</b>' + closeButton + '</header><p role="alert">' + esc(error.message) + '</p>'; });
+}
 function outside(ev){ var m = $('ib-menu'); if (m && m.classList.contains('on') && !m.contains(ev.target) && !ev.target.closest('#ib-adv,#ib-look')) closeMenu(); }
 function folderOp(acc, folder, op, extra){
   return post('/inbox_folder', Object.assign({a: acc, f: folder, op: op}, extra || {})).then(function(d){ closeMenu(); return loadFolders(acc, true).then(function(){ return d; }); }).catch(fail);
@@ -1001,7 +1058,7 @@ function renderList(){
     return section + '<div class="ib-row' + (g.unread ? ' unread' : '') + (sel ? ' sel' : '') + (i === S.kb ? ' kb' : '') + '" data-key="' + esc(g.key) + '" data-i="' + i + '" draggable="true">' +
       '<div class="ck"><input type="checkbox" data-ck="' + i + '" aria-label="בחירת השיחה: ' + esc(r.subject || '(ללא נושא)') + '"' + (S.checked[g.key] ? ' checked' : '') + '><button type="button" class="ib-star' + (g.star ? ' on' : '') + '" data-star="' + i + '" title="כוכב (S)" aria-pressed="' + g.star + '">⭐</button></div>' +
       '<div class="who" dir="auto">' + (multi && S.acc === '*' ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color(g.account) + ';margin-inline-end:6px"></span>' : '') +
-        (LOOK.avatars === 'hide' ? '' : avatar(rowName(r), r.from.email, 24)) + '<span class="ib-who-label">' + esc(rowName(r)) + '</span>' + (g.rows.length > 1 ? '<span class="cnt">' + g.rows.length + '</span>' : '') + '</div>' +
+        (LOOK.avatars === 'hide' ? '' : avatar(rowName(r), r.from.email, 24)) + (/sent|drafts/.test(currentRole()) ? '<span class="ib-who-label">' + esc(rowName(r)) + '</span>' : '<button type="button" class="ib-who-label ib-profile-name" data-profile="' + i + '" title="פתיחת פרופיל השולח">' + esc(rowName(r)) + '</button>') + (g.rows.length > 1 ? '<span class="cnt">' + g.rows.length + '</span>' : '') + '</div>' +
       '<div class="when" title="' + esc(r.at ? new Date(r.at).toLocaleString('he-IL') : '') + '">' + (g.attach ? '📎 ' : '') + when(r.at) +
       '<span class="row-actions"><button type="button" class="ib-ic" data-quick-read="' + i + '" title="' + (g.unread ? 'סימון כנקרא' : 'סימון כלא נקרא') + '" aria-label="' + (g.unread ? 'סימון כנקרא' : 'סימון כלא נקרא') + '">' + (g.unread ? '✉️' : '●') + '</button></span></div>' +
       '<div class="sub" dir="auto">' + labelChips(g.account || S.acc, r.labels, currentPath()) + esc(r.subject || '(ללא נושא)') + ' <span class="sn">— ' + esc(r.snippet) + '</span></div></div>';
@@ -1074,6 +1131,7 @@ function loadList(opts){
 }
 $('ib-cats').addEventListener('click', function(ev){ var b = ev.target.closest('[data-cat]'); if (b) choose(S.acc, b.dataset.cat); });
 function choose(acc, folder){
+  closeSenderProfile();
   clearTimeout(qTimer); closeMenu();
   S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1; S.total = 0;
   S.open = null; $('ibx').classList.remove('reading', 'wide');
@@ -1277,7 +1335,7 @@ function drawMessage(){
     '<button class="ib-ic" type="button" data-m="next"' + (neighborIndex(1) < 0 ? ' disabled' : '') + '>הבאה</button>' +
     '<button class="ib-ic" type="button" data-m="pop" title="פתיחה בחלון נפרד — אפשר להזיז למסך אחר" style="margin-inline-start:auto">🗗 חלון</button>' +
     '<button class="ib-ic' + (WIDE ? ' on' : '') + '" type="button" data-m="wide" title="' + (WIDE ? 'חזרה לגודל הרגיל (Esc)' : 'הגדלת ההודעה לכל החלון (Z)') + '">' + (WIDE ? '🗗 הקטנה' : '⛶ הגדלה') + '</button>';
-  var meta = '<div class="ib-meta">' + avatar(m.from.name, m.from.email) + '<div style="flex:1;min-width:0"><b dir="auto">' + esc(m.from.name || m.from.email) + '</b> <span dir="ltr">&lt;' + esc(m.from.email) + '&gt;</span><br>' +
+  var meta = '<div class="ib-meta">' + avatar(m.from.name, m.from.email) + '<div style="flex:1;min-width:0"><button type="button" class="ib-profile-name" data-m="profile" dir="auto"><b>' + esc(m.from.name || m.from.email) + '</b></button> <span dir="ltr">&lt;' + esc(m.from.email) + '&gt;</span><br>' +
     'אל: ' + people(m.to) + (m.cc.length ? ' · עותק: ' + people(m.cc) : '') + (multi && !m.to.concat(m.cc).some(function(p){ return (p.email || '').toLowerCase() === m.account.toLowerCase(); }) ? ' · <span style="color:' + color(m.account) + '">●</span> ' + esc(m.account) : '') +
     '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="ib-ic" type="button" data-m="find-sender">🔍 הודעות מהשולח בתיקייה</button><button class="ib-ic" type="button" data-m="copy-sender">📋 העתקת כתובת</button></div></div>' +
     '<div style="white-space:nowrap;text-align:end">' + (m.date ? new Date(m.date).toLocaleString('he-IL', {dateStyle: 'medium', timeStyle: 'short'}) +
@@ -1438,6 +1496,7 @@ function saveDraft(silent){
 // ---- events ----
 $('ibx').addEventListener('click', function(ev){
   var t = ev.target, el;
+  if ((el = t.closest('[data-profile]'))) { var senderGroup = S.groups[+el.dataset.profile]; if (senderGroup) showSenderProfile(senderGroup.account, senderGroup.top.from); return; }
   if ((el = t.closest('[data-quick-read]'))) { quickRead(+el.dataset.quickRead); return; }
   if ((el = t.closest('[data-ck]'))) {
     var i0 = +el.dataset.ck, g = S.groups[i0];
@@ -1504,6 +1563,7 @@ function translateHere(on){                             // 🌐 the message itse
 function msgAction(k){
   var m = S.open; if (!m) return; var ref = [{a: m.account, f: m.folder, u: m.uid}];
   if (k === 'prev' || k === 'next') { moveMessage(k === 'prev' ? -1 : 1); return; }
+  if (k === 'profile' && m.from) { showSenderProfile(m.account, m.from); return; }
   if (k === 'find-sender') { findSender(); return; }
   if (k === 'copy-sender') { copySender(); return; }
   if (!m.files && !/^(pop|wide|back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
@@ -1540,6 +1600,7 @@ $('ib-filters').addEventListener('click', function(ev){ var b = ev.target.closes
 $('ib-save-search').onclick = saveSearch;
 $('ib-list-actions').onclick = function(){ listActions(this); };
 $('ib-shortcuts').onclick = shortcutHelp;
+$('ib-profile').addEventListener('click', function(ev){ if (ev.target.closest('[data-profile-close]')) closeSenderProfile(); });
 $('ib-sidebar').onclick = function(){ LOOK.sidebar = LOOK.sidebar === 'hide' ? '' : 'hide'; saveLook(); };
 $('ib-saved').addEventListener('click', function(ev){
   var b = ev.target.closest('[data-saved]'); if (b) { openSavedSearch(+b.dataset.saved); return; }
@@ -1635,6 +1696,7 @@ $('ib-rows').addEventListener('contextmenu', function(ev){
 });
 function keys(ev){
   if (!$('ibx')) return stop();
+  if ($('ib-profile').open) return;
   if (ev.key === 'Escape' && $('ib-view').classList.contains('on')) { closeView(); return; }
   if (ev.key === 'Escape' && $('ib-menu').classList.contains('on')) { var helpOpen = $('ib-menu').getAttribute('role') === 'dialog'; closeMenu(); if (helpOpen) $('ib-shortcuts').focus(); return; }
   var typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
