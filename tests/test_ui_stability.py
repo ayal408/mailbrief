@@ -21,6 +21,18 @@ class StableUI(unittest.TestCase):
             result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_scroll_loads_only_near_bottom_and_when_idle(self):
+        fn = inbox.JS.split('function loadOnScroll(){', 1)[1].split("$('ib-rows').addEventListener", 1)[0]
+        self.run_js("""
+const assert=require('node:assert/strict');var morePending=0,calls=0;
+var rows={scrollTop:0,scrollHeight:1000,clientHeight:300},button={disabled:false};
+function $(id){return id==='ib-rows'?rows:button;}function loadList(){calls++;}
+""" + 'function loadOnScroll(){' + fn + """
+loadOnScroll();assert.equal(calls,0);rows.scrollTop=600;loadOnScroll();assert.equal(calls,1);
+morePending=1;loadOnScroll();assert.equal(calls,1);morePending=0;button.disabled=true;loadOnScroll();assert.equal(calls,1);
+button=null;loadOnScroll();assert.equal(calls,1);
+""")
+
     def test_page_navigation_collapses_header_and_restores_focus(self):
         fn = extras.HTML.split('  function setActive(path){', 1)[1].split('  function runScripts(', 1)[0]
         self.run_js('''
