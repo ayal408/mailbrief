@@ -330,6 +330,18 @@ def receipt_from(address, msg):
 # ---- the page ----------------------------------------------------------------------------------------------------------------
 
 CSS = r"""
+.ib-day{font-size:12px;font-weight:700;color:var(--muted);padding:12px 12px 6px;background:var(--bg)}
+.ib-row.unread{background:color-mix(in srgb,var(--accent) 4%,var(--surface))}
+.ib-who-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-row .who{display:flex;align-items:center;gap:6px;min-width:0}
+.ib-row .who .ib-av{width:24px;height:24px;font-size:12px;flex:none}
+.ib-row .row-actions{display:inline-flex;gap:4px;margin-inline-start:6px;vertical-align:middle}
+.ib-row .row-actions button{padding:4px 6px;line-height:1;border-radius:6px}
+@media(hover:hover) and (pointer:fine){.ib-row .row-actions{opacity:0}.ib-row:hover .row-actions,.ib-row:focus-within .row-actions{opacity:1}}
+#ibx.multi-preview .ib-row .sub{white-space:normal}#ibx.multi-preview .ib-row .sn{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;line-height:1.5;margin-top:3px}
+#ibx.no-snippet .ib-row .sn{display:none}
+#ibx.side-hidden{grid-template-columns:var(--listw,minmax(300px,400px)) 1fr}#ibx.side-hidden .ib-side{display:none}
+#ibx.side-hidden.bottom,#ibx.side-hidden.nopane,#ibx.side-hidden.wide{grid-template-columns:1fr}
 .ib-context{padding:10px 12px;border-bottom:1px solid var(--line);min-width:0}
 .ib-context strong{display:block;font-size:16px}.ib-context small{display:block;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib-status{font-size:12px;color:var(--muted);min-height:18px;margin-top:3px}
@@ -496,7 +508,7 @@ background:var(--surface);border:1px solid var(--line);border-radius:16px;box-sh
 @media(max-width:820px){#ibx{grid-template-columns:1fr;grid-template-rows:none;height:auto;min-height:0}.ib-side{display:flex;gap:4px;overflow-x:auto;padding:8px;border:0;border-bottom:1px solid var(--line)}
 .ib-side .ib-new{width:auto;margin:0;white-space:nowrap}.ib-acc{display:none}.ib-f{width:auto;white-space:nowrap}.ib-rows{max-height:none}
 .ib-read{display:none;position:fixed;inset:0;z-index:40;background:var(--surface)}#ibx.reading .ib-read{display:flex}.ib-back{display:inline-block}}
-@media(max-width:820px){#ibx.bottom,#ibx.nopane{grid-template-columns:1fr;grid-template-rows:none}#ibx.bottom .ib-side{grid-row:auto}}
+@media(max-width:820px){#ibx.bottom,#ibx.nopane,#ibx.side-hidden{grid-template-columns:1fr;grid-template-rows:none}#ibx.bottom .ib-side{grid-row:auto}}
 """
 
 
@@ -529,6 +541,8 @@ def inbox_page(start=None):
       <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️ תצוגה</button>
       <button class="ib-ic" type="button" id="ib-list-actions" title="בחירה מהירה וייצוא" aria-label="פעולות על רשימת ההודעות">⋯</button>
       <button class="ib-ic" type="button" id="ib-shortcuts" title="קיצורי מקלדת (?)" aria-label="הצגת קיצורי מקלדת">⌨️</button>
+      <button class="ib-ic" type="button" id="ib-sidebar" aria-pressed="false" title="הצגת או הסתרת רשימת התיקיות">☰ תיקיות</button>
+      <a class="ib-ic" id="ib-tracking" href="/sent-tracking" style="text-decoration:none" title="מצבי שליחה ומעקב תשובות">📤 מעקב נשלח</a>
       <div class="ib-bulk" id="ib-bulk"><span id="ib-bulk-n"></span>
         <button class="ib-ic" type="button" data-bulk="read" title="סימון כנקרא">✉️</button><button class="ib-ic" type="button" data-bulk="unread" title="סימון כלא נקרא">●</button>
         <button class="ib-ic" type="button" data-bulk="star" title="כוכב">⭐</button><button class="ib-ic" type="button" data-bulk="archive" title="לארכיון (E)">🗄️</button>
@@ -892,6 +906,10 @@ function applyLook(){
   var box = $('ibx'); box.classList.toggle('dense', LOOK.density === 'dense'); box.classList.toggle('nopane', LOOK.pane === 'none'); box.classList.toggle('bottom', LOOK.pane === 'bottom');
   box.classList.toggle('comfortable', LOOK.density === 'comfortable'); box.classList.toggle('cards', LOOK.rows === 'cards');
   box.classList.toggle('no-snippet', LOOK.snippet === 'hide');
+  box.classList.toggle('multi-preview', LOOK.preview === 'multi');
+  box.classList.toggle('side-hidden', LOOK.sidebar === 'hide');
+  var sidebarButton = $('ib-sidebar'); sidebarButton.setAttribute('aria-pressed', String(LOOK.sidebar === 'hide'));
+  sidebarButton.textContent = '☰'; sidebarButton.title = LOOK.sidebar === 'hide' ? 'הצגת תיקיות' : 'הסתרת תיקיות'; sidebarButton.setAttribute('aria-label', sidebarButton.title);
   var workspace = $('ib-workspace');
   workspace.dataset.palette = Object.prototype.hasOwnProperty.call(PALETTES, LOOK.palette) ? LOOK.palette : 'purple';
   box.dataset.textSize = ['large', 'larger'].indexOf(LOOK.textSize) >= 0 ? LOOK.textSize : '';
@@ -905,7 +923,7 @@ function applyLook(){
 function saveLook(){
   try { localStorage.setItem('ibx-look', JSON.stringify(LOOK)); }
   catch (e) { toast('התצוגה הוחלה כעת, אך לא ניתן לשמור אותה בדפדפן'); }
-  applyLook(); fitBox();
+  applyLook(); fitBox(); if (S.groups) drawList();
 }
 function lookPreset(name){
   var presets = {compact: {density: 'dense', rows: '', pane: '', snippet: 'hide', textSize: ''},
@@ -925,6 +943,9 @@ function lookMenu(btn){
     '<div class="row" style="display:block"><label>חלונית קריאה</label>' + opt('pane', '', 'בצד הרשימה') + opt('pane', 'bottom', 'מתחת לרשימה — הודעה רחבה') + opt('pane', 'none', 'בלי — ההודעה נפתחת במקום הרשימה') + '</div>' +
     '<div class="row" style="display:block"><label>גודל טקסט ברשימה</label>' + opt('textSize', '', 'רגיל') + opt('textSize', 'large', 'גדול') + opt('textSize', 'larger', 'גדול מאוד') + '</div>' +
     '<div class="row" style="display:block"><label>תקציר ההודעה</label>' + opt('snippet', '', 'הצגת שורת תקציר') + opt('snippet', 'hide', 'נושא בלבד') + '</div>' +
+    '<div class="row" style="display:block"><label>אורך התקציר</label>' + opt('preview', '', 'שורה אחת') + opt('preview', 'multi', 'עד שלוש שורות') + '</div>' +
+    '<div class="row" style="display:block"><label>חלוקה לפי תאריך</label>' + opt('dates', '', 'רשימה רציפה') + opt('dates', 'show', 'כותרות תאריך') + '</div>' +
+    '<div class="row" style="display:block"><label>סימוני שולחים</label>' + opt('avatars', '', 'אות וצבע ליד השם') + opt('avatars', 'hide', 'שם בלבד') + '</div>' +
     '<div class="row" style="display:block"><label>גופן</label>' + opt('font', '', 'Rubik') + opt('font', 'Heebo', 'Heebo') + opt('font', 'Noto Sans Hebrew', 'Noto Sans Hebrew') + opt('font', 'Assistant', 'Assistant') + '</div><div class="row"><button class="ib-ic" type="button" data-look-preset="reset">איפוס התצוגה</button><small>השינויים מוצגים מיד ונשמרים במחשב הזה.</small></div>', function(m){
     m.onchange = function(ev){ if (ev.target.name) { LOOK[ev.target.name] = ev.target.value; saveLook(); } };
     m.onclick = function(ev){ var b = ev.target.closest('[data-look-preset]'); if (b) { lookPreset(b.dataset.lookPreset); lookMenu(btn); } };
@@ -974,17 +995,31 @@ function drawList(){
 function renderList(){
   var rows = $('ib-rows');
   if (!S.groups.length) { rows.innerHTML = '<div class="ib-empty">' + (S.q ? '🔍 לא נמצאו הודעות' : S.unread ? '🎉 אין הודעות שלא נקראו' : '📭 התיקייה ריקה') + '</div>'; drawBulk(); return; }
-  var html = S.groups.map(function(g, i){
+  var lastDay = '', html = S.groups.map(function(g, i){
     var r = g.top, sel = S.open && S.open.account.toLowerCase() === g.account.toLowerCase() && g.rows.some(function(x){ return x.uid === S.open.uid; });
-    return '<div class="ib-row' + (g.unread ? ' unread' : '') + (sel ? ' sel' : '') + (i === S.kb ? ' kb' : '') + '" data-key="' + esc(g.key) + '" data-i="' + i + '" draggable="true">' +
-      '<div class="ck"><input type="checkbox" data-ck="' + i + '"' + (S.checked[g.key] ? ' checked' : '') + '><button type="button" class="ib-star' + (g.star ? ' on' : '') + '" data-star="' + i + '" title="כוכב (S)">⭐</button></div>' +
+    var day = dateSection(r.at), section = LOOK.dates === 'show' && day !== lastDay ? '<div class="ib-day">' + esc(day) + '</div>' : ''; lastDay = day;
+    return section + '<div class="ib-row' + (g.unread ? ' unread' : '') + (sel ? ' sel' : '') + (i === S.kb ? ' kb' : '') + '" data-key="' + esc(g.key) + '" data-i="' + i + '" draggable="true">' +
+      '<div class="ck"><input type="checkbox" data-ck="' + i + '" aria-label="בחירת השיחה: ' + esc(r.subject || '(ללא נושא)') + '"' + (S.checked[g.key] ? ' checked' : '') + '><button type="button" class="ib-star' + (g.star ? ' on' : '') + '" data-star="' + i + '" title="כוכב (S)" aria-pressed="' + g.star + '">⭐</button></div>' +
       '<div class="who" dir="auto">' + (multi && S.acc === '*' ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color(g.account) + ';margin-inline-end:6px"></span>' : '') +
-        esc(rowName(r)) + (g.rows.length > 1 ? '<span class="cnt">' + g.rows.length + '</span>' : '') + '</div>' +
-      '<div class="when">' + (g.attach ? '📎 ' : '') + when(r.at) + '</div>' +
+        (LOOK.avatars === 'hide' ? '' : avatar(rowName(r), r.from.email, 24)) + '<span class="ib-who-label">' + esc(rowName(r)) + '</span>' + (g.rows.length > 1 ? '<span class="cnt">' + g.rows.length + '</span>' : '') + '</div>' +
+      '<div class="when" title="' + esc(r.at ? new Date(r.at).toLocaleString('he-IL') : '') + '">' + (g.attach ? '📎 ' : '') + when(r.at) +
+      '<span class="row-actions"><button type="button" class="ib-ic" data-quick-read="' + i + '" title="' + (g.unread ? 'סימון כנקרא' : 'סימון כלא נקרא') + '" aria-label="' + (g.unread ? 'סימון כנקרא' : 'סימון כלא נקרא') + '">' + (g.unread ? '✉️' : '●') + '</button></span></div>' +
       '<div class="sub" dir="auto">' + labelChips(g.account || S.acc, r.labels, currentPath()) + esc(r.subject || '(ללא נושא)') + ' <span class="sn">— ' + esc(r.snippet) + '</span></div></div>';
   }).join('') + (S.total > (S.page + 1) * 50 ? '<div class="ib-more"><button class="ib-ic" type="button" id="ib-more">עוד הודעות ▾</button></div>' : '');
   if (rows.innerHTML !== html) rows.innerHTML = html;
   drawBulk();
+}
+function dateSection(value, now){
+  var date = new Date(value), today = now || new Date();
+  if (!value || isNaN(date.getTime())) return 'ללא תאריך';
+  if (date.toDateString() === today.toDateString()) return 'היום';
+  var yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'אתמול';
+  return date.toLocaleDateString('he-IL', {day: 'numeric', month: 'long', year: 'numeric'});
+}
+function quickRead(index){
+  var g = S.groups[index]; if (!g) return;
+  act(g.unread ? 'read' : 'unread', g.rows.map(function(r){ return {a: g.account, f: r.folder || S.folder, u: r.uid}; }));
 }
 function drawBulk(){
   listContext();
@@ -996,6 +1031,7 @@ function listContext(){
   var folders = S.folders[S.acc], folder = Array.isArray(folders) ? folders.find(function(f){ return f.id === S.folder; }) : null;
   $('ib-folder-title').textContent = folder ? folder.name : S.folder === 'INBOX' ? 'דואר נכנס' : S.folder;
   $('ib-account-title').textContent = S.acc === '*' ? 'כל תיבות הדואר' : S.acc;
+  $('ib-tracking').href = '/sent-tracking?a=' + encodeURIComponent(S.acc);
   var n = S.items.length, selected = Object.keys(S.checked).length;
   $('ib-status').textContent = n + ' הודעות נטענו' + (S.total > n ? ' מתוך ' + S.total : '') + (selected ? ' · ' + selected + ' שיחות נבחרו' : '') + (S.q || S.unread ? ' · סינון פעיל' : '');
   $('ib-clear-search').disabled = !$('ib-q').value && !S.q;
@@ -1402,6 +1438,7 @@ function saveDraft(silent){
 // ---- events ----
 $('ibx').addEventListener('click', function(ev){
   var t = ev.target, el;
+  if ((el = t.closest('[data-quick-read]'))) { quickRead(+el.dataset.quickRead); return; }
   if ((el = t.closest('[data-ck]'))) {
     var i0 = +el.dataset.ck, g = S.groups[i0];
     if (ev.shiftKey && S.lastCk != null) {                // ⇧ + click: everything between
@@ -1503,6 +1540,7 @@ $('ib-filters').addEventListener('click', function(ev){ var b = ev.target.closes
 $('ib-save-search').onclick = saveSearch;
 $('ib-list-actions').onclick = function(){ listActions(this); };
 $('ib-shortcuts').onclick = shortcutHelp;
+$('ib-sidebar').onclick = function(){ LOOK.sidebar = LOOK.sidebar === 'hide' ? '' : 'hide'; saveLook(); };
 $('ib-saved').addEventListener('click', function(ev){
   var b = ev.target.closest('[data-saved]'); if (b) { openSavedSearch(+b.dataset.saved); return; }
   b = ev.target.closest('[data-remove-saved]'); if (b) { var rows = savedSearches(); rows.splice(+b.dataset.removeSaved, 1); writeSearches(rows); }

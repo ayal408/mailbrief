@@ -21,6 +21,17 @@ class StableUI(unittest.TestCase):
             result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_date_sections_and_quick_read_keep_account_scope(self):
+        functions = inbox.JS.split('function dateSection(value, now){', 1)[1].split('function drawBulk(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={folder:'INBOX',groups:[{account:'work@example.com',unread:true,rows:[{uid:7,folder:'Archive'},{uid:8}]}]},actions=[];
+function act(a,r){actions.push([a,r]);}
+''' + 'function dateSection(value, now){' + functions + '''
+var now=new Date(2026,0,1,12);assert.equal(dateSection(new Date(2026,0,1,8),now),'היום');assert.equal(dateSection(new Date(2025,11,31,23),now),'אתמול');assert.equal(dateSection('invalid',now),'ללא תאריך');
+quickRead(0);assert.deepEqual(actions,[['read',[{a:'work@example.com',f:'Archive',u:7},{a:'work@example.com',f:'INBOX',u:8}]]]);
+S.groups[0].unread=false;quickRead(0);assert.equal(actions[1][0],'unread');quickRead(99);assert.equal(actions.length,2);
+''')
+
     def test_sender_search_uses_message_account_and_folder(self):
         fn = inbox.JS.split('function findSender(){', 1)[1].split('function copySender(){', 1)[0]
         self.run_js('''
@@ -68,7 +79,7 @@ searchKey(event('Escape',false));assert.deepEqual(queries,['new','']);assert.equ
         self.run_js('''
 const assert=require('node:assert/strict');var saved=JSON.stringify({palette:'forest',font:'',rows:'cards'}),notices=[];
 var localStorage={getItem(){return saved;},setItem(k,v){saved=v;}},classes={};
-var box={dataset:{},style:{},classList:{toggle(k,v){classes[k]=v;}}},workspace={dataset:{}};
+var box={dataset:{},style:{},classList:{toggle(k,v){classes[k]=v;}}},workspace={dataset:{},setAttribute(){}};var S={};
 function $(id){return id==='ibx'?box:workspace;}function fitBox(){}function toast(t){notices.push(t);}
 ''' + 'var LOOK = ' + functions + '''
 lookPreset('reading');assert.equal(workspace.dataset.palette,'forest');assert.equal(classes.bottom,true);assert.equal(classes.cards,false);
