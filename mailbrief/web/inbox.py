@@ -1135,6 +1135,7 @@ function choose(acc, folder){
   clearTimeout(qTimer); closeMenu();
   S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1; S.total = 0;
   S.open = null; $('ibx').classList.remove('reading', 'wide');
+  if (B.solo) { B.solo = false; document.body.classList.remove('solo'); fitBox(); }
   drawFolders(); drawQuickFilters(); drawSavedSearches(); syncUrl(); loadList(); drawHome();
   if (acc !== '*' && !S.folders[acc]) loadFolders(acc);
 }
@@ -1699,6 +1700,7 @@ function keys(ev){
   if ($('ib-profile').open) return;
   if (ev.key === 'Escape' && $('ib-view').classList.contains('on')) { closeView(); return; }
   if (ev.key === 'Escape' && $('ib-menu').classList.contains('on')) { var helpOpen = $('ib-menu').getAttribute('role') === 'dialog'; closeMenu(); if (helpOpen) $('ib-shortcuts').focus(); return; }
+  if ($('ib-menu').classList.contains('on') && $('ib-menu').getAttribute('role') === 'dialog') return;
   var typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
   if (typing || ev.ctrlKey || ev.metaKey || ev.altKey || $('ib-comp').classList.contains('on')) return;
   if (ev.key === '?') { ev.preventDefault(); shortcutHelp(); return; }

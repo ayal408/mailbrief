@@ -21,6 +21,39 @@ class StableUI(unittest.TestCase):
             result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_sender_search_leaves_standalone_mode_and_url(self):
+        choose = inbox.JS.split('function choose(acc, folder){', 1)[1].split('function selectedRefs(){', 1)[0]
+        sender = inbox.JS.split('function findSender(){', 1)[1].split('function copySender(){', 1)[0]
+        sync = inbox.JS.split('function syncUrl(){', 1)[1].split('function ', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var B={solo:true},qTimer=0,input={},removed=false,fitted=false,queries=[],url='';
+var S={acc:'one@example.com',folder:'INBOX',q:'',unread:true,open:{account:'one@example.com',folder:'Archive',uid:7,from:{email:'sender@example.com'}},folders:{}};
+var box={classList:{remove(){}}};function $(id){return id==='ib-q'?input:box;}
+var document={body:{classList:{remove(name){assert.equal(name,'solo');removed=true;}}}};
+var location={href:'http://mailbrief.localhost/inbox?a=one%40example.com&f=Archive&u=7&solo=1'};
+var history={state:null,replaceState(s,t,u){url=u;}};
+function closeSenderProfile(){}function closeMenu(){}function fitBox(){fitted=true;}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function drawHome(){}function loadFolders(){}function toast(){}
+function loadList(){queries.push([S.acc,S.folder,S.q]);}
+''' + 'function syncUrl(){' + sync + 'function choose(acc, folder){' + choose + 'function findSender(){' + sender + '''
+findSender();assert.equal(B.solo,false);assert.equal(removed,true);assert.equal(fitted,true);assert.equal(S.open,null);
+assert.deepEqual(queries,[['one@example.com','Archive','from:"sender@example.com"']]);
+var result=new URL(url,location.href);assert.equal(result.searchParams.has('solo'),false);assert.equal(result.searchParams.has('u'),false);assert.equal(result.searchParams.get('q'),'from:"sender@example.com"');
+''')
+
+    def test_help_enter_preserves_button_activation_and_escape_closes(self):
+        fn = inbox.JS.split('function keys(ev){', 1)[1].split('var timer = setInterval(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={kb:0,groups:[{}]},opened=0,focused=false,closed=false;
+var menu={classList:{contains(){return !closed;}},getAttribute(){return 'dialog';}};
+function $(id){return id==='ib-menu'?menu:id==='ib-profile'?{open:false}:id==='ib-view'?{classList:{contains(){return false;}}}:id==='ib-shortcuts'?{focus(){focused=true;}}:{};}
+function closeMenu(){closed=true;}function openGroup(){opened++;}
+var document={activeElement:{tagName:'BUTTON',isContentEditable:false}};
+''' + 'function keys(ev){' + fn + '''
+var prevented=false;keys({key:'Enter',preventDefault(){prevented=true;}});assert.equal(opened,0);assert.equal(prevented,false);
+keys({key:'j',preventDefault(){throw Error('shortcut captured');}});assert.equal(opened,0);
+keys({key:'Escape'});assert.equal(closed,true);assert.equal(focused,true);assert.equal(opened,0);
+''')
+
     def test_profile_ignores_old_responses_and_closed_dialog(self):
         fn = inbox.JS.split('var profileSeq = 0;', 1)[1].split('function outside(', 1)[0]
         self.run_js('''
