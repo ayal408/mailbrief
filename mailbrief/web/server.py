@@ -871,7 +871,13 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == '/inbox_folders.json':
                 return self._json({'folders': inbox.with_prefs(q.get('a', ''), mailbox.folders(q.get('a', ''), fresh=bool(q.get('fresh'))))})
             if url.path == '/inbox_overview.json':
-                return self._json(mailbox.overview(view.emails()))
+                boxes = view.emails()
+                address = q.get('a', '')
+                if address and address != '*':
+                    boxes = [a for a in boxes if a.lower() == address.lower()]
+                    if not boxes:
+                        raise ValueError('תיבת הדואר לא נמצאה')
+                return self._json(mailbox.overview(boxes))
             if url.path == '/inbox_list.json':
                 page_no = int(q['p']) if q.get('p', '').isdigit() else 0
                 if q.get('a') == '*':

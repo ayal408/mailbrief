@@ -14,6 +14,46 @@ class StableUI(unittest.TestCase):
         result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_switching_mailboxes_restores_own_filters_and_clears_reader(self):
+        switch = inbox.JS.split('function switchMailbox(acc){', 1)[1].split('function drawQuickFilters(){', 1)[0]
+        choose = inbox.JS.split('function choose(acc, folder){', 1)[1].split('function selectedRefs(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var B={accounts:[{email:'a@example.com'},{email:'b@example.com'}]};
+var S={acc:'a@example.com',folder:'Sent',q:'invoice',unread:true,open:{uid:7},checked:{old:1},items:[1],groups:[1],folders:{}};
+var MAILBOX_STATE=Object.create(null),qTimer=1,input={},box={classList:{remove(){}}},requests=[];
+function $(id){return id==='ib-q'?input:box;}var localStorage={setItem(){}};
+function closeMenu(){}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function syncUrl(){}
+function loadList(){requests.push([S.acc,S.folder,S.q,S.unread]);}function drawHome(){}function loadFolders(){}
+''' + 'function choose(acc, folder){' + choose + 'function switchMailbox(acc){' + switch + '''
+switchMailbox('b@example.com');assert.deepEqual(requests[0],['b@example.com','INBOX','',false]);assert.equal(S.open,null);assert.deepEqual(S.checked,{});
+S.folder='Drafts';S.q='subject:work';switchMailbox('a@example.com');assert.deepEqual(requests[1],['a@example.com','Sent','invoice',true]);
+switchMailbox('b@example.com');assert.deepEqual(requests[2],['b@example.com','Drafts','subject:work',false]);
+switchMailbox('unknown@example.com');assert.equal(requests.length,3);
+''')
+
+    def test_saved_searches_are_separate_for_each_mailbox(self):
+        functions = inbox.JS.split('function savedSearches(){', 1)[1].split('function drawMailboxes(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var data={},S={acc:'a@example.com',folder:'INBOX',unread:false},input={value:'from:client'};
+var localStorage={getItem(k){return data[k]||null;},setItem(k,v){data[k]=v;}};
+var saved={innerHTML:''};function $(id){return id==='ib-q'?input:saved;}function toast(){}function esc(t){return t;}function choose(a,f){S.acc=a;S.folder=f;}
+''' + 'function savedSearches(){' + functions + '''
+saveSearch();saveSearch();assert.equal(savedSearches().length,1);
+S.acc='b@example.com';assert.deepEqual(savedSearches(),[]);input.value='has:attachment';saveSearch();
+S.acc='a@example.com';assert.equal(savedSearches()[0].q,'from:client');openSavedSearch(0);assert.equal(S.q,'from:client');
+data['ib-searches:a@example.com']='broken';assert.deepEqual(savedSearches(),[]);
+''')
+
+    def test_quick_filters_toggle_without_losing_search_words(self):
+        fn = inbox.JS.split('function quickFilter(token){', 1)[1].split('function api(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var qTimer=1,S={q:'from:client',unread:false},input={value:'from:client'};
+function $(){return input;}function drawQuickFilters(){}function syncUrl(){}function loadList(){}
+''' + 'function quickFilter(token){' + fn + '''
+quickFilter('has:attachment');assert.equal(S.q,'from:client has:attachment');quickFilter('has:attachment');assert.equal(S.q,'from:client');
+quickFilter('unread');assert.equal(S.unread,true);assert.equal(S.q,'from:client');quickFilter('all');assert.equal(S.q,'');assert.equal(S.unread,false);
+''')
+
     def test_first_page_server_error_can_be_retried(self):
         fn = inbox.JS.split('function loadList(opts){', 1)[1].split("$('ib-cats').addEventListener", 1)[0]
         self.run_js('''
