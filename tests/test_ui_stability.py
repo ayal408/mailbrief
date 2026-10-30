@@ -14,6 +14,21 @@ class StableUI(unittest.TestCase):
         result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_first_page_server_error_can_be_retried(self):
+        fn = inbox.JS.split('function loadList(opts){', 1)[1].split("$('ib-cats').addEventListener", 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var listSeq=0,morePending=0,pending=[],rows={innerHTML:'',scrollTop:0},retry={};
+var S={acc:'a',folder:'INBOX',page:0,q:'query',unread:false,items:[],checked:{}};
+function $(id){return id==='ib-retry'?retry:id==='ib-more'?null:rows;}
+function api(){return new Promise(resolve=>pending.push(resolve));}function group(items){return items;}
+function drawList(){rows.innerHTML='loaded';}function toast(){}function esc(s){return s.replace(/</g,'&lt;');}
+''' + 'function loadList(opts){' + fn + '''
+(async()=>{var request=loadList();pending.shift()({items:[],errors:['<offline>'],total:0});await request;
+assert.match(rows.innerHTML,/role="alert"/);assert.match(rows.innerHTML,/&lt;offline>/);assert.equal(typeof retry.onclick,'function');
+retry.onclick();pending.shift()({items:[{key:'one'}],total:1});await new Promise(setImmediate);
+assert.equal(rows.innerHTML,'loaded');assert.equal(S.items.length,1);})();
+''')
+
     def test_older_navigation_response_cannot_replace_latest_page(self):
         fn = extras.HTML.split('  function navigate(', 1)[1].split("  document.addEventListener('click'", 1)[0]
         self.run_js('''

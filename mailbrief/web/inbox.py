@@ -332,7 +332,7 @@ def receipt_from(address, msg):
 CSS = r"""
 main:has(#ibx){max-width:min(1640px,calc(100vw - 32px));padding:14px}
 body:has(#ibx) .hero{padding:10px 16px 0}body:has(#ibx) .hero .gift,body:has(#ibx) .hero .name,body:has(#ibx) .hero .tag{display:none}body:has(#ibx) .hero .corner{position:static;justify-content:flex-end}
-#ibx{--row:var(--bg);display:grid;grid-template-columns:230px var(--listw,minmax(300px,400px)) 1fr;gap:0;height:calc(100vh - 150px);min-height:540px;
+#ibx{--row:var(--bg);display:grid;grid-template-columns:230px var(--listw,minmax(300px,400px)) 1fr;gap:0;height:calc(100dvh - 160px);min-height:300px;
 border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface);text-align:start}
 /* the columns stay inside the box (a grid row otherwise grows to the longest column, and the box cuts it off — no scrollbar) */
 #ibx{grid-template-rows:minmax(0,1fr)}#ibx>*{min-height:0}.ib-rows,.ib-side,.ib-scroll{min-height:0}
@@ -483,9 +483,9 @@ def inbox_page(start=None):
   <section class="ib-list">
     <div class="ib-tools">
       <input type="checkbox" id="ib-all" title="בחירת הכול (X לבחירת שורה)">
-      <input type="search" id="ib-q" placeholder="🔍 חיפוש בתיקייה… (/)" autocomplete="off">
+      <input type="search" id="ib-q" aria-label="חיפוש בתיקייה" placeholder="🔍 חיפוש בתיקייה… (/)" autocomplete="off">
       <button class="ib-ic" type="button" id="ib-adv" title="אפשרויות חיפוש">⚙️</button>
-      <button class="ib-ic" type="button" id="ib-unread" title="רק לא נקראו">●</button>
+      <button class="ib-ic" type="button" id="ib-unread" title="רק לא נקראו" aria-label="רק הודעות שלא נקראו" aria-pressed="false">●</button>
       <button class="ib-ic" type="button" id="ib-refresh" title="רענון">⟳</button>
       <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️</button>
       <div class="ib-bulk" id="ib-bulk"><span id="ib-bulk-n"></span>
@@ -835,7 +835,7 @@ function loadList(opts){
   var shown = false;
   var show = function(d, cached){
     if (seq !== listSeq) return;
-    if (opts.more && !d.items.length && d.errors && d.errors.length) throw new Error(d.errors[0]);
+    if (!d.items.length && d.errors && d.errors.length) throw new Error(d.errors[0]);
     if (!cached) S.page = nextPage;
     S.items = opts.more ? S.items.concat(d.items) : d.items; S.total = d.total;
     if (!opts.more && !cached) { var keep = {}; group(S.items).forEach(function(g){ if (S.checked[g.key]) keep[g.key] = 1; }); S.checked = keep; }
@@ -848,7 +848,10 @@ function loadList(opts){
   if (!opts.more && !S.q && !S.unread && !opts.quiet) api('/inbox_list.json', Object.assign({}, params, {cached: 1})).then(function(d){ if (d.items.length && !S.items.length) show(d, true); }).catch(function(){});
   return api('/inbox_list.json', params).then(function(d){ show(d, false); }).catch(function(e){
     if (seq !== listSeq) return;
-    if (!S.items.length) $('ib-rows').innerHTML = '<div class="ib-empty">⚠️ ' + esc(e.message) + '</div>';
+    if (!S.items.length) {
+      $('ib-rows').innerHTML = '<div class="ib-empty" role="alert"><b>לא הצלחנו לטעון את ההודעות</b><p>' + esc(e.message) + '</p><button type="button" class="ib-ic" id="ib-retry">ניסיון חוזר</button></div>';
+      $('ib-retry').onclick = function(){ loadList(); };
+    }
     else toast('⚠️ לא ניתן לטעון עוד הודעות — אפשר לנסות שוב. ' + e.message);
   }).then(function(){
     if (morePending === seq) morePending = 0;
@@ -1241,7 +1244,7 @@ function msgAction(k){
 }
 $('ib-q').value = S.q;
 var qTimer; $('ib-q').addEventListener('input', function(){ clearTimeout(qTimer); qTimer = setTimeout(function(){ S.q = $('ib-q').value.trim(); S.page = 0; syncUrl(); loadList(); }, 450); });
-$('ib-unread').onclick = function(){ S.unread = !S.unread; this.classList.toggle('on', S.unread); S.page = 0; loadList(); };
+$('ib-unread').onclick = function(){ S.unread = !S.unread; this.classList.toggle('on', S.unread); this.setAttribute('aria-pressed', String(S.unread)); S.page = 0; loadList(); };
 $('ib-refresh').onclick = function(){ S.page = 0; this.removeAttribute('data-pending'); this.title = 'רענון'; loadList({quiet: 1}); loadAllFolders(true); if (!S.open) drawHome(); };
 $('ib-adv').onclick = function(){ if ($('ib-menu').classList.contains('on')) closeMenu(); else searchMenu(this); };
 $('ib-look').onclick = function(){ if ($('ib-menu').classList.contains('on')) closeMenu(); else lookMenu(this); };

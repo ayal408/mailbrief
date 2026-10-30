@@ -91,6 +91,28 @@ TITLE_TAB = {'דואר נכנס': '/inbox', 'היום שלי': '/today', 'לוח
 
 
 SIMPLE_TABS = ('/inbox', '/today', '/contacts', '/calendar', '/', '/search', '/help')
+PRIMARY_TABS = ('/inbox', '/today', '/contacts', '/calendar', '/search')
+
+WORKSPACE_STYLE = """
+.skip-link{position:fixed;top:-80px;inset-inline-start:16px;z-index:100;background:var(--surface);padding:12px;border:2px solid var(--accent)}
+.skip-link:focus{top:8px}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.hero{max-width:1640px;display:flex;align-items:center;gap:12px;padding:16px 24px;text-align:start}
+.hero .gift{font-size:28px;animation:none;cursor:default}
+.hero .name{font-size:20px;letter-spacing:0;margin:0}.hero .tag{display:none}
+.hero .corner{position:static;margin-inline-start:auto;order:2;flex-wrap:wrap;justify-content:flex-end}
+nav.tabs{justify-content:flex-start;align-items:center;max-width:1640px;margin:0 auto 14px;padding:8px 24px;border-bottom:1px solid var(--line);background:var(--bg)}
+nav.tabs a,nav.tabs summary{font-size:14px;padding:8px 14px;border-radius:10px}
+nav.tabs a.on{box-shadow:none}
+.nav-more{position:relative;margin-inline-start:auto}
+.nav-more summary{cursor:pointer;border:1px solid var(--line);background:var(--surface);list-style:none;white-space:nowrap}
+.nav-more summary::-webkit-details-marker{display:none}
+.nav-more:has(a.on) summary{color:var(--accent);border-color:var(--accent)}
+.nav-panel{position:absolute;inset-inline-end:0;top:calc(100% + 8px);width:240px;max-height:65vh;overflow-y:auto;display:grid;gap:4px;padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);z-index:10}
+nav.tabs .nav-panel a{border:0;white-space:normal}
+@media(max-width:760px){.hero{padding:12px;flex-wrap:wrap}.hero .name{font-size:17px}.hero .corner{gap:6px}.hero .corner .kbtn{padding:0 8px}nav.tabs{padding:8px;flex-wrap:wrap;overflow:visible;gap:4px}nav.tabs a,nav.tabs summary{padding:8px 10px}.nav-more{margin-inline-start:0}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+"""
 
 
 def corner_avatars():
@@ -115,10 +137,16 @@ def simple_mode():
 def top_bar(active=''):
     """Like the surprise box: a hero (wobbling envelope, gradient name, typed line), then centered pill tabs."""
     shown = [t for t in TABS if t[0] in SIMPLE_TABS] if simple_mode() else TABS
-    tabs = ''.join(f'<a href="{path}"{" class=on" if path == active else ""}>{icon} {label}</a>' for path, icon, label in shown)
+    def link(tab):
+        path, icon, label = tab
+        current = ' class="on" aria-current="page"' if path == active else ''
+        return f'<a href="{path}"{current}>{icon} {label}</a>'
+    tabs = ''.join(link(t) for t in shown if t[0] in PRIMARY_TABS)
+    more = ''.join(link(t) for t in shown if t[0] not in PRIMARY_TABS)
+    tabs += f'<details class="nav-more"><summary>כלים והגדרות ▾</summary><div class="nav-panel">{more}</div></details>'
     me = profile()
     return (f'<style>{extras.STYLE}</style><header class="hero"><div class="corner">'
-            '<button class="tbtn" id="mb-theme" type="button" onclick="MB.theme()">🌗</button>'
+            '<button class="tbtn" id="mb-theme" type="button" onclick="MB.theme()" aria-label="החלפת ערכת צבעים">🌗</button>'
             '<button class="kbtn" type="button" onclick="MB.open()" title="מעבר מהיר לכל דף ופעולה">⌨️ Ctrl+K</button>'
             f'<a class="kbtn" href="/about" title="אודות MailBrief, הגרסה ועדכונים" style="text-decoration:none">ℹ️ {__version__}</a>'
             '<button class="fchip" id="mb-focus" type="button" title="טיימר ריכוז — לחיצה לפתיחה"></button>'
@@ -126,7 +154,7 @@ def top_bar(active=''):
             f'<span class="gift" id="mb-gift" title="🎉">📬</span><h1 class="name g" id="mb-hello" data-name="{e(me.get("name", ""))}" '
             f'data-back="{e(welcome_back() if me.get("form") else "")}">שלום!</h1>'
             '<p class="tag"><span id="mb-type"></span><span class="caret"></span></p></header>'
-            f'<nav class="tabs" id="mb-tabs">{tabs}</nav>{view.switcher()}')
+            f'<nav class="tabs" id="mb-tabs" aria-label="ניווט ראשי">{tabs}</nav>{view.switcher()}')
 
 
 def update_banner():
@@ -180,5 +208,5 @@ def page(title, body, active=''):
     # the page's own styles sit inside <main>: switching tabs swaps <main>, so every tab looks right however you got there
     return (f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>{e(title)} · MailBrief</title>{FONT}'
-            f'<style>{STYLE}</style></head><body>{top_bar(active or TITLE_TAB.get(title, ""))}'
-            f'<main>{PAGE_STYLE}{undo_banner()}{body}{footer()}</main>{extras.HTML}</body></html>')
+            f'<style>{STYLE}{WORKSPACE_STYLE}</style></head><body><a class="skip-link" href="#main">דילוג לתוכן</a>{top_bar(active or TITLE_TAB.get(title, ""))}'
+            f'<main id="main" tabindex="-1">{PAGE_STYLE}{undo_banner()}{body}{footer()}</main>{extras.HTML}</body></html>')
