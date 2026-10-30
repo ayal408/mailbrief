@@ -14,6 +14,40 @@ class StableUI(unittest.TestCase):
         result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_csv_exports_only_selection_and_escapes_formulas_and_quotes(self):
+        functions = inbox.JS.split('function csvCell(value){', 1)[1].split('function exportMessages(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={folder:'INBOX',checked:{one:1},groups:[
+{key:'one',account:'a@example.com',rows:[{uid:1,from:{name:'=SUM(A1)',email:'sender@example.com'},subject:'a,"b"',at:'2026-10-30',flags:[],attach:true}]},
+{key:'two',account:'b@example.com',rows:[{uid:1,from:{name:'Other',email:'other@example.com'},subject:'private',at:'2026-10-30',flags:['\\\\Seen'],attach:false}]}]};
+''' + 'function csvCell(value){' + functions + '''
+var csv=messageCSV(true);assert.equal(csv.charCodeAt(0),0xFEFF);assert.match(csv,/'=SUM/);assert.match(csv, /"a,""b"""/);
+assert.ok(!csv.includes('private'));assert.ok(messageCSV(false).includes('private'));
+S.checked={};assert.equal(messageCSV(true),'');assert.equal(csvCell('  +1').charCodeAt(1), 39);
+''')
+
+    def test_message_navigation_distinguishes_account_and_folder(self):
+        functions = inbox.JS.split('function neighborIndex(delta){', 1)[1].split("var CAT =", 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={folder:'INBOX',open:{account:'b@example.com',folder:'INBOX',uid:1},groups:[
+{account:'a@example.com',rows:[{uid:1}]},{account:'b@example.com',rows:[{uid:1,folder:'Sent'}]},
+{account:'b@example.com',rows:[{uid:1}]},{account:'b@example.com',rows:[{uid:2}]}]};
+var opened=[];function openGroup(i){opened.push(i);}function drawList(){}
+''' + 'function neighborIndex(delta){' + functions + '''
+assert.equal(neighborIndex(-1),1);assert.equal(neighborIndex(1),3);moveMessage(1);assert.deepEqual(opened,[3]);
+S.open.uid=2;assert.equal(neighborIndex(1),-1);moveMessage(1);assert.deepEqual(opened,[3]);
+S.open.uid=99;assert.equal(neighborIndex(-1),-1);
+''')
+
+    def test_quick_selection_only_changes_loaded_rows(self):
+        fn = inbox.JS.split('function selectMessages(mode){', 1)[1].split('function csvCell(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={checked:{a:1},groups:[{key:'a',unread:false},{key:'b',unread:true},{key:'c',unread:true}]};function drawList(){}
+''' + 'function selectMessages(mode){' + fn + '''
+selectMessages('unread');assert.deepEqual(S.checked,{b:1,c:1});selectMessages('invert');assert.deepEqual(S.checked,{a:1});
+selectMessages('clear');assert.deepEqual(S.checked,{});assert.equal(S.lastCk,null);
+''')
+
     def test_switching_mailboxes_restores_own_filters_and_clears_reader(self):
         switch = inbox.JS.split('function switchMailbox(acc){', 1)[1].split('function drawQuickFilters(){', 1)[0]
         choose = inbox.JS.split('function choose(acc, folder){', 1)[1].split('function selectedRefs(){', 1)[0]

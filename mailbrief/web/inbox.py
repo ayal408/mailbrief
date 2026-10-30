@@ -501,6 +501,7 @@ def inbox_page(start=None):
       <button class="ib-ic" type="button" id="ib-unread" title="רק לא נקראו" aria-label="רק הודעות שלא נקראו" aria-pressed="false">●</button>
       <button class="ib-ic" type="button" id="ib-refresh" title="רענון">⟳</button>
       <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️</button>
+      <button class="ib-ic" type="button" id="ib-list-actions" title="בחירה מהירה וייצוא" aria-label="פעולות על רשימת ההודעות">⋯</button>
       <div class="ib-bulk" id="ib-bulk"><span id="ib-bulk-n"></span>
         <button class="ib-ic" type="button" data-bulk="read" title="סימון כנקרא">✉️</button><button class="ib-ic" type="button" data-bulk="unread" title="סימון כלא נקרא">●</button>
         <button class="ib-ic" type="button" data-bulk="star" title="כוכב">⭐</button><button class="ib-ic" type="button" data-bulk="archive" title="לארכיון (E)">🗄️</button>
@@ -963,6 +964,59 @@ function selectedRefs(){
   S.groups.forEach(function(g){ if (S.checked[g.key]) g.rows.forEach(function(r){ refs.push({a: g.account, f: r.folder || S.folder, u: r.uid}); }); });
   return refs;
 }
+function selectMessages(mode){
+  var checked = {};
+  S.groups.forEach(function(g){
+    if (mode === 'unread' ? g.unread : mode === 'invert' ? !S.checked[g.key] : false) checked[g.key] = 1;
+  });
+  S.checked = checked; S.lastCk = null; drawList();
+}
+function csvCell(value){
+  var text = String(value == null ? '' : value);
+  if (/^[\s]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+function messageCSV(selected){
+  var rows = [['חשבון', 'תיקייה', 'מאת', 'כתובת שולח', 'נושא', 'תאריך', 'לא נקרא', 'כוכב', 'קובץ מצורף']];
+  S.groups.forEach(function(g){
+    if (selected && !S.checked[g.key]) return;
+    g.rows.forEach(function(r){ rows.push([g.account, r.folder || S.folder, r.from.name, r.from.email, r.subject, r.at,
+      r.flags.indexOf('\\Seen') < 0 ? 'כן' : 'לא', r.flags.indexOf('\\Flagged') >= 0 ? 'כן' : 'לא', r.attach ? 'כן' : 'לא']); });
+  });
+  return rows.length > 1 ? '\uFEFF' + rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n') : '';
+}
+function exportMessages(selected){
+  var csv = messageCSV(selected);
+  if (!csv) { toast(selected ? 'קודם בוחרים הודעות לייצוא' : 'אין הודעות טעונות לייצוא'); return; }
+  var url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'})), a = document.createElement('a');
+  a.href = url; a.download = 'mailbrief-' + (S.acc === '*' ? 'all-mailboxes' : S.acc.replace(/[^a-z0-9._-]/gi, '_')) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+  toast('יוצאה רשימת ההודעות שנטענו — ללא תוכן המיילים והקבצים עצמם');
+}
+function listActions(anchor){
+  menu(anchor, '<div class="row"><b>פעולות על ההודעות שנטענו</b></div>' +
+    '<button type="button" class="it" data-list="unread">● בחירת הודעות שלא נקראו</button>' +
+    '<button type="button" class="it" data-list="invert">☑ היפוך הבחירה</button>' +
+    '<button type="button" class="it" data-list="clear">ביטול הבחירה</button>' +
+    '<button type="button" class="it" data-list="export-selected">📊 ייצוא הבחירה ל־CSV</button>' +
+    '<button type="button" class="it" data-list="export-all">📊 ייצוא כל ההודעות שנטענו ל־CSV</button>', function(m){
+      m.onclick = function(ev){ var b = ev.target.closest('[data-list]'); if (!b) return; closeMenu();
+        var action = b.dataset.list;
+        if (action === 'export-selected' || action === 'export-all') exportMessages(action === 'export-selected');
+        else selectMessages(action);
+      };
+    });
+}
+function neighborIndex(delta){
+  if (!S.open) return -1;
+  var index = S.groups.findIndex(function(g){
+    return g.account.toLowerCase() === S.open.account.toLowerCase() && g.rows.some(function(r){
+      return +r.uid === +S.open.uid && (r.folder || S.folder) === S.open.folder;
+    });
+  });
+  return index >= 0 && index + delta >= 0 && index + delta < S.groups.length ? index + delta : -1;
+}
+function moveMessage(delta){ var index = neighborIndex(delta); if (index < 0) return; openGroup(index); drawList(); }
 var CAT = 'INBOX#category:';
 function catName(acc, key){ var f = (S.folders[acc] || []).filter ? S.folders[acc].filter(function(x){ return x.id === CAT + key; })[0] : null; return f ? f.name : key; }
 function act(what, refs, extra){
@@ -1098,6 +1152,8 @@ function drawMessage(){
     '<option value="receipt">🧾 לשמור כקבלה / חשבונית</option>' + (m.unsub ? '<option value="unsub">🔕 ביטול מנוי לשולח</option>' : '') +
     '<option value="files">💾 שמירת כל הקבצים בהורדות</option><option value="print">🖨️ הדפסה</option><option value="block">🚫 חסימת השולח</option>' +
     (m.gmail ? '<option value="gmail">🔗 פתיחה ב-Gmail</option>' : '') + '<option value="original">🧾 הצגת המקור (EML)</option></select>' +
+    '<button class="ib-ic" type="button" data-m="prev"' + (neighborIndex(-1) < 0 ? ' disabled' : '') + '>הקודמת</button>' +
+    '<button class="ib-ic" type="button" data-m="next"' + (neighborIndex(1) < 0 ? ' disabled' : '') + '>הבאה</button>' +
     '<button class="ib-ic" type="button" data-m="pop" title="פתיחה בחלון נפרד — אפשר להזיז למסך אחר" style="margin-inline-start:auto">🗗 חלון</button>' +
     '<button class="ib-ic' + (WIDE ? ' on' : '') + '" type="button" data-m="wide" title="' + (WIDE ? 'חזרה לגודל הרגיל (Esc)' : 'הגדלת ההודעה לכל החלון (Z)') + '">' + (WIDE ? '🗗 הקטנה' : '⛶ הגדלה') + '</button>';
   var meta = '<div class="ib-meta">' + avatar(m.from.name, m.from.email) + '<div style="flex:1;min-width:0"><b dir="auto">' + esc(m.from.name || m.from.email) + '</b> <span dir="ltr">&lt;' + esc(m.from.email) + '&gt;</span><br>' +
@@ -1324,6 +1380,7 @@ function translateHere(on){                             // 🌐 the message itse
 }
 function msgAction(k){
   var m = S.open; if (!m) return; var ref = [{a: m.account, f: m.folder, u: m.uid}];
+  if (k === 'prev' || k === 'next') { moveMessage(k === 'prev' ? -1 : 1); return; }
   if (!m.files && !/^(pop|wide|back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
   if (k === 'back') { closeMessage(); return; }
   if (k === 'wide') { setWide(!WIDE); return; }
@@ -1345,6 +1402,7 @@ var qTimer; $('ib-q').addEventListener('input', function(){ clearTimeout(qTimer)
 $('ib-mailboxes').addEventListener('click', function(ev){ var b = ev.target.closest('[data-mailbox]'); if (b) switchMailbox(b.dataset.mailbox); });
 $('ib-filters').addEventListener('click', function(ev){ var b = ev.target.closest('[data-filter]'); if (b) quickFilter(b.dataset.filter); });
 $('ib-save-search').onclick = saveSearch;
+$('ib-list-actions').onclick = function(){ listActions(this); };
 $('ib-saved').addEventListener('click', function(ev){
   var b = ev.target.closest('[data-saved]'); if (b) { openSavedSearch(+b.dataset.saved); return; }
   b = ev.target.closest('[data-remove-saved]'); if (b) { var rows = savedSearches(); rows.splice(+b.dataset.removeSaved, 1); writeSearches(rows); }
