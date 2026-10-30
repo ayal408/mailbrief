@@ -330,9 +330,41 @@ def receipt_from(address, msg):
 # ---- the page ----------------------------------------------------------------------------------------------------------------
 
 CSS = r"""
+.ib-context{padding:10px 12px;border-bottom:1px solid var(--line);min-width:0}
+.ib-context strong{display:block;font-size:16px}.ib-context small{display:block;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-status{font-size:12px;color:var(--muted);min-height:18px;margin-top:3px}
+#ib-workspace{--on-accent:#fff}
+#ib-workspace[data-palette=purple]{--tone:#7c3aed;--tone-dark:#c4b5fd;--tone-2:#a21caf;--tone-2-dark:#f0abfc}
+#ib-workspace[data-palette=ocean]{--tone:#1d4ed8;--tone-dark:#93c5fd;--tone-2:#0369a1;--tone-2-dark:#7dd3fc}
+#ib-workspace[data-palette=forest]{--tone:#047857;--tone-dark:#6ee7b7;--tone-2:#0f766e;--tone-2-dark:#5eead4}
+#ib-workspace[data-palette=rose]{--tone:#be185d;--tone-dark:#f9a8d4;--tone-2:#9d174d;--tone-2-dark:#fda4af}
+#ib-workspace[data-palette=slate]{--tone:#475569;--tone-dark:#cbd5e1;--tone-2:#334155;--tone-2-dark:#94a3b8}
+#ib-workspace[data-palette=amber]{--tone:#b45309;--tone-dark:#fcd34d;--tone-2:#9a3412;--tone-2-dark:#fdba74}
+:root:not([data-contrast]) #ib-workspace[data-palette]{--accent:var(--tone);--accent-2:var(--tone-2)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]):not([data-contrast]) #ib-workspace[data-palette]{--accent:var(--tone-dark);--accent-2:var(--tone-2-dark);--on-accent:#17202b}}
+:root[data-theme=dark]:not([data-contrast]) #ib-workspace[data-palette]{--accent:var(--tone-dark);--accent-2:var(--tone-2-dark);--on-accent:#17202b}
+#ib-workspace .ib-new,#ib-workspace .ib-ic.on{color:var(--on-accent)}
+#ibx.comfortable .ib-row{padding:16px 14px;gap:6px 10px}
+#ibx.cards .ib-rows{padding:10px;background:var(--bg)}
+#ibx.cards .ib-row{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--surface)}
+#ibx.cards .ib-row.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+#ibx.cards .ib-row:hover{border-color:var(--accent)}
+#ibx.no-snippet .sn{display:none}
+#ibx[data-text-size=large] .who{font-size:16px}#ibx[data-text-size=large] .ib-rows .ib-row .sub{font-size:15px}#ibx[data-text-size=large] .when{font-size:13px}
+#ibx[data-text-size=larger] .who{font-size:18px}#ibx[data-text-size=larger] .ib-rows .ib-row .sub{font-size:17px}#ibx[data-text-size=larger] .when{font-size:14px}
+.ib-pop{max-height:calc(100dvh - 24px);max-width:calc(100vw - 24px);overflow-y:auto}
+body:has(#ibx) .mbxs{display:none}
+.ib-mailboxes{display:flex;gap:8px;overflow-x:auto;padding:0 0 12px;align-items:stretch}
+.ib-mailbox{flex:none;display:flex;align-items:center;gap:10px;text-align:start;border:1px solid var(--line);border-inline-start:4px solid var(--mailbox-color,var(--accent));border-radius:12px;background:var(--surface);color:var(--ink);padding:9px 12px;font:inherit;cursor:pointer}
+.ib-mailbox.on{background:color-mix(in srgb,var(--accent) 9%,var(--surface));border-color:var(--accent)}
+.ib-mailbox small{display:block;font-size:12px;color:var(--muted)}.ib-mailbox b{font-size:13px}.ib-mailbox .count{border-radius:20px;padding:2px 8px;background:var(--bg);font-size:12px}
+.ib-filters{display:flex;gap:6px;padding:7px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ib-filters .ib-ic{font-size:12px;line-height:1.4}.ib-filters .on{color:var(--accent);border-color:var(--accent)}
+.ib-saved{display:flex;gap:6px;overflow-x:auto;padding:6px 8px;border-bottom:1px solid var(--line);flex:none}.ib-saved:empty{display:none}
+.ib-saved span{display:inline-flex;flex:none;align-items:center;border:1px solid var(--line);border-radius:8px}.ib-saved button{background:none;border:0;color:var(--ink);padding:5px 8px;font-size:12px;white-space:nowrap}.ib-saved .remove{color:var(--muted)}
 main:has(#ibx){max-width:min(1640px,calc(100vw - 32px));padding:14px}
 body:has(#ibx) .hero{padding:10px 16px 0}body:has(#ibx) .hero .gift,body:has(#ibx) .hero .name,body:has(#ibx) .hero .tag{display:none}body:has(#ibx) .hero .corner{position:static;justify-content:flex-end}
-#ibx{--row:var(--bg);display:grid;grid-template-columns:230px var(--listw,minmax(300px,400px)) 1fr;gap:0;height:calc(100vh - 150px);min-height:540px;
+#ibx{--row:var(--bg);display:grid;grid-template-columns:230px var(--listw,minmax(300px,400px)) 1fr;gap:0;height:calc(100dvh - 160px);min-height:300px;
 border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface);text-align:start}
 /* the columns stay inside the box (a grid row otherwise grows to the longest column, and the box cuts it off — no scrollbar) */
 #ibx{grid-template-rows:minmax(0,1fr)}#ibx>*{min-height:0}.ib-rows,.ib-side,.ib-scroll{min-height:0}
@@ -378,7 +410,7 @@ border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(-
 #ibx.bottom .ib-list{border-inline-end:0;border-bottom:1px solid var(--line)}#ibx.bottom .ib-split{display:none}
 #ibx.wide{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}
 /* 🗗 a message in a window of its own: only the message */
-body.solo header.hero,body.solo nav.tabs,body.solo .mbxs,body.solo footer.foot,body.solo main>.item{display:none}body.solo main{max-width:none;padding:8px}
+body.solo #mb-navigation,body.solo header.hero,body.solo nav.tabs,body.solo .mbxs,body.solo footer.foot,body.solo main>.item{display:none}body.solo main{max-width:none;padding:8px}
 body.solo #ibx{grid-template-columns:1fr}body.solo .ib-side,body.solo .ib-list,body.solo [data-m="wide"],body.solo [data-m="pop"],body.solo .ib-back{display:none!important}#ibx.wide .ib-side,#ibx.wide .ib-list{display:none}#ibx.wide .ib-read{display:flex}
 .ib-mtools{display:flex;gap:4px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center}
 .ib-mtools select{font:inherit;font-size:13px;padding:5px 8px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:150px}
@@ -464,6 +496,7 @@ background:var(--surface);border:1px solid var(--line);border-radius:16px;box-sh
 @media(max-width:820px){#ibx{grid-template-columns:1fr;grid-template-rows:none;height:auto;min-height:0}.ib-side{display:flex;gap:4px;overflow-x:auto;padding:8px;border:0;border-bottom:1px solid var(--line)}
 .ib-side .ib-new{width:auto;margin:0;white-space:nowrap}.ib-acc{display:none}.ib-f{width:auto;white-space:nowrap}.ib-rows{max-height:none}
 .ib-read{display:none;position:fixed;inset:0;z-index:40;background:var(--surface)}#ibx.reading .ib-read{display:flex}.ib-back{display:inline-block}}
+@media(max-width:820px){#ibx.bottom,#ibx.nopane{grid-template-columns:1fr;grid-template-rows:none}#ibx.bottom .ib-side{grid-row:auto}}
 """
 
 
@@ -473,26 +506,42 @@ def inbox_page(start=None):
         return page('דואר נכנס', heading('📥', 'דואר נכנס') + '<p>עוד לא חוברה תיבת מייל. <a href="/?s=boxes">חיבור תיבה</a></p>', '/inbox')
     current = view.current_account()
     start = start or {}
+    requested = start.get('a') or current or boxes[0]
+    selected = next((b for b in boxes if b.lower() == requested.lower()), None)
     boot = {'accounts': [{'email': b, 'color': view.color(b), 'name': view.account(b).get('display_name', '')} for b in boxes],
-            'account': start.get('a') or (current if current else ('*' if len(boxes) > 1 else boxes[0])),
+            'account': '*' if requested == '*' else selected or boxes[0],
+            'explicit_account': bool(start.get('a') or current or start.get('u') or start.get('f') or start.get('q')),
             'folder': start.get('f') or 'INBOX', 'uid': start.get('u') or '', 'token': TOKEN, 'q': start.get('q') or '', 'compose': bool(start.get('compose')), 'to': start.get('to') or '', 'solo': bool(start.get('solo'))}
     data = json.dumps(boot, ensure_ascii=False).replace('</', '<\\/')
     body = f'''<style>{CSS}</style>
+<div id="ib-workspace"><div class="ib-mailboxes" id="ib-mailboxes" role="group" aria-label="בחירת תיבת דואר"></div>
 <div id="ibx">
   <aside class="ib-side"><button class="ib-new" type="button" data-do="compose" title="הודעה חדשה (C)">✏️ הודעה חדשה</button><div id="ib-folders"></div></aside>
   <section class="ib-list">
+    <div class="ib-context"><strong id="ib-folder-title">דואר נכנס</strong><small id="ib-account-title" dir="auto"></small><div id="ib-status" class="ib-status" role="status" aria-live="polite"></div></div>
     <div class="ib-tools">
       <input type="checkbox" id="ib-all" title="בחירת הכול (X לבחירת שורה)">
-      <input type="search" id="ib-q" placeholder="🔍 חיפוש בתיקייה… (/)" autocomplete="off">
+      <input type="search" id="ib-q" aria-label="חיפוש בתיקייה" placeholder="🔍 חיפוש בתיקייה… (/)" autocomplete="off">
+      <button class="ib-ic" type="button" id="ib-clear-search" title="ניקוי החיפוש" aria-label="ניקוי החיפוש">✕</button>
       <button class="ib-ic" type="button" id="ib-adv" title="אפשרויות חיפוש">⚙️</button>
-      <button class="ib-ic" type="button" id="ib-unread" title="רק לא נקראו">●</button>
-      <button class="ib-ic" type="button" id="ib-refresh" title="רענון">⟳</button>
-      <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️</button>
+      <button class="ib-ic" type="button" id="ib-unread" title="רק לא נקראו" aria-label="רק הודעות שלא נקראו" aria-pressed="false">●</button>
+      <button class="ib-ic" type="button" id="ib-refresh" title="רענון">⟳ רענון</button>
+      <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️ תצוגה</button>
+      <button class="ib-ic" type="button" id="ib-list-actions" title="בחירה מהירה וייצוא" aria-label="פעולות על רשימת ההודעות">⋯</button>
       <div class="ib-bulk" id="ib-bulk"><span id="ib-bulk-n"></span>
         <button class="ib-ic" type="button" data-bulk="read" title="סימון כנקרא">✉️</button><button class="ib-ic" type="button" data-bulk="unread" title="סימון כלא נקרא">●</button>
         <button class="ib-ic" type="button" data-bulk="star" title="כוכב">⭐</button><button class="ib-ic" type="button" data-bulk="archive" title="לארכיון (E)">🗄️</button>
         <button class="ib-ic" type="button" data-bulk="delete" title="מחיקה (#)">🗑️</button><button class="ib-ic" type="button" data-bulk="spam" title="ספאם">🚫</button></div>
     </div>
+    <div class="ib-filters" id="ib-filters" role="group" aria-label="סינון מהיר">
+      <button class="ib-ic" type="button" data-filter="all">כל ההודעות</button>
+      <button class="ib-ic" type="button" data-filter="unread">לא נקראו</button>
+      <button class="ib-ic" type="button" data-filter="is:starred">⭐ עם כוכב</button>
+      <button class="ib-ic" type="button" data-filter="has:attachment">📎 עם קבצים</button>
+      <button class="ib-ic" type="button" id="ib-save-search">🔖 שמירת חיפוש</button>
+      <button class="ib-ic" type="button" id="ib-copy-link">🔗 קישור לתיבה</button>
+    </div>
+    <div class="ib-saved" id="ib-saved" role="group" aria-label="חיפושים שמורים בתיבה זו"></div>
     <div class="ib-cats" id="ib-cats"></div>
     <div class="ib-rows" id="ib-rows"><div class="ib-empty">טוען…</div></div>
     <div class="ib-split" id="ib-split" title="גרירה: רשימה רחבה / צרה יותר · לחיצה כפולה: חזרה לרוחב הרגיל"></div>
@@ -533,7 +582,7 @@ def inbox_page(start=None):
 <div id="ib-view" role="dialog" aria-label="צפייה בקובץ"><header><b id="ib-view-name" dir="auto" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
   <button type="button" id="ib-view-open">פתיחה בתוכנה</button><button type="button" id="ib-view-save">💾 שמירה</button><button type="button" id="ib-view-x">✕ סגירה</button></header><div class="stage" id="ib-view-stage"></div></div>
 <div id="ib-toast"><span id="ib-toast-t"></span><button type="button" id="ib-toast-b"></button></div>
-<script>window.IBX={data};</script><script>{JS}</script>'''
+</div><script>window.IBX={data};</script><script>{JS}</script>'''
     from mailbrief.web.layout import update_banner
     return page('דואר נכנס', update_banner() + body, '/inbox')
 
@@ -542,11 +591,80 @@ JS = r"""
 (function(){
 var B = window.IBX, $ = function(id){ return document.getElementById(id); };
 if (window.__ibx) window.__ibx.stop();
+if (!B.explicit_account) {
+  try { var lastMailbox = localStorage.getItem('ib-last-mailbox');
+    if (lastMailbox === '*' || B.accounts.some(function(a){ return a.email === lastMailbox; })) B.account = lastMailbox;
+  } catch (e) {}
+}
 var S = {acc: B.account, folder: B.folder, page: 0, q: B.q, unread: false, items: [], groups: [], sel: null, kb: -1, checked: {}, v: -1,
          open: null, imgs: false, comp: null, gpending: 0, folders: {}, total: 0};
 var esc = function(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
 var color = function(a){ var x = B.accounts.filter(function(b){ return b.email.toLowerCase() === (a||'').toLowerCase(); })[0]; return x ? x.color : '#7c3aed'; };
 var multi = B.accounts.length > 1;
+var MAILBOX_STATE = Object.create(null);
+function savedSearches(){
+  try { var rows = JSON.parse(localStorage.getItem('ib-searches:' + S.acc) || '[]');
+    return Array.isArray(rows) ? rows.filter(function(r){ return r && typeof r.q === 'string' && typeof r.folder === 'string'; }).slice(0, 8) : [];
+  } catch (e) { return []; }
+}
+function drawSavedSearches(){
+  $('ib-saved').innerHTML = savedSearches().map(function(r, i){
+    var label = (r.unread ? 'לא נקראו · ' : '') + (r.q || r.folder);
+    return '<span><button type="button" data-saved="' + i + '" title="' + esc(label) + '">' + esc(label.slice(0, 45)) + '</button><button type="button" class="remove" data-remove-saved="' + i + '" aria-label="הסרת החיפוש ' + esc(label) + '">×</button></span>';
+  }).join('');
+}
+function writeSearches(rows){
+  try { localStorage.setItem('ib-searches:' + S.acc, JSON.stringify(rows)); drawSavedSearches(); return true; }
+  catch (e) { toast('הדפדפן לא מאפשר לשמור חיפושים במחשב הזה'); return false; }
+}
+function saveSearch(){
+  var query = $('ib-q').value.trim();
+  if (!query && !S.unread) { toast('קודם מזינים חיפוש או בוחרים מסנן'); return; }
+  var rows = savedSearches().filter(function(r){ return r.q !== query || r.folder !== S.folder || !!r.unread !== !!S.unread; });
+  rows.unshift({q: query, folder: S.folder, unread: S.unread});
+  if (writeSearches(rows.slice(0, 8))) toast('החיפוש נשמר לתיבה הנוכחית במחשב הזה');
+}
+function openSavedSearch(index){
+  var r = savedSearches()[index]; if (!r) return;
+  S.q = r.q; S.unread = !!r.unread; $('ib-q').value = S.q; choose(S.acc, r.folder);
+}
+function drawMailboxes(){
+  var choices = B.accounts.map(function(a){ return {email: a.email, name: a.name, color: a.color}; });
+  if (multi) choices.push({email: '*', name: 'כל התיבות', color: 'var(--accent)'});
+  $('ib-mailboxes').innerHTML = choices.map(function(a){
+    var boxes = a.email === '*' ? B.accounts : [a], unread = 0, known = true;
+    boxes.forEach(function(b){ var fs = S.folders[b.email]; if (!Array.isArray(fs)) { known = false; return; }
+      fs.forEach(function(f){ if (f.role === 'inbox') unread += f.unread || 0; }); });
+    return '<button type="button" class="ib-mailbox' + (S.acc === a.email ? ' on' : '') + '" data-mailbox="' + esc(a.email) + '" aria-pressed="' + (S.acc === a.email) + '" style="--mailbox-color:' + a.color + '"><span><b dir="auto">' + esc(a.name || (a.email === '*' ? 'כל התיבות' : a.email.split('@')[0])) + '</b>' +
+      (a.email === '*' ? '<small>תצוגה משולבת</small>' : '<small dir="ltr">' + esc(a.email) + '</small>') + '</span><span class="count" aria-label="הודעות שלא נקראו">' + (known ? unread : '…') + '</span></button>';
+  }).join('');
+}
+function switchMailbox(acc){
+  if (acc === S.acc) return;
+  if (acc !== '*' && !B.accounts.some(function(a){ return a.email === acc; })) return;
+  MAILBOX_STATE[S.acc] = {folder: S.folder, q: S.q, unread: S.unread};
+  var saved = MAILBOX_STATE[acc] || {folder: 'INBOX', q: '', unread: false};
+  S.q = saved.q; S.unread = saved.unread; $('ib-q').value = S.q;
+  try { localStorage.setItem('ib-last-mailbox', acc); } catch (e) {}
+  choose(acc, saved.folder);
+}
+function drawQuickFilters(){
+  $('ib-unread').classList.toggle('on', S.unread);
+  $('ib-unread').setAttribute('aria-pressed', String(S.unread));
+  document.querySelectorAll('[data-filter]').forEach(function(b){
+    var on = b.dataset.filter === 'all' ? !S.q && !S.unread : b.dataset.filter === 'unread' ? S.unread : S.q.split(/\s+/).indexOf(b.dataset.filter) >= 0;
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+  });
+}
+function quickFilter(token){
+  clearTimeout(qTimer);
+  if (token === 'all') { S.q = ''; S.unread = false; }
+  else if (token === 'unread') { S.q = $('ib-q').value.trim(); S.unread = !S.unread; }
+  else { var parts = $('ib-q').value.trim().split(/\s+/).filter(Boolean), index = parts.indexOf(token);
+    if (index < 0) parts.push(token); else parts.splice(index, 1); S.q = parts.join(' '); }
+  $('ib-q').value = S.q; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1;
+  drawQuickFilters(); syncUrl(); loadList();
+}
 
 function api(path, params){
   var u = new URL(path, location.href); Object.keys(params || {}).forEach(function(k){ if (params[k] !== '' && params[k] != null) u.searchParams.set(k, params[k]); });
@@ -636,14 +754,16 @@ function ownTree(acc, own){
 function drawFolders(){
   var side = document.querySelector('.ib-side'), top = side ? side.scrollTop : 0;
   renderFolders();
+  drawMailboxes();
+  listContext();
   if (side) side.scrollTop = top;
 }
 function renderFolders(){
   var html = '';
-  if (multi) html += '<button type="button" class="ib-f' + (S.acc === '*' ? ' on' : '') + '" data-acc="*" data-folder="INBOX"><span>📬</span><span class="nm">כל התיבות</span></button>';
   B.accounts.forEach(function(a){
+    if (S.acc !== '*' && S.acc !== a.email) return;
     var list = S.folders[a.email], open = !multi || S.acc === a.email || a.open;
-    if (multi) html += '<div class="ib-acc" data-toggle="' + esc(a.email) + '"><span style="width:8px;height:8px;border-radius:50%;background:' + a.color + ';flex:none"></span><span>' + esc(a.name || a.email) + '</span><span style="margin-inline-start:auto">' + (open ? '▾' : '▸') + '</span></div>';
+    if (multi && S.acc === '*') html += '<div class="ib-acc" data-toggle="' + esc(a.email) + '"><span style="width:8px;height:8px;border-radius:50%;background:' + a.color + ';flex:none"></span><span>' + esc(a.name || a.email) + '</span><span style="margin-inline-start:auto">' + (open ? '▾' : '▸') + '</span></div>';
     if (!open) return;
     if (!list) { html += '<div class="muted" style="font-size:12px;padding:4px 12px">טוען תיקיות…</div>'; return; }
     if (list.error) { html += '<div class="muted" style="font-size:12px;padding:4px 12px">⚠️ ' + esc(list.error) + '</div>'; return; }
@@ -742,24 +862,49 @@ function searchMenu(btn){
     Array.prototype.forEach.call($('ib-menu').querySelectorAll('input[type=text]'), function(i){ i.onkeydown = function(ev){ if (ev.key === 'Enter') go(); }; });
   });
 }
-var LOOK = (function(){ try { return JSON.parse(localStorage.getItem('ibx-look') || '{}'); } catch (e) { return {}; } })();
+var LOOK = (function(){ try { var value = JSON.parse(localStorage.getItem('ibx-look') || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch (e) { return {}; } })();
+var PALETTES = {purple: ['סגול', '#7c3aed'], ocean: ['כחול ים', '#1d4ed8'], forest: ['ירוק יער', '#047857'], rose: ['ורוד', '#be185d'], slate: ['אפור אלגנטי', '#475569'], amber: ['ענבר', '#b45309']};
 var FONTS = {Rubik: '', Heebo: 'Heebo:wght@400;500;700', 'Noto Sans Hebrew': 'Noto+Sans+Hebrew:wght@400;500;700', 'Assistant': 'Assistant:wght@400;600;700'};
 function applyLook(){
   var box = $('ibx'); box.classList.toggle('dense', LOOK.density === 'dense'); box.classList.toggle('nopane', LOOK.pane === 'none'); box.classList.toggle('bottom', LOOK.pane === 'bottom');
-  var font = LOOK.font && FONTS[LOOK.font] !== undefined ? LOOK.font : '';
+  box.classList.toggle('comfortable', LOOK.density === 'comfortable'); box.classList.toggle('cards', LOOK.rows === 'cards');
+  box.classList.toggle('no-snippet', LOOK.snippet === 'hide');
+  var workspace = $('ib-workspace');
+  workspace.dataset.palette = Object.prototype.hasOwnProperty.call(PALETTES, LOOK.palette) ? LOOK.palette : 'purple';
+  box.dataset.textSize = ['large', 'larger'].indexOf(LOOK.textSize) >= 0 ? LOOK.textSize : '';
+  var font = LOOK.font && Object.prototype.hasOwnProperty.call(FONTS, LOOK.font) ? LOOK.font : '';
   if (font && FONTS[font] && !document.getElementById('ib-font-' + font.replace(/ /g, ''))) {
     var l = document.createElement('link'); l.rel = 'stylesheet'; l.id = 'ib-font-' + font.replace(/ /g, '');
     l.href = 'https://fonts.googleapis.com/css2?family=' + FONTS[font] + '&display=swap'; document.head.appendChild(l);
   }
   box.style.fontFamily = font ? '"' + font + '",Rubik,system-ui,sans-serif' : '';
 }
+function saveLook(){
+  try { localStorage.setItem('ibx-look', JSON.stringify(LOOK)); }
+  catch (e) { toast('התצוגה הוחלה כעת, אך לא ניתן לשמור אותה בדפדפן'); }
+  applyLook(); fitBox();
+}
+function lookPreset(name){
+  var presets = {compact: {density: 'dense', rows: '', pane: '', snippet: 'hide', textSize: ''},
+    reading: {density: 'comfortable', rows: '', pane: 'bottom', snippet: '', textSize: 'large'},
+    cards: {density: 'comfortable', rows: 'cards', pane: 'none', snippet: '', textSize: ''}};
+  if (name === 'reset') LOOK = {};
+  else if (presets[name]) Object.assign(LOOK, presets[name]);
+  saveLook();
+}
 function lookMenu(btn){
-  var opt = function(name, value, label){ return '<label style="display:flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;padding:3px 0"><input type="radio" name="' + name + '" value="' + value + '"' + ((LOOK[name] || '') === value ? ' checked' : '') + '> ' + label + '</label>'; };
-  menu(btn, '<div class="row"><b>🎛️ תצוגה</b></div>' +
-    '<div class="row" style="display:block"><label>צפיפות הרשימה</label>' + opt('density', '', 'רגילה') + opt('density', 'dense', 'צפופה — יותר מיילים במסך') + '</div>' +
+  var opt = function(name, value, label){ return '<label style="display:flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;padding:3px 0"><input type="radio" name="' + name + '" value="' + value + '"' + ((LOOK[name] || (name === 'palette' ? 'purple' : '')) === value ? ' checked' : '') + '> ' + label + '</label>'; };
+  menu(btn, '<div class="row"><b>🎛️ התצוגה שלי</b></div>' +
+    '<div class="row" style="flex-wrap:wrap"><button class="ib-ic" type="button" data-look-preset="compact">עבודה מהירה</button><button class="ib-ic" type="button" data-look-preset="reading">קריאה נוחה</button><button class="ib-ic" type="button" data-look-preset="cards">כרטיסים</button></div>' +
+    '<fieldset style="border:0;margin:0;padding:6px"><legend>ערכת צבעים</legend>' + Object.keys(PALETTES).map(function(k){ return '<span style="display:inline-flex;align-items:center;gap:4px;margin-inline-end:8px"><i aria-hidden="true" style="width:12px;height:12px;border-radius:50%;background:' + PALETTES[k][1] + '"></i>' + opt('palette', k, PALETTES[k][0]) + '</span>'; }).join('') + '</fieldset>' +
+    '<div class="row" style="display:block"><label>סגנון הרשימה</label>' + opt('rows', '', 'שורות') + opt('rows', 'cards', 'כרטיסים') + '</div>' +
+    '<div class="row" style="display:block"><label>צפיפות הרשימה</label>' + opt('density', '', 'רגילה') + opt('density', 'dense', 'צפופה — יותר מיילים במסך') + opt('density', 'comfortable', 'מרווחת') + '</div>' +
     '<div class="row" style="display:block"><label>חלונית קריאה</label>' + opt('pane', '', 'בצד הרשימה') + opt('pane', 'bottom', 'מתחת לרשימה — הודעה רחבה') + opt('pane', 'none', 'בלי — ההודעה נפתחת במקום הרשימה') + '</div>' +
-    '<div class="row" style="display:block"><label>גופן</label>' + opt('font', '', 'Rubik') + opt('font', 'Heebo', 'Heebo') + opt('font', 'Noto Sans Hebrew', 'Noto Sans Hebrew') + opt('font', 'Assistant', 'Assistant') + '</div>', function(m){
-    m.onchange = function(ev){ if (ev.target.name) { LOOK[ev.target.name] = ev.target.value; try { localStorage.setItem('ibx-look', JSON.stringify(LOOK)); } catch (e) {} applyLook(); } };
+    '<div class="row" style="display:block"><label>גודל טקסט ברשימה</label>' + opt('textSize', '', 'רגיל') + opt('textSize', 'large', 'גדול') + opt('textSize', 'larger', 'גדול מאוד') + '</div>' +
+    '<div class="row" style="display:block"><label>תקציר ההודעה</label>' + opt('snippet', '', 'הצגת שורת תקציר') + opt('snippet', 'hide', 'נושא בלבד') + '</div>' +
+    '<div class="row" style="display:block"><label>גופן</label>' + opt('font', '', 'Rubik') + opt('font', 'Heebo', 'Heebo') + opt('font', 'Noto Sans Hebrew', 'Noto Sans Hebrew') + opt('font', 'Assistant', 'Assistant') + '</div><div class="row"><button class="ib-ic" type="button" data-look-preset="reset">איפוס התצוגה</button><small>השינויים מוצגים מיד ונשמרים במחשב הזה.</small></div>', function(m){
+    m.onchange = function(ev){ if (ev.target.name) { LOOK[ev.target.name] = ev.target.value; saveLook(); } };
+    m.onclick = function(ev){ var b = ev.target.closest('[data-look-preset]'); if (b) { lookPreset(b.dataset.lookPreset); lookMenu(btn); } };
   });
 }
 function unreadTitle(){
@@ -819,8 +964,18 @@ function renderList(){
   drawBulk();
 }
 function drawBulk(){
+  listContext();
   var n = Object.keys(S.checked).length; $('ib-bulk').classList.toggle('on', n > 0); $('ib-bulk-n').textContent = n ? n + ' נבחרו' : '';
   $('ib-all').checked = n > 0 && n === S.groups.length;
+  $('ib-all').indeterminate = n > 0 && n < S.groups.length;
+}
+function listContext(){
+  var folders = S.folders[S.acc], folder = Array.isArray(folders) ? folders.find(function(f){ return f.id === S.folder; }) : null;
+  $('ib-folder-title').textContent = folder ? folder.name : S.folder === 'INBOX' ? 'דואר נכנס' : S.folder;
+  $('ib-account-title').textContent = S.acc === '*' ? 'כל תיבות הדואר' : S.acc;
+  var n = S.items.length, selected = Object.keys(S.checked).length;
+  $('ib-status').textContent = n + ' הודעות נטענו' + (S.total > n ? ' מתוך ' + S.total : '') + (selected ? ' · ' + selected + ' שיחות נבחרו' : '') + (S.q || S.unread ? ' · סינון פעיל' : '');
+  $('ib-clear-search').disabled = !$('ib-q').value && !S.q;
 }
 var listSeq = 0, morePending = 0;
 function loadList(opts){
@@ -835,7 +990,7 @@ function loadList(opts){
   var shown = false;
   var show = function(d, cached){
     if (seq !== listSeq) return;
-    if (opts.more && !d.items.length && d.errors && d.errors.length) throw new Error(d.errors[0]);
+    if (!d.items.length && d.errors && d.errors.length) throw new Error(d.errors[0]);
     if (!cached) S.page = nextPage;
     S.items = opts.more ? S.items.concat(d.items) : d.items; S.total = d.total;
     if (!opts.more && !cached) { var keep = {}; group(S.items).forEach(function(g){ if (S.checked[g.key]) keep[g.key] = 1; }); S.checked = keep; }
@@ -848,7 +1003,10 @@ function loadList(opts){
   if (!opts.more && !S.q && !S.unread && !opts.quiet) api('/inbox_list.json', Object.assign({}, params, {cached: 1})).then(function(d){ if (d.items.length && !S.items.length) show(d, true); }).catch(function(){});
   return api('/inbox_list.json', params).then(function(d){ show(d, false); }).catch(function(e){
     if (seq !== listSeq) return;
-    if (!S.items.length) $('ib-rows').innerHTML = '<div class="ib-empty">⚠️ ' + esc(e.message) + '</div>';
+    if (!S.items.length) {
+      $('ib-rows').innerHTML = '<div class="ib-empty" role="alert"><b>לא הצלחנו לטעון את ההודעות</b><p>' + esc(e.message) + '</p><button type="button" class="ib-ic" id="ib-retry">ניסיון חוזר</button></div>';
+      $('ib-retry').onclick = function(){ loadList(); };
+    }
     else toast('⚠️ לא ניתן לטעון עוד הודעות — אפשר לנסות שוב. ' + e.message);
   }).then(function(){
     if (morePending === seq) morePending = 0;
@@ -857,8 +1015,10 @@ function loadList(opts){
 }
 $('ib-cats').addEventListener('click', function(ev){ var b = ev.target.closest('[data-cat]'); if (b) choose(S.acc, b.dataset.cat); });
 function choose(acc, folder){
-  S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1;
-  drawFolders(); syncUrl(); loadList();
+  clearTimeout(qTimer); closeMenu();
+  S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1; S.total = 0;
+  S.open = null; $('ibx').classList.remove('reading', 'wide');
+  drawFolders(); drawQuickFilters(); drawSavedSearches(); syncUrl(); loadList(); drawHome();
   if (acc !== '*' && !S.folders[acc]) loadFolders(acc);
 }
 function selectedRefs(){
@@ -866,6 +1026,59 @@ function selectedRefs(){
   S.groups.forEach(function(g){ if (S.checked[g.key]) g.rows.forEach(function(r){ refs.push({a: g.account, f: r.folder || S.folder, u: r.uid}); }); });
   return refs;
 }
+function selectMessages(mode){
+  var checked = {};
+  S.groups.forEach(function(g){
+    if (mode === 'unread' ? g.unread : mode === 'invert' ? !S.checked[g.key] : false) checked[g.key] = 1;
+  });
+  S.checked = checked; S.lastCk = null; drawList();
+}
+function csvCell(value){
+  var text = String(value == null ? '' : value);
+  if (/^[\s]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+function messageCSV(selected){
+  var rows = [['חשבון', 'תיקייה', 'מאת', 'כתובת שולח', 'נושא', 'תאריך', 'לא נקרא', 'כוכב', 'קובץ מצורף']];
+  S.groups.forEach(function(g){
+    if (selected && !S.checked[g.key]) return;
+    g.rows.forEach(function(r){ rows.push([g.account, r.folder || S.folder, r.from.name, r.from.email, r.subject, r.at,
+      r.flags.indexOf('\\Seen') < 0 ? 'כן' : 'לא', r.flags.indexOf('\\Flagged') >= 0 ? 'כן' : 'לא', r.attach ? 'כן' : 'לא']); });
+  });
+  return rows.length > 1 ? '\uFEFF' + rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n') : '';
+}
+function exportMessages(selected){
+  var csv = messageCSV(selected);
+  if (!csv) { toast(selected ? 'קודם בוחרים הודעות לייצוא' : 'אין הודעות טעונות לייצוא'); return; }
+  var url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'})), a = document.createElement('a');
+  a.href = url; a.download = 'mailbrief-' + (S.acc === '*' ? 'all-mailboxes' : S.acc.replace(/[^a-z0-9._-]/gi, '_')) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+  toast('יוצאה רשימת ההודעות שנטענו — ללא תוכן המיילים והקבצים עצמם');
+}
+function listActions(anchor){
+  menu(anchor, '<div class="row"><b>פעולות על ההודעות שנטענו</b></div>' +
+    '<button type="button" class="it" data-list="unread">● בחירת הודעות שלא נקראו</button>' +
+    '<button type="button" class="it" data-list="invert">☑ היפוך הבחירה</button>' +
+    '<button type="button" class="it" data-list="clear">ביטול הבחירה</button>' +
+    '<button type="button" class="it" data-list="export-selected">📊 ייצוא הבחירה ל־CSV</button>' +
+    '<button type="button" class="it" data-list="export-all">📊 ייצוא כל ההודעות שנטענו ל־CSV</button>', function(m){
+      m.onclick = function(ev){ var b = ev.target.closest('[data-list]'); if (!b) return; closeMenu();
+        var action = b.dataset.list;
+        if (action === 'export-selected' || action === 'export-all') exportMessages(action === 'export-selected');
+        else selectMessages(action);
+      };
+    });
+}
+function neighborIndex(delta){
+  if (!S.open) return -1;
+  var index = S.groups.findIndex(function(g){
+    return g.account.toLowerCase() === S.open.account.toLowerCase() && g.rows.some(function(r){
+      return +r.uid === +S.open.uid && (r.folder || S.folder) === S.open.folder;
+    });
+  });
+  return index >= 0 && index + delta >= 0 && index + delta < S.groups.length ? index + delta : -1;
+}
+function moveMessage(delta){ var index = neighborIndex(delta); if (index < 0) return; openGroup(index); drawList(); }
 var CAT = 'INBOX#category:';
 function catName(acc, key){ var f = (S.folders[acc] || []).filter ? S.folders[acc].filter(function(x){ return x.id === CAT + key; })[0] : null; return f ? f.name : key; }
 function act(what, refs, extra){
@@ -938,8 +1151,12 @@ var homeSeq = 0;
 function drawHome(){
   var seq = ++homeSeq;
   $('ib-read').innerHTML = '<div class="ib-home"><h3>🏠 סקירה</h3><div class="muted">טוען…</div></div>';
-  api('/inbox_overview.json').then(function(d){
+  api('/inbox_overview.json', {a: S.acc}).then(function(d){
     if (seq !== homeSeq || S.open) return;
+    if (S.acc !== '*') {
+      d.accounts = d.accounts.filter(function(a){ return a.email.toLowerCase() === S.acc.toLowerCase(); });
+      d.latest = d.latest.filter(function(r){ return r.account.toLowerCase() === S.acc.toLowerCase(); });
+    }
     var max = 1, total = [0, 0, 0, 0, 0, 0, 0];
     d.accounts.forEach(function(a){ a.days.forEach(function(n, i){ total[i] += n; }); }); total.forEach(function(n){ max = Math.max(max, n); });
     var html = '<div class="ib-home"><h3>🏠 סקירה</h3><div class="ib-accs">' + d.accounts.map(function(a){
@@ -997,6 +1214,8 @@ function drawMessage(){
     '<option value="receipt">🧾 לשמור כקבלה / חשבונית</option>' + (m.unsub ? '<option value="unsub">🔕 ביטול מנוי לשולח</option>' : '') +
     '<option value="files">💾 שמירת כל הקבצים בהורדות</option><option value="print">🖨️ הדפסה</option><option value="block">🚫 חסימת השולח</option>' +
     (m.gmail ? '<option value="gmail">🔗 פתיחה ב-Gmail</option>' : '') + '<option value="original">🧾 הצגת המקור (EML)</option></select>' +
+    '<button class="ib-ic" type="button" data-m="prev"' + (neighborIndex(-1) < 0 ? ' disabled' : '') + '>הקודמת</button>' +
+    '<button class="ib-ic" type="button" data-m="next"' + (neighborIndex(1) < 0 ? ' disabled' : '') + '>הבאה</button>' +
     '<button class="ib-ic" type="button" data-m="pop" title="פתיחה בחלון נפרד — אפשר להזיז למסך אחר" style="margin-inline-start:auto">🗗 חלון</button>' +
     '<button class="ib-ic' + (WIDE ? ' on' : '') + '" type="button" data-m="wide" title="' + (WIDE ? 'חזרה לגודל הרגיל (Esc)' : 'הגדלת ההודעה לכל החלון (Z)') + '">' + (WIDE ? '🗗 הקטנה' : '⛶ הגדלה') + '</button>';
   var meta = '<div class="ib-meta">' + avatar(m.from.name, m.from.email) + '<div style="flex:1;min-width:0"><b dir="auto">' + esc(m.from.name || m.from.email) + '</b> <span dir="ltr">&lt;' + esc(m.from.email) + '&gt;</span><br>' +
@@ -1174,7 +1393,7 @@ $('ibx').addEventListener('click', function(ev){
   if ((el = t.closest('[data-twist]'))) { var k = el.dataset.twist; S.labelsOpen = true; if (OPEN[k]) delete OPEN[k]; else OPEN[k] = 1;
     try { localStorage.setItem('ib-open', JSON.stringify(OPEN)); } catch (e) {} drawFolders(); return; }
   if ((el = t.closest('.ib-f'))) { choose(el.dataset.acc, el.dataset.folder); return; }
-  if ((el = t.closest('[data-goacc]'))) { choose(el.dataset.goacc, 'INBOX'); return; }
+  if ((el = t.closest('[data-goacc]'))) { switchMailbox(el.dataset.goacc); return; }
   if ((el = t.closest('[data-goopen]'))) { var g2p = el.dataset.goopen.split('\u0001'); openMessage(g2p[0], 'INBOX', g2p[1]); return; }
   if ((el = t.closest('[data-view]'))) { viewFile(+el.dataset.view); return; }
   if ((el = t.closest('[data-bulk]'))) { var refs = selectedRefs(); if (refs.length) act(el.dataset.bulk, refs); return; }
@@ -1223,6 +1442,7 @@ function translateHere(on){                             // 🌐 the message itse
 }
 function msgAction(k){
   var m = S.open; if (!m) return; var ref = [{a: m.account, f: m.folder, u: m.uid}];
+  if (k === 'prev' || k === 'next') { moveMessage(k === 'prev' ? -1 : 1); return; }
   if (!m.files && !/^(pop|wide|back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
   if (k === 'back') { closeMessage(); return; }
   if (k === 'wide') { setWide(!WIDE); return; }
@@ -1239,9 +1459,33 @@ function msgAction(k){
   if (k === 'unread') { act('unread', ref); closeMessage(); return; }
   act(k, ref);
 }
+function runSearch(){
+  clearTimeout(qTimer); S.q = $('ib-q').value.trim(); S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1; S.total = 0;
+  drawQuickFilters(); listContext(); syncUrl(); loadList();
+}
+function searchKey(ev){
+  if (ev.isComposing) return;
+  if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); runSearch(); }
+  else if (ev.key === 'Escape' && ($('ib-q').value || S.q)) { ev.preventDefault(); ev.stopPropagation(); $('ib-q').value = ''; runSearch(); }
+}
 $('ib-q').value = S.q;
-var qTimer; $('ib-q').addEventListener('input', function(){ clearTimeout(qTimer); qTimer = setTimeout(function(){ S.q = $('ib-q').value.trim(); S.page = 0; syncUrl(); loadList(); }, 450); });
-$('ib-unread').onclick = function(){ S.unread = !S.unread; this.classList.toggle('on', S.unread); S.page = 0; loadList(); };
+var qTimer; $('ib-q').addEventListener('input', function(){ clearTimeout(qTimer); $('ib-clear-search').disabled = !this.value && !S.q; qTimer = setTimeout(runSearch, 450); });
+$('ib-q').addEventListener('keydown', searchKey);
+$('ib-clear-search').onclick = function(){ $('ib-q').value = ''; runSearch(); $('ib-q').focus(); };
+$('ib-mailboxes').addEventListener('click', function(ev){ var b = ev.target.closest('[data-mailbox]'); if (b) switchMailbox(b.dataset.mailbox); });
+$('ib-filters').addEventListener('click', function(ev){ var b = ev.target.closest('[data-filter]'); if (b) quickFilter(b.dataset.filter); });
+$('ib-save-search').onclick = saveSearch;
+$('ib-list-actions').onclick = function(){ listActions(this); };
+$('ib-saved').addEventListener('click', function(ev){
+  var b = ev.target.closest('[data-saved]'); if (b) { openSavedSearch(+b.dataset.saved); return; }
+  b = ev.target.closest('[data-remove-saved]'); if (b) { var rows = savedSearches(); rows.splice(+b.dataset.removeSaved, 1); writeSearches(rows); }
+});
+$('ib-copy-link').onclick = function(){
+  syncUrl(); var u = new URL(location.href); u.searchParams.set('a', S.acc); u.searchParams.delete('u'); u.searchParams.delete('compose');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u.href).then(function(){ toast('הקישור לתיבה הועתק'); }).catch(function(){ toast('לא ניתן להעתיק — אפשר להעתיק את הכתובת מסרגל הדפדפן'); });
+  else toast('אפשר להעתיק את הקישור מסרגל הכתובות בדפדפן');
+};
+$('ib-unread').onclick = function(){ quickFilter('unread'); };
 $('ib-refresh').onclick = function(){ S.page = 0; this.removeAttribute('data-pending'); this.title = 'רענון'; loadList({quiet: 1}); loadAllFolders(true); if (!S.open) drawHome(); };
 $('ib-adv').onclick = function(){ if ($('ib-menu').classList.contains('on')) closeMenu(); else searchMenu(this); };
 $('ib-look').onclick = function(){ if ($('ib-menu').classList.contains('on')) closeMenu(); else lookMenu(this); };
@@ -1370,7 +1614,7 @@ function fitBox(){                                     // 📐 the inbox fills t
   var box = $('ibx'); if (!box) return;
   if (window.innerWidth <= 820) { box.style.height = box.style.minHeight = ''; return; }
   var top = box.getBoundingClientRect().top + window.scrollY;
-  box.style.minHeight = '420px'; box.style.height = Math.max(420, window.innerHeight - top - 14) + 'px';
+  box.style.minHeight = '260px'; box.style.height = Math.max(260, window.innerHeight - top - 14) + 'px';
 }
 function stop(){ window.removeEventListener('resize', fitBox); clearInterval(timer); clearInterval(S.autosave); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', unload); document.removeEventListener('mousedown', outside); window.removeEventListener('message', fitFrame); window.__ibx = null; }
 function unload(){ if (S.comp) saveDraft(true); }
@@ -1382,7 +1626,7 @@ window.__ibx = {stop: stop, beforeLeave: function(){
 window.addEventListener('resize', fitBox); fitBox(); setTimeout(fitBox, 300);
 
 if (B.solo) { document.body.classList.add('solo'); setTimeout(fitBox, 50); }
-applyLook(); drawFolders(); loadAllFolders(false); if (S.acc !== '*') loadFolders(S.acc, true);
+applyLook(); drawFolders(); drawQuickFilters(); drawSavedSearches(); loadAllFolders(false); if (S.acc !== '*') loadFolders(S.acc, true);
 if (!B.uid) drawHome();
 api('/inbox_poll.json').then(function(d){ S.v = d.v; }).catch(function(){});
 if (B.compose) { compose('new'); if (B.to) $('ib-c-to').value = B.to; }

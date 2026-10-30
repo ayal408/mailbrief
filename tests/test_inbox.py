@@ -465,6 +465,20 @@ class InboxServer(InboxBase):
         resp = conn.getresponse()
         return resp, json.loads(resp.read() or b'{}')
 
+    def test_overview_only_reads_the_selected_mailbox(self):
+        with mock.patch('mailbrief.web.server.view.emails', return_value=['me@gmail.com', 'work@example.com']), \
+                mock.patch('mailbrief.web.server.mailbox.overview', return_value={'accounts': [], 'latest': [], 'week': []}) as overview:
+            resp, _ = self.get('/inbox_overview.json?a=work%40example.com')
+            self.assertEqual(resp.status, 200)
+            overview.assert_called_once_with(['work@example.com'])
+            overview.reset_mock()
+            resp, _ = self.get('/inbox_overview.json?a=removed%40example.com')
+            self.assertEqual(resp.status, 400)
+            overview.assert_not_called()
+            resp, _ = self.get('/inbox_overview.json?a=*')
+            self.assertEqual(resp.status, 200)
+            overview.assert_called_once_with(['me@gmail.com', 'work@example.com'])
+
     def test_other_websites_cannot_use_the_inbox(self):
         conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
         conn.request('GET', '/inbox_msg.json?a=me@gmail.com&f=INBOX&u=1',

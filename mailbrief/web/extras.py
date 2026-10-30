@@ -103,8 +103,13 @@ HTML = """
   function setActive(path){
     Array.prototype.forEach.call(document.querySelectorAll('nav.tabs a'), function(a){
       var p = new URL(a.href).pathname;
-      a.classList.toggle('on', p === path || (p === '/clients' && path === '/client'));
+      var active = p === path || (p === '/clients' && path === '/client');
+      a.classList.toggle('on', active);
+      if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
+    var menu = document.querySelector('.nav-more'); if (menu) menu.open = false;
+    var shell = document.getElementById('mb-navigation');
+    if (shell) { var focusInMenu = shell.contains(document.activeElement); shell.open = false; if (focusInMenu) shell.querySelector('summary').focus({preventScroll:true}); }
   }
   function runScripts(root){
     Array.prototype.forEach.call(root.querySelectorAll('script'), function(old){
@@ -201,6 +206,16 @@ HTML = """
     hello.textContent = greet + (who ? ' ' + who : '') + (back ? ', ' + back : '') + '!';
   }
   var nav = document.getElementById('mb-tabs');
+  var navigationShell = document.getElementById('mb-navigation');
+  if (navigationShell) navigationShell.addEventListener('toggle', function(){ window.dispatchEvent(new Event('resize')); });
+  document.addEventListener('click', function(ev){
+    var menu = document.querySelector('.nav-more');
+    if (menu && !menu.contains(ev.target)) menu.open = false;
+  });
+  window.addEventListener('keydown', function(ev){
+    var menu = document.querySelector('.nav-more');
+    if (ev.key === 'Escape' && menu && menu.open) { menu.open = false; menu.querySelector('summary').focus(); }
+  });
   function stuck(){ if (nav) nav.classList.toggle('stuck', window.scrollY > 0 && nav.getBoundingClientRect().top <= 0.5); }
   window.addEventListener('scroll', stuck, {passive: true}); stuck();
   var LINES = ['MailBrief — המייל שלך, מסודר ✨', 'בלי AI, בלי ענן — הכול נשאר במחשב שלך 🔒', 'קבלות, אוטומציות, יומן ומשימות — במקום אחד',

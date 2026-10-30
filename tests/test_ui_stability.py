@@ -3,7 +3,9 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from mailbrief.web import extras, inbox
 
@@ -11,8 +13,144 @@ from mailbrief.web import extras, inbox
 @unittest.skipUnless(shutil.which('node'), 'Node is needed for UI regression scenarios')
 class StableUI(unittest.TestCase):
     def run_js(self, script):
-        result = subprocess.run([shutil.which('node')], input=script, capture_output=True, text=True, timeout=45, encoding='utf-8')
+        # Run a CommonJS file explicitly: do not depend on Node's stdin/REPL
+        # detection on Windows. Allow for cold-start scanning on hosted runners.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'scenario.cjs'
+            path.write_text(script, encoding='utf-8')
+            result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_page_navigation_collapses_header_and_restores_focus(self):
+        fn = extras.HTML.split('  function setActive(path){', 1)[1].split('  function runScripts(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var focused=false,menu={open:true},shell={open:true,contains(){return true;},querySelector(){return {focus(){focused=true;}};}};
+var document={activeElement:{},querySelectorAll(){return [];},querySelector(){return menu;},getElementById(){return shell;}};
+''' + 'function setActive(path){' + fn + '''
+setActive('/inbox');assert.equal(shell.open,false);assert.equal(menu.open,false);assert.equal(focused,true);
+''')
+
+    def test_enter_searches_immediately_and_escape_clears(self):
+        functions = inbox.JS.split('function runSearch(){', 1)[1].split("$('ib-q').value = S.q;", 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={q:'old',checked:{x:1},items:[1],groups:[1]},qTimer=1,input={value:'new'},queries=[];
+function $(){return input;}function drawQuickFilters(){}function listContext(){}function syncUrl(){}function loadList(){queries.push(S.q);}
+''' + 'function runSearch(){' + functions + '''
+function event(key,composing){return {key,isComposing:composing,preventDefault(){},stopPropagation(){}};}
+searchKey(event('Enter',true));assert.equal(queries.length,0);searchKey(event('Enter',false));assert.deepEqual(queries,['new']);assert.deepEqual(S.checked,{});
+searchKey(event('Escape',false));assert.deepEqual(queries,['new','']);assert.equal(input.value,'');
+''')
+
+    def test_display_presets_preserve_palette_and_reset_every_setting(self):
+        functions = inbox.JS.split('var LOOK = ', 1)[1].split('function lookMenu(btn){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var saved=JSON.stringify({palette:'forest',font:'',rows:'cards'}),notices=[];
+var localStorage={getItem(){return saved;},setItem(k,v){saved=v;}},classes={};
+var box={dataset:{},style:{},classList:{toggle(k,v){classes[k]=v;}}},workspace={dataset:{}};
+function $(id){return id==='ibx'?box:workspace;}function fitBox(){}function toast(t){notices.push(t);}
+''' + 'var LOOK = ' + functions + '''
+lookPreset('reading');assert.equal(workspace.dataset.palette,'forest');assert.equal(classes.bottom,true);assert.equal(classes.cards,false);
+assert.equal(box.dataset.textSize,'large');assert.equal(JSON.parse(saved).palette,'forest');
+lookPreset('compact');assert.equal(classes.dense,true);assert.equal(classes.comfortable,false);assert.equal(classes['no-snippet'],true);
+lookPreset('cards');assert.equal(classes.cards,true);assert.equal(classes.nopane,true);assert.equal(classes.dense,false);
+lookPreset('reset');assert.deepEqual(JSON.parse(saved),{});assert.equal(workspace.dataset.palette,'purple');assert.equal(classes.cards,false);
+LOOK={palette:'__proto__',font:'__proto__'};applyLook();assert.equal(workspace.dataset.palette,'purple');assert.equal(box.style.fontFamily,'');
+localStorage.setItem=()=>{throw Error('blocked');};lookPreset('reading');assert.equal(classes.bottom,true);assert.equal(notices.length,1);
+''')
+
+    def test_invalid_stored_display_preferences_use_defaults(self):
+        expression = inbox.JS.split('var LOOK = ', 1)[1].split('var PALETTES', 1)[0]
+        for stored in ['null', '[]', '"invalid"', '{bad']:
+            self.run_js('const assert=require("node:assert/strict");var localStorage={getItem(){return ' + json.dumps(stored) + ';}};var LOOK = ' + expression + ';assert.deepEqual(LOOK,{});')
+
+    def test_csv_exports_only_selection_and_escapes_formulas_and_quotes(self):
+        functions = inbox.JS.split('function csvCell(value){', 1)[1].split('function exportMessages(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={folder:'INBOX',checked:{one:1},groups:[
+{key:'one',account:'a@example.com',rows:[{uid:1,from:{name:'=SUM(A1)',email:'sender@example.com'},subject:'a,"b"',at:'2026-10-30',flags:[],attach:true}]},
+{key:'two',account:'b@example.com',rows:[{uid:1,from:{name:'Other',email:'other@example.com'},subject:'private',at:'2026-10-30',flags:['\\\\Seen'],attach:false}]}]};
+''' + 'function csvCell(value){' + functions + '''
+var csv=messageCSV(true);assert.equal(csv.charCodeAt(0),0xFEFF);assert.match(csv,/'=SUM/);assert.match(csv, /"a,""b"""/);
+assert.ok(!csv.includes('private'));assert.ok(messageCSV(false).includes('private'));
+S.checked={};assert.equal(messageCSV(true),'');assert.equal(csvCell('  +1').charCodeAt(1), 39);
+''')
+
+    def test_message_navigation_distinguishes_account_and_folder(self):
+        functions = inbox.JS.split('function neighborIndex(delta){', 1)[1].split("var CAT =", 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={folder:'INBOX',open:{account:'b@example.com',folder:'INBOX',uid:1},groups:[
+{account:'a@example.com',rows:[{uid:1}]},{account:'b@example.com',rows:[{uid:1,folder:'Sent'}]},
+{account:'b@example.com',rows:[{uid:1}]},{account:'b@example.com',rows:[{uid:2}]}]};
+var opened=[];function openGroup(i){opened.push(i);}function drawList(){}
+''' + 'function neighborIndex(delta){' + functions + '''
+assert.equal(neighborIndex(-1),1);assert.equal(neighborIndex(1),3);moveMessage(1);assert.deepEqual(opened,[3]);
+S.open.uid=2;assert.equal(neighborIndex(1),-1);moveMessage(1);assert.deepEqual(opened,[3]);
+S.open.uid=99;assert.equal(neighborIndex(-1),-1);
+''')
+
+    def test_quick_selection_only_changes_loaded_rows(self):
+        fn = inbox.JS.split('function selectMessages(mode){', 1)[1].split('function csvCell(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={checked:{a:1},groups:[{key:'a',unread:false},{key:'b',unread:true},{key:'c',unread:true}]};function drawList(){}
+''' + 'function selectMessages(mode){' + fn + '''
+selectMessages('unread');assert.deepEqual(S.checked,{b:1,c:1});selectMessages('invert');assert.deepEqual(S.checked,{a:1});
+selectMessages('clear');assert.deepEqual(S.checked,{});assert.equal(S.lastCk,null);
+''')
+
+    def test_switching_mailboxes_restores_own_filters_and_clears_reader(self):
+        switch = inbox.JS.split('function switchMailbox(acc){', 1)[1].split('function drawQuickFilters(){', 1)[0]
+        choose = inbox.JS.split('function choose(acc, folder){', 1)[1].split('function selectedRefs(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var B={accounts:[{email:'a@example.com'},{email:'b@example.com'}]};
+var S={acc:'a@example.com',folder:'Sent',q:'invoice',unread:true,open:{uid:7},checked:{old:1},items:[1],groups:[1],folders:{}};
+var MAILBOX_STATE=Object.create(null),qTimer=1,input={},box={classList:{remove(){}}},requests=[];
+function $(id){return id==='ib-q'?input:box;}var localStorage={setItem(){}};
+function closeMenu(){}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function syncUrl(){}
+function loadList(){requests.push([S.acc,S.folder,S.q,S.unread]);}function drawHome(){}function loadFolders(){}
+''' + 'function choose(acc, folder){' + choose + 'function switchMailbox(acc){' + switch + '''
+switchMailbox('b@example.com');assert.deepEqual(requests[0],['b@example.com','INBOX','',false]);assert.equal(S.open,null);assert.deepEqual(S.checked,{});
+S.folder='Drafts';S.q='subject:work';switchMailbox('a@example.com');assert.deepEqual(requests[1],['a@example.com','Sent','invoice',true]);
+switchMailbox('b@example.com');assert.deepEqual(requests[2],['b@example.com','Drafts','subject:work',false]);
+switchMailbox('unknown@example.com');assert.equal(requests.length,3);
+''')
+
+    def test_saved_searches_are_separate_for_each_mailbox(self):
+        functions = inbox.JS.split('function savedSearches(){', 1)[1].split('function drawMailboxes(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var data={},S={acc:'a@example.com',folder:'INBOX',unread:false},input={value:'from:client'};
+var localStorage={getItem(k){return data[k]||null;},setItem(k,v){data[k]=v;}};
+var saved={innerHTML:''};function $(id){return id==='ib-q'?input:saved;}function toast(){}function esc(t){return t;}function choose(a,f){S.acc=a;S.folder=f;}
+''' + 'function savedSearches(){' + functions + '''
+saveSearch();saveSearch();assert.equal(savedSearches().length,1);
+S.acc='b@example.com';assert.deepEqual(savedSearches(),[]);input.value='has:attachment';saveSearch();
+S.acc='a@example.com';assert.equal(savedSearches()[0].q,'from:client');openSavedSearch(0);assert.equal(S.q,'from:client');
+data['ib-searches:a@example.com']='broken';assert.deepEqual(savedSearches(),[]);
+''')
+
+    def test_quick_filters_toggle_without_losing_search_words(self):
+        fn = inbox.JS.split('function quickFilter(token){', 1)[1].split('function api(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var qTimer=1,S={q:'from:client',unread:false},input={value:'from:client'};
+function $(){return input;}function drawQuickFilters(){}function syncUrl(){}function loadList(){}
+''' + 'function quickFilter(token){' + fn + '''
+quickFilter('has:attachment');assert.equal(S.q,'from:client has:attachment');quickFilter('has:attachment');assert.equal(S.q,'from:client');
+quickFilter('unread');assert.equal(S.unread,true);assert.equal(S.q,'from:client');quickFilter('all');assert.equal(S.q,'');assert.equal(S.unread,false);
+''')
+
+    def test_first_page_server_error_can_be_retried(self):
+        fn = inbox.JS.split('function loadList(opts){', 1)[1].split("$('ib-cats').addEventListener", 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var listSeq=0,morePending=0,pending=[],rows={innerHTML:'',scrollTop:0},retry={};
+var S={acc:'a',folder:'INBOX',page:0,q:'query',unread:false,items:[],checked:{}};
+function $(id){return id==='ib-retry'?retry:id==='ib-more'?null:rows;}
+function api(){return new Promise(resolve=>pending.push(resolve));}function group(items){return items;}
+function drawList(){rows.innerHTML='loaded';}function toast(){}function esc(s){return s.replace(/</g,'&lt;');}
+''' + 'function loadList(opts){' + fn + '''
+(async()=>{var request=loadList();pending.shift()({items:[],errors:['<offline>'],total:0});await request;
+assert.match(rows.innerHTML,/role="alert"/);assert.match(rows.innerHTML,/&lt;offline>/);assert.equal(typeof retry.onclick,'function');
+retry.onclick();pending.shift()({items:[{key:'one'}],total:1});await new Promise(setImmediate);
+assert.equal(rows.innerHTML,'loaded');assert.equal(S.items.length,1);})();
+''')
 
     def test_older_navigation_response_cannot_replace_latest_page(self):
         fn = extras.HTML.split('  function navigate(', 1)[1].split("  document.addEventListener('click'", 1)[0]
