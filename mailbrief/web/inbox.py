@@ -528,6 +528,7 @@ def inbox_page(start=None):
       <button class="ib-ic" type="button" id="ib-refresh" title="רענון">⟳ רענון</button>
       <button class="ib-ic" type="button" id="ib-look" title="תצוגה: צפיפות, גופן, חלונית קריאה">🎛️ תצוגה</button>
       <button class="ib-ic" type="button" id="ib-list-actions" title="בחירה מהירה וייצוא" aria-label="פעולות על רשימת ההודעות">⋯</button>
+      <button class="ib-ic" type="button" id="ib-shortcuts" title="קיצורי מקלדת (?)" aria-label="הצגת קיצורי מקלדת">⌨️</button>
       <div class="ib-bulk" id="ib-bulk"><span id="ib-bulk-n"></span>
         <button class="ib-ic" type="button" data-bulk="read" title="סימון כנקרא">✉️</button><button class="ib-ic" type="button" data-bulk="unread" title="סימון כלא נקרא">●</button>
         <button class="ib-ic" type="button" data-bulk="star" title="כוכב">⭐</button><button class="ib-ic" type="button" data-bulk="archive" title="לארכיון (E)">🗄️</button>
@@ -788,7 +789,29 @@ function menu(anchor, html, setup){
   if (setup) setup(m);
   var first = m.querySelector('input[type=text]'); if (first) first.focus();
 }
-function closeMenu(){ $('ib-menu').classList.remove('on'); }
+function closeMenu(){ var m = $('ib-menu'); m.classList.remove('on'); m.removeAttribute('role'); m.removeAttribute('aria-label'); }
+function shortcutHelp(){
+  var rows = [['J / K או חצים', 'מעבר בין הודעות'], ['Enter', 'פתיחת ההודעה שנבחרה'], ['C', 'הודעה חדשה'], ['R / A / F', 'תשובה / תשובה לכולם / העברה'], ['E / Delete', 'ארכיון / מחיקה'], ['S / U', 'כוכב / שינוי מצב קריאה'], ['X', 'בחירת שיחה'], ['/', 'מעבר לחיפוש'], ['Escape', 'סגירת תפריט או הודעה'], ['Ctrl+Enter', 'שליחה מתוך חלונית הכתיבה']];
+  menu($('ib-shortcuts'), '<div class="row"><b>⌨️ קיצורי מקלדת</b><button class="ib-ic" id="ib-help-close" type="button" aria-label="סגירת העזרה">✕</button></div>' +
+    '<p class="muted" style="max-width:310px;padding:0 8px">קיצורי ההודעות פועלים כשהסמן מחוץ לשדה כתיבה. קיצורי האותיות פועלים גם כשהמקלדת בעברית.</p><table>' +
+    rows.map(function(r){ return '<tr><td><kbd dir="ltr">' + esc(r[0]) + '</kbd></td><td>' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>', function(m){
+      m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'קיצורי מקלדת');
+      $('ib-help-close').onclick = function(){ closeMenu(); $('ib-shortcuts').focus(); }; $('ib-help-close').focus();
+    });
+}
+function findSender(){
+  var m = S.open; if (!m || !m.from || !m.from.email) return;
+  // Search the source account and folder even when the reader was opened from
+  // the unified inbox. Quote the address so it stays one search operand.
+  var address = m.from.email.replace(/["\\\r\n]/g, '');
+  S.q = 'from:"' + address + '"'; S.unread = false; $('ib-q').value = S.q;
+  choose(m.account, m.folder); toast('חיפוש לפי השולח בתיקייה הנוכחית');
+}
+function copySender(){
+  var address = S.open && S.open.from && S.open.from.email; if (!address) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(address).then(function(){ toast('כתובת השולח הועתקה'); }).catch(function(){ toast('ההעתקה נחסמה — אפשר לסמן את כתובת השולח ולהעתיק'); });
+  else toast('אפשר לסמן את כתובת השולח ולהעתיק');
+}
 function outside(ev){ var m = $('ib-menu'); if (m && m.classList.contains('on') && !m.contains(ev.target) && !ev.target.closest('#ib-adv,#ib-look')) closeMenu(); }
 function folderOp(acc, folder, op, extra){
   return post('/inbox_folder', Object.assign({a: acc, f: folder, op: op}, extra || {})).then(function(d){ closeMenu(); return loadFolders(acc, true).then(function(){ return d; }); }).catch(fail);
@@ -1219,7 +1242,8 @@ function drawMessage(){
     '<button class="ib-ic" type="button" data-m="pop" title="פתיחה בחלון נפרד — אפשר להזיז למסך אחר" style="margin-inline-start:auto">🗗 חלון</button>' +
     '<button class="ib-ic' + (WIDE ? ' on' : '') + '" type="button" data-m="wide" title="' + (WIDE ? 'חזרה לגודל הרגיל (Esc)' : 'הגדלת ההודעה לכל החלון (Z)') + '">' + (WIDE ? '🗗 הקטנה' : '⛶ הגדלה') + '</button>';
   var meta = '<div class="ib-meta">' + avatar(m.from.name, m.from.email) + '<div style="flex:1;min-width:0"><b dir="auto">' + esc(m.from.name || m.from.email) + '</b> <span dir="ltr">&lt;' + esc(m.from.email) + '&gt;</span><br>' +
-    'אל: ' + people(m.to) + (m.cc.length ? ' · עותק: ' + people(m.cc) : '') + (multi && !m.to.concat(m.cc).some(function(p){ return (p.email || '').toLowerCase() === m.account.toLowerCase(); }) ? ' · <span style="color:' + color(m.account) + '">●</span> ' + esc(m.account) : '') + '</div>' +
+    'אל: ' + people(m.to) + (m.cc.length ? ' · עותק: ' + people(m.cc) : '') + (multi && !m.to.concat(m.cc).some(function(p){ return (p.email || '').toLowerCase() === m.account.toLowerCase(); }) ? ' · <span style="color:' + color(m.account) + '">●</span> ' + esc(m.account) : '') +
+    '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="ib-ic" type="button" data-m="find-sender">🔍 הודעות מהשולח בתיקייה</button><button class="ib-ic" type="button" data-m="copy-sender">📋 העתקת כתובת</button></div></div>' +
     '<div style="white-space:nowrap;text-align:end">' + (m.date ? new Date(m.date).toLocaleString('he-IL', {dateStyle: 'medium', timeStyle: 'short'}) +
       '<br><span style="font-size:12px">' + hebDate(new Date(m.date)) + '</span>' : '') + '</div></div>';
   var card = '';
@@ -1443,6 +1467,8 @@ function translateHere(on){                             // 🌐 the message itse
 function msgAction(k){
   var m = S.open; if (!m) return; var ref = [{a: m.account, f: m.folder, u: m.uid}];
   if (k === 'prev' || k === 'next') { moveMessage(k === 'prev' ? -1 : 1); return; }
+  if (k === 'find-sender') { findSender(); return; }
+  if (k === 'copy-sender') { copySender(); return; }
   if (!m.files && !/^(pop|wide|back|reply|all|fwd|archive|delete|unread|spam|notspam)$/.test(k)) return;   // still loading
   if (k === 'back') { closeMessage(); return; }
   if (k === 'wide') { setWide(!WIDE); return; }
@@ -1476,6 +1502,7 @@ $('ib-mailboxes').addEventListener('click', function(ev){ var b = ev.target.clos
 $('ib-filters').addEventListener('click', function(ev){ var b = ev.target.closest('[data-filter]'); if (b) quickFilter(b.dataset.filter); });
 $('ib-save-search').onclick = saveSearch;
 $('ib-list-actions').onclick = function(){ listActions(this); };
+$('ib-shortcuts').onclick = shortcutHelp;
 $('ib-saved').addEventListener('click', function(ev){
   var b = ev.target.closest('[data-saved]'); if (b) { openSavedSearch(+b.dataset.saved); return; }
   b = ev.target.closest('[data-remove-saved]'); if (b) { var rows = savedSearches(); rows.splice(+b.dataset.removeSaved, 1); writeSearches(rows); }
@@ -1571,9 +1598,10 @@ $('ib-rows').addEventListener('contextmenu', function(ev){
 function keys(ev){
   if (!$('ibx')) return stop();
   if (ev.key === 'Escape' && $('ib-view').classList.contains('on')) { closeView(); return; }
-  if (ev.key === 'Escape' && $('ib-menu').classList.contains('on')) { closeMenu(); return; }
+  if (ev.key === 'Escape' && $('ib-menu').classList.contains('on')) { var helpOpen = $('ib-menu').getAttribute('role') === 'dialog'; closeMenu(); if (helpOpen) $('ib-shortcuts').focus(); return; }
   var typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
   if (typing || ev.ctrlKey || ev.metaKey || ev.altKey || $('ib-comp').classList.contains('on')) return;
+  if (ev.key === '?') { ev.preventDefault(); shortcutHelp(); return; }
   var k = ev.code && ev.code.indexOf('Key') === 0 ? ev.code.slice(3).toLowerCase() : ev.key;
   if (k === 'g') { S.gpending = Date.now(); return; }
   if (Date.now() - S.gpending < 1500) return;             // G + letter = the page shortcuts

@@ -21,6 +21,28 @@ class StableUI(unittest.TestCase):
             result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_sender_search_uses_message_account_and_folder(self):
+        fn = inbox.JS.split('function findSender(){', 1)[1].split('function copySender(){', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var input={},picked=[];
+var S={acc:'*',unread:true,open:{account:'work@example.com',folder:'Archive',from:{email:'sender@example.com'}}};
+function $(){return input;}function choose(a,f){picked.push([a,f]);S.open=null;}function toast(){}
+''' + 'function findSender(){' + fn + '''
+findSender();assert.deepEqual(picked,[['work@example.com','Archive']]);assert.equal(S.unread,false);assert.equal(S.q,'from:"sender@example.com"');assert.equal(input.value,S.q);
+findSender();assert.equal(picked.length,1);
+''')
+
+    def test_copy_sender_handles_clipboard_success_and_rejection(self):
+        fn = inbox.JS.split('function copySender(){', 1)[1].split('function outside(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var S={open:{from:{email:'sender@example.com'}}},copied=[],notices=[];
+var navigator={clipboard:{writeText(s){copied.push(s);return Promise.resolve();}}};function toast(t){notices.push(t);}
+''' + 'function copySender(){' + fn + '''
+(async()=>{copySender();await new Promise(setImmediate);assert.deepEqual(copied,['sender@example.com']);assert.match(notices[0],/הועתקה/);
+navigator.clipboard.writeText=()=>Promise.reject(Error('blocked'));copySender();await new Promise(setImmediate);assert.match(notices[1],/נחסמה/);
+navigator.clipboard=null;copySender();assert.match(notices[2],/לסמן/);})();
+''')
+
     def test_page_navigation_collapses_header_and_restores_focus(self):
         fn = extras.HTML.split('  function setActive(path){', 1)[1].split('  function runScripts(', 1)[0]
         self.run_js('''
