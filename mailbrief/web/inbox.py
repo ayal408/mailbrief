@@ -36,7 +36,8 @@ def sender_profile(address, sender_email):
     known = view.account(sender_email)
     photo = known.get('avatar') or ''
     photo = '/avatar/' + quote(photo) if re.fullmatch(r'[a-zA-Z0-9_.-]+', photo) else ''
-    return {'account': acc['email'], 'email': sender_email,
+    from mailbrief.features.sender_notes import get_note
+    return {'account': acc['email'], 'email': sender_email, 'note': get_note(acc['email'], sender_email),
             'name': contact.get('name') or next((h['name'] for h in history if h.get('name')), '') or known.get('display_name', ''),
             'phone': contact.get('phone') or '', 'photo': photo, 'count': len(history),
             'first': history[-1].get('date', '') if history else '', 'last': history[0].get('date', '') if history else '',
@@ -857,9 +858,15 @@ function copySender(){
   else toast('אפשר לסמן את כתובת השולח ולהעתיק');
 }
 var profileSeq = 0;
-function closeSenderProfile(){ var dialog = $('ib-profile'); ++profileSeq; if (dialog && dialog.open) dialog.close(); }
+var profileDirty = false, profileSaving = false;
+function closeSenderProfile(){
+  if (profileSaving) { toast('ההערה נשמרת — אפשר לסגור מיד בסיום'); return false; }
+  if (profileDirty && !window.confirm('יש הערה שלא נשמרה. לסגור ולוותר על השינויים?')) return false;
+  var dialog = $('ib-profile'); ++profileSeq; profileDirty = false; if (dialog && dialog.open) dialog.close(); return true;
+}
 function showSenderProfile(account, person){
   if (!person || !person.email) return;
+  if ((profileDirty || profileSaving) && !closeSenderProfile()) return;
   var dialog = $('ib-profile'), seq = ++profileSeq;
   var closeButton = '<button type="button" class="ib-ic" data-profile-close="1" aria-label="סגירת הפרופיל" style="margin-inline-start:auto">✕</button>';
   dialog.innerHTML = '<header><b>פרופיל השולח</b>' + closeButton + '</header><p role="status">טוען פרטים שנשמרו במחשב…</p>';
@@ -874,8 +881,20 @@ function showSenderProfile(account, person){
       (p.last ? '<p class="muted">התכתבות אחרונה: ' + esc(p.last) + ' · ראשונה בהיסטוריה: ' + esc(p.first) + '</p>' : '<p class="muted">טרם נשמרה היסטוריית התכתבות עם השולח בתיבה הזו.</p>') +
       '<div class="profile-actions"><button class="ib-ic" type="button" id="ib-profile-search">🔍 חיפוש בתיבה</button><button class="ib-ic" type="button" id="ib-profile-copy">📋 העתקת כתובת</button><a href="/contacts">אנשי קשר</a></div>' +
       (p.recent.length ? '<h3>הודעות אחרונות שנשמרו</h3>' + p.recent.map(function(r){ return '<div class="recent-mail">' + (r.link ? '<a href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.subject) + '</a>' : esc(r.subject)) + '<div class="muted">' + esc(r.date) + '</div></div>'; }).join('') : '') +
+      '<label for="ib-profile-note">הערה אישית — נשמרת רק במחשב ובתיבה הזו</label><textarea id="ib-profile-note" maxlength="3000" rows="4" style="width:100%;font:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px">' + esc((p.note || {}).text || '') + '</textarea>' +
+      '<button class="ib-ic" type="button" id="ib-profile-note-save">שמירת הערה</button><p id="ib-profile-note-status" role="status" class="muted"></p>' +
       '<p class="muted" style="font-size:12px">הנתונים מבוססים על ההיסטוריה המקומית, ולא על כל הדואר שבתיבה. פרטי הקשר משותפים לפי כתובת האימייל.</p>';
-    $('ib-profile-search').onclick = function(){ closeSenderProfile(); S.q = 'from:"' + p.email.replace(/["\\\r\n]/g, '') + '"'; S.unread = false; $('ib-q').value = S.q; choose(account, 'INBOX'); };
+    var savedText = (p.note || {}).text || '', revision = (p.note || {}).revision || 0;
+    $('ib-profile-note').oninput = function(){ profileDirty = this.value !== savedText; $('ib-profile-note-status').textContent = profileDirty ? 'שינויים שלא נשמרו' : ''; };
+    $('ib-profile-note-save').onclick = function(){
+      var text = $('ib-profile-note').value, button = this, status = $('ib-profile-note-status');
+      profileSaving = true; button.disabled = true; status.textContent = 'שומר…';
+      post('/inbox_sender_note', {a: account, email: p.email, text: text, revision: revision}).then(function(note){
+        savedText = text; revision = note.revision; profileDirty = $('ib-profile-note').value !== savedText;
+        status.textContent = profileDirty ? 'הגרסה הקודמת נשמרה; יש שינויים נוספים שלא נשמרו' : 'ההערה נשמרה במחשב';
+      }).catch(function(error){ status.textContent = error.message; }).then(function(){ profileSaving = false; button.disabled = false; });
+    };
+    $('ib-profile-search').onclick = function(){ if (!closeSenderProfile()) return; S.q = 'from:"' + p.email.replace(/["\\\r\n]/g, '') + '"'; S.unread = false; $('ib-q').value = S.q; choose(account, 'INBOX'); };
     $('ib-profile-copy').onclick = function(){
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(p.email).then(function(){ toast('כתובת השולח הועתקה'); }).catch(function(){ toast('אפשר לסמן את הכתובת ולהעתיק'); });
       else toast('אפשר לסמן את הכתובת ולהעתיק');
@@ -1131,7 +1150,7 @@ function loadList(opts){
 }
 $('ib-cats').addEventListener('click', function(ev){ var b = ev.target.closest('[data-cat]'); if (b) choose(S.acc, b.dataset.cat); });
 function choose(acc, folder){
-  closeSenderProfile();
+  if (!closeSenderProfile()) return;
   clearTimeout(qTimer); closeMenu();
   S.acc = acc; S.folder = folder; S.page = 0; S.items = []; S.groups = []; S.checked = {}; S.kb = -1; S.total = 0;
   S.open = null; $('ibx').classList.remove('reading', 'wide');
@@ -1602,6 +1621,7 @@ $('ib-save-search').onclick = saveSearch;
 $('ib-list-actions').onclick = function(){ listActions(this); };
 $('ib-shortcuts').onclick = shortcutHelp;
 $('ib-profile').addEventListener('click', function(ev){ if (ev.target.closest('[data-profile-close]')) closeSenderProfile(); });
+$('ib-profile').addEventListener('cancel', function(ev){ ev.preventDefault(); closeSenderProfile(); });
 $('ib-sidebar').onclick = function(){ LOOK.sidebar = LOOK.sidebar === 'hide' ? '' : 'hide'; saveLook(); };
 $('ib-saved').addEventListener('click', function(ev){
   var b = ev.target.closest('[data-saved]'); if (b) { openSavedSearch(+b.dataset.saved); return; }
@@ -1750,6 +1770,7 @@ function stop(){ window.removeEventListener('resize', fitBox); clearInterval(tim
 function unload(){ if (S.comp) saveDraft(true); }
 window.addEventListener('keydown', keys); window.addEventListener('beforeunload', unload); document.addEventListener('mousedown', outside); window.addEventListener('message', fitFrame);
 window.__ibx = {stop: stop, beforeLeave: function(){
+  if ((profileDirty || profileSaving) && !closeSenderProfile()) return Promise.reject(new Error('ההערה טרם נשמרה'));
   if(!S.comp)return Promise.resolve();if(S.comp.saving)return S.comp.saving.then(function(){return S.comp&&S.comp.dirty?saveDraft(true):null;});
   return S.comp.dirty?saveDraft(true):Promise.resolve();
 }};

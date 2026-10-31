@@ -953,6 +953,15 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._inbox_error(exc)
 
+    def post_inbox_sender_note(self, f):
+        def work():
+            from mailbrief.features.sender_notes import save_note
+            revision = f.get('revision', '')
+            if not revision.isdigit():
+                raise ValueError('גרסת ההערה אינה תקינה. יש לפתוח את הפרופיל מחדש')
+            return save_note(f.get('a', ''), f.get('email', ''), f.get('text', ''), int(revision))
+        return self._inbox_post(f, work)
+
     def post_inbox_act(self, f):
         def work():
             address, folder, what = f.get('a', ''), f.get('f', 'INBOX'), f.get('act', '')
