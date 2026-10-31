@@ -953,6 +953,16 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._inbox_error(exc)
 
+    def post_auto_update(self, f):
+        from mailbrief.storage import file_lock
+        from mailbrief.features.auto_update import schedule_check
+        with file_lock(config.SETTINGS_FILE):
+            settings = load_json(config.SETTINGS_FILE, {})
+            settings['auto_update'] = f.get('enabled') == '1'
+            save_json(config.SETTINGS_FILE, settings)
+        schedule_check()
+        return ('/about', None)
+
     def post_inbox_sender_note(self, f):
         def work():
             from mailbrief.features.sender_notes import save_note
@@ -2137,6 +2147,10 @@ def serve(start_page=''):
     if not first_instance():                     # already running: ask it to show its window
         _show_running_copy(start_page)
         return
+    from mailbrief.features.auto_update import launch_staged, schedule_check
+    if launch_staged():
+        return
+    schedule_check()
     servers, v4, v6 = _claim(config.PORT)
     if not v4:                                   # the port is taken: an older copy is shown; another program never is
         _release(servers)
@@ -2175,6 +2189,8 @@ def _outbox_timer():
     while True:
         time.sleep(120)
         try:
+            from mailbrief.features.auto_update import schedule_check
+            schedule_check()
             live.start()                         # a mailbox connected since: watch it too
             if any(it['status'] == 'waiting' for it in outbox.outbox()):
                 outbox.send_due()

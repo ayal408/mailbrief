@@ -121,13 +121,23 @@ navigator.clipboard.writeText=()=>Promise.reject(Error('blocked'));copySender();
 navigator.clipboard=null;copySender();assert.match(notices[2],/לסמן/);})();
 ''')
 
-    def test_page_navigation_collapses_header_and_restores_focus(self):
+    def test_page_navigation_preserves_user_header_choice(self):
         fn = extras.HTML.split('  function setActive(path){', 1)[1].split('  function runScripts(', 1)[0]
         self.run_js('''
 const assert=require('node:assert/strict');var focused=false,menu={open:true},shell={open:true,contains(){return true;},querySelector(){return {focus(){focused=true;}};}};
 var document={activeElement:{},querySelectorAll(){return [];},querySelector(){return menu;},getElementById(){return shell;}};
 ''' + 'function setActive(path){' + fn + '''
-setActive('/inbox');assert.equal(shell.open,false);assert.equal(menu.open,false);assert.equal(focused,true);
+setActive('/inbox');assert.equal(shell.open,true);assert.equal(menu.open,false);assert.equal(focused,false);
+shell.open=false;setActive('/today');assert.equal(shell.open,false);
+''')
+
+    def test_header_choice_is_saved_and_restored(self):
+        fn = extras.HTML.split("  var navigationShell =", 1)[1].split("  document.addEventListener('click'", 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var saved='1',toggle=null,resizes=0,shell={open:false,addEventListener(name,fn){assert.equal(name,'toggle');toggle=fn;}};
+var document={getElementById(){return shell;}},localStorage={getItem(){return saved;},setItem(k,v){saved=v;}},window={dispatchEvent(){resizes++;}};
+''' + 'var navigationShell =' + fn + '''
+assert.equal(shell.open,true);shell.open=false;toggle();assert.equal(saved,'0');shell.open=true;toggle();assert.equal(saved,'1');assert.equal(resizes,2);
 ''')
 
     def test_enter_searches_immediately_and_escape_clears(self):
