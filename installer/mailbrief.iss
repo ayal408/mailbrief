@@ -76,6 +76,7 @@ Root: HKCU; Subkey: "Software\Classes\mailbrief\shell\open\command"; ValueType: 
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "{cm:InstallingWebView2}"; Flags: waituntilterminated; Check: NeedsWebView2
 ; after a normal install: offer to start it
 Filename: "{app}\MailBrief.exe"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\MailBrief.exe"; Flags: nowait; Check: IsAutoUpdate
 
 [UninstallRun]
 ; First let the app clear delivered notifications and its own registrations.
@@ -86,6 +87,11 @@ Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MailBrief Alerts"" /F
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MailBrief Today"" /F"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveToday"; StatusMsg: "Removing MailBrief tasks..."
 
 [Code]
+function IsAutoUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:AUTOUPDATE|0}') = '1';
+end;
+
 function IsMailBriefLocalURL(Value: String): Boolean;
 begin
   Value := Lowercase(Trim(Value));

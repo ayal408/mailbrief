@@ -50,6 +50,12 @@ class DistributionSafety(unittest.TestCase):
         self.assertIn('signtool.exe', workflow)
         self.assertIn('/tr http://timestamp.digicert.com', workflow)
 
+    def test_automatic_installer_restarts_only_for_the_update_parameter(self):
+        installer = (ROOT / 'installer/mailbrief.iss').read_text(encoding='utf-8')
+        self.assertIn('Check: IsAutoUpdate', installer)
+        self.assertIn("ExpandConstant('{param:AUTOUPDATE|0}') = '1'", installer)
+        self.assertIn('postinstall skipifsilent', installer)
+
 
 if __name__ == '__main__':
     unittest.main()

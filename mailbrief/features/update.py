@@ -1,4 +1,4 @@
-"""Check GitHub Releases for new versions. Installation stays an explicit user action."""
+"""Check GitHub Releases for new versions; automatic installation is staged separately."""
 import time
 
 from mailbrief import __version__, net
@@ -50,6 +50,8 @@ def cached_update():
     """Read the last release immediately and refresh it off the request thread."""
     from mailbrief import config
     from mailbrief.background import submit
+    from mailbrief.features.auto_update import schedule_check
+    schedule_check()
     cache = load_json(config.CACHE_FILE, {})
     hit = cache.get('release')
     if not hit or time.time() - hit.get('at', 0) >= 30 * 60:
