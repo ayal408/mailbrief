@@ -21,6 +21,25 @@ class StableUI(unittest.TestCase):
             result = subprocess.run([shutil.which('node'), str(path)], capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_profile_note_saving_keeps_edits_and_blocks_accidental_close(self):
+        fn = inbox.JS.split('var profileSeq = 0;', 1)[1].split('function outside(', 1)[0]
+        self.run_js('''
+const assert=require('node:assert/strict');var profileSeq=0,nodes={},pending=[],notices=[];
+var dialog={open:false,innerHTML:'',showModal(){this.open=true;},close(){this.open=false;},querySelector(){return {focus(){}};}};
+function $(id){return id==='ib-profile'?dialog:(nodes[id]||(nodes[id]={value:'',focus(){}}));}
+function api(){return Promise.resolve({account:'one@example.com',email:'sender@example.com',name:'Sender',count:0,waiting:0,recent:[],note:{text:'original',revision:0}});}
+function post(path,fields){return new Promise(resolve=>pending.push({fields,resolve}));}function esc(x){return String(x||'');}function avatar(){return '';}function toast(x){notices.push(x);}
+var window={confirm(){return false;}};
+''' + fn + '''
+(async()=>{showSenderProfile('one@example.com',{email:'sender@example.com'});await new Promise(setImmediate);
+var note=$('ib-profile-note');note.value='edited';note.oninput();assert.equal(closeSenderProfile(),false);assert.equal(dialog.open,true);
+$('ib-profile-note-save').onclick();assert.equal(pending[0].fields.text,'edited');assert.equal(closeSenderProfile(),false);
+note.value='new edit during saving';note.oninput();pending[0].resolve({revision:1});await new Promise(setImmediate);
+assert.equal(profileDirty,true);assert.equal(note.value,'new edit during saving');assert.equal($('ib-profile-note-save').disabled,false);
+$('ib-profile-note-save').onclick();assert.equal(pending[1].fields.revision,1);pending[1].resolve({revision:2});await new Promise(setImmediate);
+assert.equal(profileDirty,false);assert.equal(closeSenderProfile(),true);assert.equal(dialog.open,false);})();
+''')
+
     def test_sender_search_leaves_standalone_mode_and_url(self):
         choose = inbox.JS.split('function choose(acc, folder){', 1)[1].split('function selectedRefs(){', 1)[0]
         sender = inbox.JS.split('function findSender(){', 1)[1].split('function copySender(){', 1)[0]
@@ -32,7 +51,7 @@ var box={classList:{remove(){}}};function $(id){return id==='ib-q'?input:box;}
 var document={body:{classList:{remove(name){assert.equal(name,'solo');removed=true;}}}};
 var location={href:'http://mailbrief.localhost/inbox?a=one%40example.com&f=Archive&u=7&solo=1'};
 var history={state:null,replaceState(s,t,u){url=u;}};
-function closeSenderProfile(){}function closeMenu(){}function fitBox(){fitted=true;}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function drawHome(){}function loadFolders(){}function toast(){}
+function closeSenderProfile(){return true;}function closeMenu(){}function fitBox(){fitted=true;}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function drawHome(){}function loadFolders(){}function toast(){}
 function loadList(){queries.push([S.acc,S.folder,S.q]);}
 ''' + 'function syncUrl(){' + sync + 'function choose(acc, folder){' + choose + 'function findSender(){' + sender + '''
 findSender();assert.equal(B.solo,false);assert.equal(removed,true);assert.equal(fitted,true);assert.equal(S.open,null);
@@ -186,7 +205,7 @@ const assert=require('node:assert/strict');var B={accounts:[{email:'a@example.co
 var S={acc:'a@example.com',folder:'Sent',q:'invoice',unread:true,open:{uid:7},checked:{old:1},items:[1],groups:[1],folders:{}};
 var MAILBOX_STATE=Object.create(null),qTimer=1,input={},box={classList:{remove(){}}},requests=[];
 function $(id){return id==='ib-q'?input:box;}var localStorage={setItem(){}};
-function closeMenu(){}function closeSenderProfile(){}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function syncUrl(){}
+function closeMenu(){}function closeSenderProfile(){return true;}function drawFolders(){}function drawQuickFilters(){}function drawSavedSearches(){}function syncUrl(){}
 function loadList(){requests.push([S.acc,S.folder,S.q,S.unread]);}function drawHome(){}function loadFolders(){}
 ''' + 'function choose(acc, folder){' + choose + 'function switchMailbox(acc){' + switch + '''
 switchMailbox('b@example.com');assert.deepEqual(requests[0],['b@example.com','INBOX','',false]);assert.equal(S.open,null);assert.deepEqual(S.checked,{});

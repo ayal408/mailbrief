@@ -437,6 +437,17 @@ class Writing(InboxBase):
 
 
 class InboxServer(InboxBase):
+    def test_sender_note_endpoint_persists_and_rejects_stale_edits(self):
+        fields = {'a': 'me@gmail.com', 'email': 'sender@example.com', 'text': 'לבדוק ביום ראשון', 'revision': '0'}
+        resp, note = self.post('/inbox_sender_note', fields)
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(note['revision'], 1)
+        resp, body = self.get('/inbox_sender.json?a=me%40gmail.com&email=sender%40example.com')
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(json.loads(body)['note']['text'], fields['text'])
+        resp, _ = self.post('/inbox_sender_note', dict(fields, text='ישן'))
+        self.assertEqual(resp.status, 400)
+
     def setUp(self):
         super().setUp()
         from mailbrief.web import server
