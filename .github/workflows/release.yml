@@ -28,6 +28,13 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify JavaScript runtime
+        run: node --version
+
       - name: Tools
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
 
@@ -159,9 +166,12 @@ jobs:
           מי שכבר מותקן יקבל בתוכנה הודעה וקישור להורדת הגרסה החדשה.
 
           **מה חדש בגרסה הזו:**
-          - הוסרו הרצת PowerShell מוסתרת והחלפה עצמית של קובץ ההפעלה.
-          - ההפצה נארזת כתיקייה שקופה יותר לסריקת אנטי-וירוס, עם תמיכה בחתימה דיגיטלית.
-          - הסרת התוכנה מוחקת משימות ותזכורות; לחיצה על התראה מפעילה קודם את MailBrief.
+          - תיבה נפרדת לכל כתובת, עם חיפושים שמורים ומסננים מהירים.
+          - ערכות צבעים, כרטיסים, תקצירים מורחבים וניווט עליון מכווץ.
+          - פרופילי שולחים עם היסטוריית התכתבות והערות אישיות מקומיות לכל תיבה.
+          - מסך מעקב שליחה ותשובות לפי המידע שנשמר ב-MailBrief (אינו אישור קריאה).
+          - פעולות קריאה מהירות, ייצוא CSV, חיפוש לפי שולח ועזרת מקלדת.
+          - תיקוני חיפוש בחלונות נפרדים והגנה משמירת הערה ישנה מעל עדכון מחלון אחר.
 
           > אם אישור החתימה אינו מוגדר עדיין, Windows SmartScreen עדיין עשוי להציג אזהרת מוניטין לקובץ חדש.
           "@
@@ -175,5 +185,5 @@ jobs:
         run: |
           if (-not $env:WINGET_TOKEN) { Write-Host '::notice::No WINGET_TOKEN secret - skipping winget (see RELEASING.md)'; exit 0 }
           Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          $url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MailBrief-Setup.exe"
+          $url = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG/MailBrief-Setup.exe"
           .\wingetcreate.exe update MailBrief.App --version $env:VERSION --urls $url --submit --token $env:WINGET_TOKEN
